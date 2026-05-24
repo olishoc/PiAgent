@@ -10,6 +10,15 @@ const REDIRECT_URI = "http://127.0.0.1:1455/auth/callback";
 const AUTH_URL = "https://auth.openai.com/oauth/authorize";
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const SCOPES = "openid profile email offline_access";
+const LOGIN_TIMEOUT_MS = 10 * 60 * 1000;
+
+interface LoginFlow {
+  authUrl: string;
+  promise: Promise<OAuthTokens>;
+  startedAt: number;
+}
+
+let activeLogin: LoginFlow | null = null;
 
 function base64Url(input: Buffer): string {
   return input.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
@@ -68,11 +77,8 @@ export async function maybeRefresh(tokens = readTokens()): Promise<OAuthTokens |
   return next;
 }
 
-async function runLoginFlow(): Promise<OAuthTokens> {
-  const verifier = randomUrlSafe();
+function createAuthorizeUrl(verifier: string, state: string): string {
   const challenge = base64Url(crypto.createHash("sha256").update(verifier).digest());
-  const state = crypto.randomBytes(16).toString("hex");
-
   const authorize = new URL(AUTH_URL);
   authorize.searchParams.set("response_type", "code");
   authorize.searchParams.set("client_id", CLIENT_ID);
@@ -81,9 +87,24 @@ async function runLoginFlow(): Promise<OAuthTokens> {
   authorize.searchParams.set("code_challenge", challenge);
   authorize.searchParams.set("code_challenge_method", "S256");
   authorize.searchParams.set("state", state);
+  return authorize.toString();
+}
 
-  return new Promise((resolve, reject) => {
+function startLoginFlow(): LoginFlow {
+  const verifier = randomUrlSafe();
+  const state = crypto.randomBytes(16).toString("hex");
+  const authUrl = createAuthorizeUrl(verifier, state);
+
+  const promise = new Promise<OAuthTokens>((resolve, reject) => {
+    let settled = false;
     const server = http.createServer(async (req, res) => {
+      const finish = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        fn();
+      };
+
       try {
         const url = new URL(req.url ?? "/", REDIRECT_URI);
         if (url.pathname !== "/auth/callback") {
@@ -115,17 +136,48 @@ async function runLoginFlow(): Promise<OAuthTokens> {
         writeTokens(tokens);
 
         res.writeHead(200, { "Content-Type": "text/html" }).end("<!doctype html><title>pi agent</title><body>Signed in. You can return to pi agent.</body>");
-        resolve(tokens);
+        finish(() => resolve(tokens));
       } catch (err) {
-        reject(err);
+        finish(() => reject(err));
       } finally {
         server.close();
       }
     });
 
-    server.once("error", reject);
-    server.listen(1455, "127.0.0.1", () => openBrowser(authorize.toString()));
+    const timeout = setTimeout(() => {
+      server.close();
+      if (!settled) {
+        settled = true;
+        reject(new Error("OAuth login timed out"));
+      }
+    }, LOGIN_TIMEOUT_MS);
+
+    server.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    server.listen(1455, "127.0.0.1", () => {
+      try {
+        openBrowser(authUrl);
+      } catch (error) {
+        console.error("[oauth] unable to open browser", error);
+      }
+    });
   });
+
+  const flow = { authUrl, promise, startedAt: Date.now() };
+  promise
+    .catch((error) => console.error("[oauth] login failed", error))
+    .finally(() => {
+      if (activeLogin === flow) activeLogin = null;
+    });
+  return flow;
+}
+
+function getLoginFlow(): LoginFlow {
+  if (activeLogin && Date.now() - activeLogin.startedAt < LOGIN_TIMEOUT_MS) return activeLogin;
+  activeLogin = startLoginFlow();
+  return activeLogin;
 }
 
 export const authRouter = Router();
@@ -145,8 +197,8 @@ authRouter.get("/status", async (_req, res, next) => {
 
 authRouter.get("/login", async (_req, res, next) => {
   try {
-    const tokens = await runLoginFlow();
-    res.json({ loggedIn: true, accountId: tokens.accountId });
+    const flow = getLoginFlow();
+    res.json({ started: true, authUrl: flow.authUrl });
   } catch (err) {
     next(err);
   }

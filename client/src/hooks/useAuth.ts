@@ -5,6 +5,8 @@ interface AuthState {
   loading: boolean;
   loggedIn: boolean;
   accountId?: string;
+  error?: string;
+  loginMessage?: string;
 }
 
 export function useAuth() {
@@ -16,7 +18,7 @@ export function useAuth() {
     const response = await fetch(apiUrl("/api/auth/status"), { signal: controller.signal });
     window.clearTimeout(timeout);
     const data = await response.json();
-    setState({ loading: false, loggedIn: Boolean(data.loggedIn), accountId: data.accountId });
+    setState((current) => ({ ...current, loading: false, loggedIn: Boolean(data.loggedIn), accountId: data.accountId }));
     return data;
   }, []);
 
@@ -25,7 +27,30 @@ export function useAuth() {
   }, [refresh]);
 
   const login = useCallback(async () => {
-    void fetch(apiUrl("/api/auth/login")).catch(() => {});
+    setState((current) => ({ ...current, loading: true, error: undefined, loginMessage: "Opening OpenAI sign in..." }));
+    try {
+      const response = await fetch(apiUrl("/api/auth/login"));
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      if (data.authUrl) {
+        const tauri = (window as any).__TAURI_INTERNALS__;
+        if (tauri) {
+          const { openUrl } = await import("@tauri-apps/plugin-opener");
+          await openUrl(data.authUrl);
+        } else {
+          window.open(data.authUrl, "_blank", "noopener,noreferrer");
+        }
+      }
+      setState((current) => ({ ...current, loading: false, loginMessage: "Finish sign in in your browser, then return to PiAgent." }));
+    } catch (error) {
+      setState((current) => ({
+        ...current,
+        loading: false,
+        error: error instanceof Error ? error.message : String(error),
+        loginMessage: undefined
+      }));
+      return;
+    }
     const timer = window.setInterval(async () => {
       const data = await refresh().catch(() => null);
       if (data?.loggedIn) {
