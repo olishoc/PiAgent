@@ -62,7 +62,7 @@ The release workflow publishes:
 In the app, go to `Parametres -> Dependances de l'espace de travail -> Mises a jour PiAgent -> Verifier`.
 
 ## First run
-Open http://127.0.0.1:3000, or launch PiAgent with `npm run desktop`.
+Open http://127.0.0.1:1456, or launch PiAgent with `npm run desktop`.
 The first screen stores local PiAgent settings. This is local onboarding, not a separate network OAuth provider.
 Then you will be prompted to sign in with OpenAI.
 A browser window will open to auth.openai.com. After authorizing, return to the app.

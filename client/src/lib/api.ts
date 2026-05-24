@@ -1,5 +1,5 @@
-export const API_ORIGIN = "http://127.0.0.1:3000";
-export const WS_ORIGIN = "ws://127.0.0.1:3000";
+export const API_ORIGIN = "http://127.0.0.1:1456";
+export const WS_ORIGIN = "ws://127.0.0.1:1456";
 
 export function apiUrl(path: string) {
   return `${API_ORIGIN}${path}`;

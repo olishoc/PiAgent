@@ -84,6 +84,7 @@ fn start_backend(app: &tauri::AppHandle, state: &State<BackendProcess>) -> Resul
         .arg(server_entry_arg)
         .current_dir(&root)
         .env("NODE_ENV", "production")
+        .env("PIAGENT_PORT", "1456")
         .stdin(Stdio::null())
         .stdout(stdout)
         .stderr(stderr)
