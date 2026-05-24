@@ -1,0 +1,41 @@
+.login-screen {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  background: var(--bg-app);
+}
+
+.login-panel {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.login-panel h1 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.login-panel p {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.login-panel button {
+  height: 34px;
+  padding: 0 14px;
+  border: 0.5px solid var(--border-hover);
+  border-radius: 6px;
+  background: var(--text-primary);
+  color: var(--bg-app);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.login-panel button:disabled {
+  opacity: 0.55;
+}

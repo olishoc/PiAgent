@@ -1,0 +1,26 @@
+{
+  "name": "piagent",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev:server": "cd server && tsx watch index.ts",
+    "dev:client": "cd client && vite",
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:desktop-ui": "cd client && vite --strictPort",
+    "desktop": "tauri dev",
+    "prepare:runtime": "node scripts/prepare-runtime.mjs",
+    "desktop:build": "npm run prepare:runtime && node scripts/build-desktop.mjs",
+    "desktop:latest-json": "node scripts/write-latest-json.mjs",
+    "desktop:update-local": "npm run desktop:build && node scripts/install-latest.mjs",
+    "build": "npm run build -w client && npm run build -w server",
+    "start": "node server/dist/index.js"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
+    "concurrently": "^8.2.2"
+  }
+}

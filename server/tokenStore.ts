@@ -1,0 +1,28 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+export interface OAuthTokens {
+  access: string;
+  refresh: string;
+  expires: number;
+  accountId: string;
+}
+
+export const APP_CONFIG_DIR = path.join(os.homedir(), ".config", "pi-app");
+export const TOKEN_PATH = path.join(APP_CONFIG_DIR, "oauth.json");
+
+export function readTokens(): OAuthTokens | null {
+  try {
+    if (!fs.existsSync(TOKEN_PATH)) return null;
+    return JSON.parse(fs.readFileSync(TOKEN_PATH, "utf8").replace(/^\uFEFF/, "")) as OAuthTokens;
+  } catch {
+    return null;
+  }
+}
+
+export function writeTokens(t: OAuthTokens): void {
+  fs.mkdirSync(APP_CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(TOKEN_PATH, JSON.stringify(t, null, 2));
+  fs.chmodSync(TOKEN_PATH, 0o600);
+}

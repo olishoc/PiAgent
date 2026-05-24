@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "name": "piagent-runtime",
+  "version": "0.1.0",
+  "type": "commonjs",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "latest",
+    "cors": "^2.8.5",
+    "express": "^4.18.0",
+    "ws": "^8.16.0"
+  }
+}

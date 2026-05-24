@@ -1,0 +1,142 @@
+.composer {
+  width: min(880px, calc(100% - 42px));
+  margin: 0 auto 18px;
+  padding: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-composer);
+}
+
+.command-palette {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: #111;
+}
+
+.command-palette button {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr);
+  gap: 8px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.command-palette button:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.command-palette span {
+  color: var(--text-secondary);
+}
+
+.attachment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.attachment-row button,
+.attach-button {
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 24px;
+  max-height: 110px;
+  padding: 4px 4px 8px;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.composer textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.attach-button {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border-radius: 50%;
+  font-size: 18px;
+}
+
+.tool-pills {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tool-pills button {
+  height: 24px;
+  padding: 0 9px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tool-pills button.enabled {
+  border-color: var(--border-hover);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-primary);
+}
+
+.tool-pills .access-pill {
+  color: var(--accent-amber);
+}
+
+.composer-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.send-button {
+  display: grid;
+  min-width: 48px;
+  height: 30px;
+  flex: 0 0 48px;
+  place-items: center;
+  border: none;
+  border-radius: 999px;
+  background: var(--text-primary);
+  color: var(--bg-app);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.send-button:disabled {
+  cursor: default;
+  opacity: 0.3;
+}

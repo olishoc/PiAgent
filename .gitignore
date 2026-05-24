@@ -1,0 +1,13 @@
+node_modules/
+client/node_modules/
+client/dist/
+server/dist/
+src-tauri/target/
+src-tauri/gen/schemas/
+src-tauri/binaries/node-x86_64-pc-windows-msvc.exe
+src-tauri/updater.key
+src-tauri/updater.key.password
+src-tauri/runtime/node_modules/
+dev.out.log
+dev.err.log
+*.log
