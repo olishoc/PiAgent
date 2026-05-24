@@ -2,6 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import path from "node:path";
+import { APP_CONFIG_DIR } from "./tokenStore.js";
 
 function piCommand(): { command: string; argsPrefix: string[] } {
   if (process.env.PI_BIN) return { command: process.env.PI_BIN, argsPrefix: [] };
@@ -17,6 +18,7 @@ function piCommand(): { command: string; argsPrefix: string[] } {
 
 interface PiSessionOptions {
   extraArgs?: string[];
+  model?: string;
 }
 
 export class PiSession {
@@ -28,8 +30,24 @@ export class PiSession {
 
   constructor(sessionDir: string, accessToken: string, options: PiSessionOptions = {}) {
     const pi = piCommand();
-    this.proc = spawn(pi.command, [...pi.argsPrefix, "--mode", "rpc", "--provider", "openai", "--session-dir", sessionDir, ...(options.extraArgs ?? [])], {
-      env: { ...process.env, OPENAI_ACCESS_TOKEN: accessToken },
+    const args = [
+      ...pi.argsPrefix,
+      "--mode",
+      "rpc",
+      "--provider",
+      "openai-codex",
+      "--model",
+      options.model || "gpt-5.5",
+      "--session-dir",
+      sessionDir,
+      ...(options.extraArgs ?? [])
+    ];
+    this.proc = spawn(pi.command, args, {
+      env: {
+        ...process.env,
+        OPENAI_ACCESS_TOKEN: accessToken,
+        PI_CODING_AGENT_DIR: APP_CONFIG_DIR
+      },
       stdio: ["pipe", "pipe", "pipe"]
     });
 

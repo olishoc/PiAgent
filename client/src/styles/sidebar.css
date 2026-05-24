@@ -8,6 +8,23 @@
   border-right: 0.5px solid var(--border);
 }
 
+.sidebar.collapsed {
+  width: 68px;
+  min-width: 68px;
+}
+
+.sidebar.collapsed .sidebar-actions button,
+.sidebar.collapsed .project-row,
+.sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .task-copy,
+.sidebar.collapsed .user-copy {
+  display: none;
+}
+
+.sidebar.collapsed .task-row {
+  justify-content: center;
+}
+
 .sidebar-topnav {
   display: flex;
   align-items: center;
@@ -25,6 +42,10 @@
   font-size: 13px;
   cursor: pointer;
   text-align: left;
+}
+
+.sidebar-topnav button:hover {
+  color: var(--text-primary);
 }
 
 .sidebar-actions {

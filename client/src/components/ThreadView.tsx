@@ -7,9 +7,10 @@ interface ThreadViewProps {
   messages: DisplayMessage[];
   isStreaming: boolean;
   footerStatus?: string;
+  connectionState?: string;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -20,7 +21,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus }: Thre
     <section className="thread-shell">
       <header className="thread-header">
         <span>thread</span>
-        <span>{isStreaming ? "running" : "idle"}</span>
+        <span>{isStreaming ? "running" : connectionState ?? "idle"}</span>
       </header>
       <div className="thread-feed">
         {messages.length === 0 ? (

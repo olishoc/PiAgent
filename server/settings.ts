@@ -20,17 +20,19 @@ const SETTINGS_PATH = path.join(APP_CONFIG_DIR, "settings.json");
 export const DEFAULT_SETTINGS: AppSettings = {
   onboardingComplete: false,
   displayName: "PiAgent local",
-  accessMode: "limited",
+  accessMode: "full",
   approvalPolicy: "on-request",
   workspacePath: process.cwd(),
-  modelLabel: "openai/default",
+  modelLabel: "gpt-5.5",
   theme: "dark"
 };
 
 export function readSettings(): AppSettings {
   try {
     if (!fs.existsSync(SETTINGS_PATH)) return DEFAULT_SETTINGS;
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8").replace(/^\uFEFF/, "")) };
+    const loaded = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8").replace(/^\uFEFF/, "")) };
+    if (loaded.modelLabel === "openai/default") loaded.modelLabel = "gpt-5.5";
+    return loaded;
   } catch {
     return DEFAULT_SETTINGS;
   }

@@ -3,7 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { Router } from "express";
-import { TOKEN_PATH, OAuthTokens, readTokens, writeTokens } from "./tokenStore.js";
+import { PI_AUTH_PATH, TOKEN_PATH, OAuthTokens, readTokens, writeTokens } from "./tokenStore.js";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
@@ -61,7 +61,10 @@ async function postTokenForm(params: Record<string, string>): Promise<any> {
 
 export async function maybeRefresh(tokens = readTokens()): Promise<OAuthTokens | null> {
   if (!tokens) return null;
-  if (tokens.expires > Date.now() + 60_000) return tokens;
+  if (tokens.expires > Date.now() + 60_000) {
+    if (!fs.existsSync(PI_AUTH_PATH)) writeTokens(tokens);
+    return tokens;
+  }
 
   const refreshed = await postTokenForm({
     grant_type: "refresh_token",
@@ -234,6 +237,7 @@ authRouter.get("/login", async (req, res, next) => {
 authRouter.post("/logout", (_req, res, next) => {
   try {
     if (fs.existsSync(TOKEN_PATH)) fs.unlinkSync(TOKEN_PATH);
+    if (fs.existsSync(PI_AUTH_PATH)) fs.unlinkSync(PI_AUTH_PATH);
     res.json({ ok: true });
   } catch (err) {
     next(err);

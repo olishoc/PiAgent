@@ -8,6 +8,7 @@ import { useAuth } from "./hooks/useAuth";
 import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
 import SettingsView from "./components/SettingsView";
 import { checkAndInstallUpdate } from "./lib/updater";
+import UtilityView from "./components/UtilityView";
 
 async function fetchSessions(): Promise<Session[]> {
   const response = await fetch(apiUrl("/api/sessions"));
@@ -30,16 +31,19 @@ export default function App() {
   const agent = useAgent(auth.loggedIn);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState("");
-  const [view, setView] = useState<"chat" | "settings">("chat");
+  const [view, setView] = useState<"chat" | "settings" | "search" | "extensions" | "automations">("chat");
+  const [viewHistory, setViewHistory] = useState<Array<typeof view>>(["chat"]);
+  const [viewIndex, setViewIndex] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [backendError, setBackendError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
   const [settings, setSettings] = useState<AppSettings>({
     onboardingComplete: false,
     displayName: "PiAgent local",
-    accessMode: "limited",
+    accessMode: "full",
     approvalPolicy: "on-request",
     workspacePath: "",
-    modelLabel: "openai/default",
+    modelLabel: "gpt-5.5",
     theme: "dark"
   });
 
@@ -108,12 +112,39 @@ export default function App() {
   };
 
   const newSession = () => {
+    navigate("chat");
     agent.sendCommand({ type: "new_session" });
     setTimeout(() => void refreshSessionList(), 300);
   };
 
+  const navigate = (next: typeof view) => {
+    setView(next);
+    setViewHistory((current) => {
+      const sliced = current.slice(0, viewIndex + 1);
+      return [...sliced, next];
+    });
+    setViewIndex((current) => current + 1);
+  };
+
+  const goBack = () => {
+    setViewIndex((current) => {
+      const next = Math.max(0, current - 1);
+      setView(viewHistory[next] ?? "chat");
+      return next;
+    });
+  };
+
+  const goForward = () => {
+    setViewIndex((current) => {
+      const next = Math.min(viewHistory.length - 1, current + 1);
+      setView(viewHistory[next] ?? "chat");
+      return next;
+    });
+  };
+
   const selectSession = (session: Session) => {
     setActiveId(session.id);
+    navigate("chat");
     agent.replaceMessages([]);
     agent.sendCommand({ type: "switch_session", sessionPath: session.path });
     agent.sendCommand({ type: "get_messages" });
@@ -126,10 +157,17 @@ export default function App() {
         activeId={activeId}
         accountId={auth.accountId}
         activeView={view}
+        collapsed={sidebarCollapsed}
         onNew={newSession}
         onSelect={selectSession}
-        onSettings={() => setView("settings")}
-        onChat={() => setView("chat")}
+        onSettings={() => navigate("settings")}
+        onChat={() => navigate("chat")}
+        onSearch={() => navigate("search")}
+        onExtensions={() => navigate("extensions")}
+        onAutomations={() => navigate("automations")}
+        onToggle={() => setSidebarCollapsed((current) => !current)}
+        onBack={goBack}
+        onForward={goForward}
       />
       <main className="main-panel">
         {updateNotice ? <div className="update-notice">{updateNotice}</div> : null}
@@ -141,7 +179,7 @@ export default function App() {
           <span>Aide</span>
         </div>
         {view === "settings" && settings ? (
-          <SettingsView settings={settings} onChange={async (patch) => {
+          <SettingsView settings={settings} onBack={() => navigate("chat")} onChange={async (patch) => {
             const response = await fetch(apiUrl("/api/settings"), {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
@@ -150,10 +188,19 @@ export default function App() {
             const data = await response.json();
             setSettings(data.settings);
           }} />
+        ) : view === "search" || view === "extensions" || view === "automations" ? (
+          <UtilityView
+            view={view}
+            sessions={sessions}
+            onOpenSettings={() => navigate("settings")}
+            onBackToChat={() => navigate("chat")}
+            onSelectSession={selectSession}
+            onNew={newSession}
+          />
         ) : (
           <>
-            <ThreadView messages={agent.messages} isStreaming={agent.isStreaming} footerStatus={agent.footerStatus} />
-            <Composer onSend={agent.sendPrompt} disabled={false} settings={settings ?? undefined} />
+            <ThreadView messages={agent.messages} isStreaming={agent.isStreaming} footerStatus={agent.footerStatus} connectionState={agent.connectionState} />
+            <Composer onSend={agent.sendPrompt} disabled={agent.connectionState !== "ready"} settings={settings ?? undefined} />
           </>
         )}
       </main>
