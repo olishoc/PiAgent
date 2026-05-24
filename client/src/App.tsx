@@ -7,6 +7,7 @@ import { useAgent } from "./hooks/useAgent";
 import { useAuth } from "./hooks/useAuth";
 import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
 import SettingsView from "./components/SettingsView";
+import { checkAndInstallUpdate } from "./lib/updater";
 
 async function fetchSessions(): Promise<Session[]> {
   const response = await fetch(apiUrl("/api/sessions"));
@@ -31,6 +32,7 @@ export default function App() {
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<"chat" | "settings">("chat");
   const [backendError, setBackendError] = useState("");
+  const [updateNotice, setUpdateNotice] = useState("");
   const [onboardingError, setOnboardingError] = useState("");
   const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({
@@ -59,6 +61,10 @@ export default function App() {
         return;
       }
       fetch(apiUrl("/api/settings")).then((r) => r.json()).then((data) => setSettings(data.settings)).catch((error) => setBackendError(String(error)));
+      void checkAndInstallUpdate((status) => {
+        if (status.state === "current" || status.state === "idle") return;
+        setUpdateNotice(status.message);
+      });
     })();
     return () => {
       cancelled = true;
@@ -151,6 +157,7 @@ export default function App() {
         onChat={() => setView("chat")}
       />
       <main className="main-panel">
+        {updateNotice ? <div className="update-notice">{updateNotice}</div> : null}
         <div className="app-menu">
           <span>Fichier</span>
           <span>Modifier</span>
