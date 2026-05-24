@@ -5,8 +5,8 @@ import { execFile } from "node:child_process";
 import { Router } from "express";
 import { TOKEN_PATH, OAuthTokens, readTokens, writeTokens } from "./tokenStore.js";
 
-const CLIENT_ID = "app_EMFbNTCCFzFIpBkSWFKbZGAt";
-const REDIRECT_URI = "http://127.0.0.1:1455/auth/callback";
+const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const REDIRECT_URI = "http://localhost:1455/auth/callback";
 const AUTH_URL = "https://auth.openai.com/oauth/authorize";
 const TOKEN_URL = "https://auth.openai.com/oauth/token";
 const SCOPES = "openid profile email offline_access";
@@ -33,6 +33,8 @@ function decodeJwtSub(jwt: string): string {
   if (!part) return "";
   const padded = part.padEnd(part.length + ((4 - (part.length % 4)) % 4), "=");
   const payload = JSON.parse(Buffer.from(padded.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"));
+  const openAiAuth = payload["https://api.openai.com/auth"];
+  if (openAiAuth && typeof openAiAuth.chatgpt_account_id === "string") return openAiAuth.chatgpt_account_id;
   return typeof payload.sub === "string" ? payload.sub : "";
 }
 
@@ -87,6 +89,9 @@ function createAuthorizeUrl(verifier: string, state: string): string {
   authorize.searchParams.set("code_challenge", challenge);
   authorize.searchParams.set("code_challenge_method", "S256");
   authorize.searchParams.set("state", state);
+  authorize.searchParams.set("id_token_add_organizations", "true");
+  authorize.searchParams.set("codex_cli_simplified_flow", "true");
+  authorize.searchParams.set("originator", "piagent");
   return authorize.toString();
 }
 
