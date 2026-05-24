@@ -99,7 +99,7 @@ export default function App() {
     );
   }
 
-  if (!auth.loggedIn) return <LoginScreen loading={auth.loading} authUrl={auth.authUrl} error={auth.error} message={auth.loginMessage} />;
+  if (!auth.loggedIn) return <LoginScreen onLogin={auth.login} loading={auth.loading} authUrl={auth.authUrl} error={auth.error} message={auth.loginMessage} />;
 
   const refreshSessionList = async () => {
     const items = await fetchSessions();

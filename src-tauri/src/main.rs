@@ -58,8 +58,17 @@ fn backend_log_stdio(app: &tauri::AppHandle) -> (Stdio, Stdio) {
 
 fn start_backend(app: &tauri::AppHandle, state: &State<BackendProcess>) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|_| "backend lock poisoned".to_string())?;
-    if guard.is_some() {
-        return Ok(());
+    if let Some(child) = guard.as_mut() {
+        match child.try_wait() {
+            Ok(Some(_)) => {
+                *guard = None;
+            }
+            Ok(None) => return Ok(()),
+            Err(_) => {
+                let _ = child.kill();
+                *guard = None;
+            }
+        }
     }
 
     let root = if cfg!(debug_assertions) {

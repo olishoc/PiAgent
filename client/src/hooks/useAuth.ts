@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiUrl } from "../lib/api";
+import { apiUrl, ensureDesktopBackend } from "../lib/api";
 
 interface AuthState {
   loading: boolean;
@@ -30,6 +30,8 @@ export function useAuth() {
   const login = useCallback(async () => {
     setState((current) => ({ ...current, loading: true, error: undefined, loginMessage: "Opening OpenAI sign in..." }));
     try {
+      const backend = await ensureDesktopBackend();
+      if (!backend.ok) throw new Error(backend.error ?? "Backend startup failed");
       const response = await fetch(apiUrl("/api/auth/login"));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
