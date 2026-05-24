@@ -90,7 +90,7 @@ function createAuthorizeUrl(verifier: string, state: string): string {
   return authorize.toString();
 }
 
-function startLoginFlow(): LoginFlow {
+function startLoginFlow(openExternal = true): LoginFlow {
   const verifier = randomUrlSafe();
   const state = crypto.randomBytes(16).toString("hex");
   const authUrl = createAuthorizeUrl(verifier, state);
@@ -157,10 +157,12 @@ function startLoginFlow(): LoginFlow {
       reject(error);
     });
     server.listen(1455, "127.0.0.1", () => {
-      try {
-        openBrowser(authUrl);
-      } catch (error) {
-        console.error("[oauth] unable to open browser", error);
+      if (openExternal) {
+        try {
+          openBrowser(authUrl);
+        } catch (error) {
+          console.error("[oauth] unable to open browser", error);
+        }
       }
     });
   });
@@ -174,9 +176,9 @@ function startLoginFlow(): LoginFlow {
   return flow;
 }
 
-function getLoginFlow(): LoginFlow {
+function getLoginFlow(openExternal = true): LoginFlow {
   if (activeLogin && Date.now() - activeLogin.startedAt < LOGIN_TIMEOUT_MS) return activeLogin;
-  activeLogin = startLoginFlow();
+  activeLogin = startLoginFlow(openExternal);
   return activeLogin;
 }
 
@@ -195,9 +197,14 @@ authRouter.get("/status", async (_req, res, next) => {
   }
 });
 
-authRouter.get("/login", async (_req, res, next) => {
+authRouter.get("/login", async (req, res, next) => {
   try {
-    const flow = getLoginFlow();
+    const redirect = req.query.redirect === "1";
+    const flow = getLoginFlow(!redirect);
+    if (redirect) {
+      res.redirect(flow.authUrl);
+      return;
+    }
     res.json({ started: true, authUrl: flow.authUrl });
   } catch (err) {
     next(err);

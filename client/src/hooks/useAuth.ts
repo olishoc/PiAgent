@@ -5,6 +5,7 @@ interface AuthState {
   loading: boolean;
   loggedIn: boolean;
   accountId?: string;
+  authUrl?: string;
   error?: string;
   loginMessage?: string;
 }
@@ -33,6 +34,11 @@ export function useAuth() {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
       if (data.authUrl) {
+        setState((current) => ({
+          ...current,
+          authUrl: data.authUrl,
+          loginMessage: "OpenAI sign in is ready. If the browser did not open, use the direct link below."
+        }));
         const tauri = (window as any).__TAURI_INTERNALS__;
         if (tauri) {
           const { openUrl } = await import("@tauri-apps/plugin-opener");
