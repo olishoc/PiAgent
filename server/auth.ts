@@ -135,7 +135,13 @@ function startLoginFlow(openExternal = true): LoginFlow {
         };
         writeTokens(tokens);
 
-        res.writeHead(200, { "Content-Type": "text/html" }).end("<!doctype html><title>pi agent</title><body>Signed in. You can return to pi agent.</body>");
+        res.writeHead(200, { "Content-Type": "text/html" }).end(`<!doctype html>
+<title>PiAgent</title>
+<meta http-equiv="refresh" content="1; url=http://127.0.0.1:1456">
+<body style="background:#0d0d0d;color:#e8e8e8;font-family:monospace">
+Signed in. Returning to PiAgent...
+<p><a style="color:#58a6ff" href="http://127.0.0.1:1456">Return to PiAgent</a></p>
+</body>`);
         finish(() => resolve(tokens));
       } catch (err) {
         finish(() => reject(err));

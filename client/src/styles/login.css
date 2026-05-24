@@ -25,7 +25,10 @@
   font-size: 12px;
 }
 
-.login-panel button {
+.login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 34px;
   padding: 0 14px;
   border: 0.5px solid var(--border-hover);
@@ -34,14 +37,15 @@
   color: var(--bg-app);
   font-size: 12px;
   cursor: pointer;
+  text-decoration: none;
   transition: opacity 120ms ease, transform 120ms ease;
 }
 
-.login-panel button:active {
+.login-button:active {
   transform: translateY(1px);
 }
 
-.login-panel button:disabled {
+.login-button[aria-disabled="true"] {
   opacity: 0.55;
   cursor: wait;
 }

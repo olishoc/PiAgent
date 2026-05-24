@@ -65,7 +65,7 @@ export default function Sidebar({ sessions, activeId, accountId, activeView, onS
         <div className="avatar">{initials}</div>
         <div className="user-copy">
           <span>{accountId ?? "local user"}</span>
-          <span>gpt-4.5</span>
+          <span>gpt-5.5</span>
         </div>
         <button className={`settings ${activeView === "settings" ? "active" : ""}`} onClick={onSettings} aria-label="settings">⚙</button>
       </footer>
