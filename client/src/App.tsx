@@ -33,8 +33,6 @@ export default function App() {
   const [view, setView] = useState<"chat" | "settings">("chat");
   const [backendError, setBackendError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
-  const [onboardingError, setOnboardingError] = useState("");
-  const [onboardingSaving, setOnboardingSaving] = useState(false);
   const [settings, setSettings] = useState<AppSettings>({
     onboardingComplete: false,
     displayName: "PiAgent local",
@@ -60,7 +58,17 @@ export default function App() {
         setBackendError(health.error ?? "Backend is not ready");
         return;
       }
-      fetch(apiUrl("/api/settings")).then((r) => r.json()).then((data) => setSettings(data.settings)).catch((error) => setBackendError(String(error)));
+      fetch(apiUrl("/api/settings")).then((r) => r.json()).then((data) => {
+        const loaded = data.settings;
+        setSettings(loaded);
+        if (loaded && !loaded.onboardingComplete) {
+          void fetch(apiUrl("/api/settings"), {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ onboardingComplete: true })
+          }).then((r) => r.json()).then((next) => setSettings(next.settings ?? loaded)).catch(() => {});
+        }
+      }).catch((error) => setBackendError(String(error)));
       void checkAndInstallUpdate((status) => {
         if (status.state === "current" || status.state === "idle") return;
         setUpdateNotice(status.message);
@@ -86,39 +94,6 @@ export default function App() {
           <h1>PiAgent backend unavailable</h1>
           <p>{backendError}</p>
           <button onClick={() => window.location.reload()}>retry</button>
-        </main>
-      </div>
-    );
-  }
-
-  if (settings && !settings.onboardingComplete) {
-    const completeOnboarding = async () => {
-      setOnboardingSaving(true);
-      setOnboardingError("");
-      const nextSettings = { ...settings, onboardingComplete: true };
-      setSettings(nextSettings);
-      try {
-        const response = await fetch(apiUrl("/api/settings"), {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ onboardingComplete: true })
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        setSettings(data.settings ?? nextSettings);
-      } catch (error) {
-        setOnboardingError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setOnboardingSaving(false);
-      }
-    };
-    return (
-      <div className="app-shell">
-        <main className="onboarding">
-          <h1>PiAgent</h1>
-          <p>Configurez l'identite locale de l'application, puis connectez OpenAI au premier lancement.</p>
-          {onboardingError ? <p className="inline-error">Sauvegarde locale echouee: {onboardingError}</p> : null}
-          <button onClick={completeOnboarding} disabled={onboardingSaving}>{onboardingSaving ? "..." : "continuer"}</button>
         </main>
       </div>
     );
