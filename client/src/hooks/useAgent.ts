@@ -132,13 +132,14 @@ function normalizeMessages(rawMessages: any[]): DisplayMessage[] {
   });
 }
 
-export function useAgent() {
+export function useAgent(enabled = true) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [footerStatus, setFooterStatus] = useState("");
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    if (!enabled) return;
     const ws = new WebSocket(WS_ORIGIN);
     wsRef.current = ws;
     ws.onmessage = (e) => {
@@ -147,7 +148,7 @@ export function useAgent() {
     };
     ws.onclose = () => setIsStreaming(false);
     return () => ws.close();
-  }, []);
+  }, [enabled]);
 
   const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     wsRef.current?.send(JSON.stringify(cmd));

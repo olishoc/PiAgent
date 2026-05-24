@@ -211,6 +211,15 @@ authRouter.get("/status", async (_req, res, next) => {
 authRouter.get("/login", async (req, res, next) => {
   try {
     const redirect = req.query.redirect === "1";
+    const tokens = await maybeRefresh();
+    if (tokens) {
+      if (redirect) {
+        res.redirect("http://127.0.0.1:1456");
+        return;
+      }
+      res.json({ started: false, loggedIn: true, accountId: tokens.accountId });
+      return;
+    }
     const flow = getLoginFlow(!redirect);
     if (redirect) {
       res.redirect(flow.authUrl);

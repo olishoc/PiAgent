@@ -45,7 +45,7 @@
   transform: translateY(1px);
 }
 
-.login-button[aria-disabled="true"] {
+.login-button:disabled {
   opacity: 0.55;
   cursor: wait;
 }

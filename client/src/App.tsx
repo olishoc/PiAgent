@@ -27,7 +27,7 @@ export interface AppSettings {
 
 export default function App() {
   const auth = useAuth();
-  const agent = useAgent();
+  const agent = useAgent(auth.loggedIn);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<"chat" | "settings">("chat");

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiUrl, ensureDesktopBackend } from "../lib/api";
 
 interface AuthState {
@@ -12,6 +12,8 @@ interface AuthState {
 
 export function useAuth() {
   const [state, setState] = useState<AuthState>({ loading: false, loggedIn: false });
+  const loginInFlightRef = useRef(false);
+  const pollTimerRef = useRef<number | null>(null);
 
   const refresh = useCallback(async () => {
     const controller = new AbortController();
@@ -25,9 +27,28 @@ export function useAuth() {
 
   useEffect(() => {
     refresh().catch(() => setState({ loading: false, loggedIn: false }));
+    return () => {
+      if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+    };
   }, [refresh]);
 
+  const openAuthUrl = useCallback(async (authUrl: string) => {
+    const tauri = (window as any).__TAURI_INTERNALS__;
+    if (tauri) {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(authUrl);
+      return;
+    }
+    window.open(authUrl, "_blank", "noopener,noreferrer");
+  }, []);
+
   const login = useCallback(async () => {
+    if (state.authUrl) {
+      await openAuthUrl(state.authUrl);
+      return;
+    }
+    if (loginInFlightRef.current || state.loading) return;
+    loginInFlightRef.current = true;
     setState((current) => ({ ...current, loading: true, error: undefined, loginMessage: "Opening OpenAI sign in..." }));
     try {
       const backend = await ensureDesktopBackend();
@@ -35,22 +56,28 @@ export function useAuth() {
       const response = await fetch(apiUrl("/api/auth/login"));
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const data = await response.json();
+      if (data.loggedIn) {
+        loginInFlightRef.current = false;
+        setState((current) => ({
+          ...current,
+          loading: false,
+          loggedIn: true,
+          accountId: data.accountId,
+          loginMessage: undefined
+        }));
+        return;
+      }
       if (data.authUrl) {
         setState((current) => ({
           ...current,
           authUrl: data.authUrl,
           loginMessage: "OpenAI sign in is ready. If the browser did not open, use the direct link below."
         }));
-        const tauri = (window as any).__TAURI_INTERNALS__;
-        if (tauri) {
-          const { openUrl } = await import("@tauri-apps/plugin-opener");
-          await openUrl(data.authUrl);
-        } else {
-          window.open(data.authUrl, "_blank", "noopener,noreferrer");
-        }
+        await openAuthUrl(data.authUrl);
       }
       setState((current) => ({ ...current, loading: false, loginMessage: "Finish sign in in your browser, then return to PiAgent." }));
     } catch (error) {
+      loginInFlightRef.current = false;
       setState((current) => ({
         ...current,
         loading: false,
@@ -59,17 +86,25 @@ export function useAuth() {
       }));
       return;
     }
-    const timer = window.setInterval(async () => {
+    if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+    pollTimerRef.current = window.setInterval(async () => {
       const data = await refresh().catch(() => null);
       if (data?.loggedIn) {
-        window.clearInterval(timer);
-        window.location.reload();
+        if (pollTimerRef.current) {
+          window.clearInterval(pollTimerRef.current);
+          pollTimerRef.current = null;
+        }
+        loginInFlightRef.current = false;
+        setState((current) => ({ ...current, loading: false, loggedIn: true, accountId: data.accountId }));
       }
     }, 1000);
-  }, [refresh]);
+  }, [openAuthUrl, refresh, state.authUrl, state.loading]);
 
   const logout = useCallback(async () => {
     await fetch(apiUrl("/api/auth/logout"), { method: "POST" });
+    if (pollTimerRef.current) window.clearInterval(pollTimerRef.current);
+    pollTimerRef.current = null;
+    loginInFlightRef.current = false;
     setState({ loading: false, loggedIn: false });
   }, []);
 
