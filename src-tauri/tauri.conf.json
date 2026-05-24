@@ -44,6 +44,7 @@
     "resources": {
       "../server/dist": "server/dist",
       "../server/package.json": "server/package.json",
+      "../client/dist": "client/dist",
       "runtime/node_modules": "node_modules",
       "binaries/node-x86_64-pc-windows-msvc.exe": "binaries/node-x86_64-pc-windows-msvc.exe"
     }
