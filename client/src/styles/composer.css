@@ -1,10 +1,26 @@
 .composer {
-  width: min(880px, calc(100% - 42px));
+  position: relative;
+  width: min(900px, calc(100% - 42px));
   margin: 0 auto 18px;
-  padding: 10px;
+  padding: 11px;
   border: 0.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--bg-composer);
+  box-shadow: 0 18px 60px rgba(0,0,0,0.24);
+}
+
+.composer.streaming {
+  border-color: rgba(63,185,80,0.25);
+}
+
+.composer.streaming::before {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  border-radius: 11px;
+  background: linear-gradient(90deg, transparent, rgba(63,185,80,0.22), transparent);
+  content: "";
+  animation: shimmer 2.4s linear infinite;
 }
 
 .command-palette {
@@ -13,19 +29,21 @@
   margin-bottom: 8px;
   padding: 6px;
   border: 0.5px solid var(--border);
-  border-radius: 8px;
+  border-radius: 9px;
   background: #111;
+  animation: paletteIn 120ms ease;
 }
 
 .command-palette button {
   display: grid;
-  grid-template-columns: 110px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr);
   gap: 8px;
-  min-height: 30px;
+  min-height: 32px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
   color: var(--text-primary);
+  cursor: pointer;
   text-align: left;
 }
 
@@ -40,24 +58,46 @@
 .attachment-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 7px;
   margin-bottom: 8px;
 }
 
-.attachment-row button,
-.attach-button {
+.attachment-row button {
+  display: flex;
+  max-width: 280px;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 9px;
   border: 0.5px solid var(--border);
   border-radius: 999px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255,255,255,0.045);
   color: var(--text-secondary);
+  cursor: pointer;
   font-size: 11px;
+}
+
+.attachment-row button:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.attachment-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-row em {
+  color: var(--text-tertiary);
+  font-style: normal;
 }
 
 .composer textarea {
   width: 100%;
-  min-height: 24px;
-  max-height: 110px;
-  padding: 4px 4px 8px;
+  min-height: 26px;
+  max-height: 130px;
+  padding: 4px 4px 9px;
   border: none;
   outline: none;
   resize: none;
@@ -78,33 +118,53 @@
   gap: 10px;
 }
 
-.attach-button {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+.round-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border: 0.5px solid var(--border);
   border-radius: 50%;
-  font-size: 18px;
+  background: rgba(255,255,255,0.04);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.round-button:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
+}
+
+.round-button.stop {
+  color: var(--accent-red);
 }
 
 .tool-pills {
   display: flex;
   min-width: 0;
+  flex: 1;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.tool-pills button {
-  height: 24px;
+.tool-pills button,
+.model-pill {
+  display: flex;
+  height: 25px;
+  align-items: center;
+  gap: 6px;
   padding: 0 9px;
   border: 0.5px solid var(--border);
   border-radius: 999px;
   background: transparent;
   color: var(--text-tertiary);
-  font-size: 11px;
   cursor: pointer;
+  font-size: 11px;
 }
 
-.tool-pills button.enabled {
+.tool-pills button.enabled,
+.model-pill:hover {
   border-color: var(--border-hover);
   background: rgba(255,255,255,0.06);
   color: var(--text-primary);
@@ -117,26 +177,57 @@
 .composer-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--text-secondary);
   font-size: 12px;
 }
 
 .send-button {
   display: grid;
-  min-width: 48px;
+  width: 30px;
   height: 30px;
-  flex: 0 0 48px;
+  flex: 0 0 30px;
   place-items: center;
   border: none;
-  border-radius: 999px;
+  border-radius: 50%;
   background: var(--text-primary);
   color: var(--bg-app);
-  font-size: 12px;
   cursor: pointer;
+}
+
+.send-button:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
 .send-button:disabled {
   cursor: default;
   opacity: 0.3;
+}
+
+@media (max-width: 760px) {
+  .composer {
+    width: calc(100% - 20px);
+  }
+
+  .tool-pills {
+    gap: 4px;
+  }
+
+  .tool-pills button {
+    padding-inline: 7px;
+  }
+
+  .model-pill {
+    display: none;
+  }
+}
+
+@keyframes shimmer {
+  from { background-position: -300px 0; }
+  to { background-position: 300px 0; }
+}
+
+@keyframes paletteIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
 }

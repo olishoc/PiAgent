@@ -9,12 +9,16 @@ export interface ToolMessage {
   toolName: string;
   args?: unknown;
   status: ToolStatus;
+  startedAt?: number;
+  endedAt?: number;
 }
 
 export interface TextMessage {
   id: string;
-  kind: "user" | "agent" | "status";
+  kind: "user" | "agent" | "status" | "thinking";
   text: string;
+  attachments?: Attachment[];
+  phase?: string;
 }
 
 export type DisplayMessage = ToolMessage | TextMessage;
@@ -27,6 +31,12 @@ export interface Attachment {
   size?: number;
   kind: "file" | "image";
   text?: string;
+}
+
+export interface PromptOptions {
+  web: boolean;
+  advisor: boolean;
+  context: boolean;
 }
 
 function appendAgentDelta(messages: DisplayMessage[], delta: string) {
@@ -50,13 +60,30 @@ export function handlePiEvent(
 ) {
   if (event.type === "agent_start") {
     setIsStreaming(true);
-    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "agent", text: "" }]);
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "thinking", text: "Pi is reading the thread and planning the next action.", phase: "thinking" }]);
     return;
   }
 
   const assistantEvent = event.assistantMessageEvent;
   if (event.type === "message_update" && assistantEvent?.type === "text_delta" && typeof assistantEvent.delta === "string") {
     setMessages((items) => appendAgentDelta(items, assistantEvent.delta));
+    return;
+  }
+
+  const thinkingDelta = assistantEvent?.thinking_delta ?? assistantEvent?.thinking ?? event.thinking_delta ?? event.thinking;
+  if (event.type === "message_update" && typeof thinkingDelta === "string") {
+    setMessages((items) => {
+      const next = [...items];
+      for (let i = next.length - 1; i >= 0; i -= 1) {
+        const item = next[i];
+        if (item.kind === "thinking") {
+          next[i] = { ...item, text: `${item.text}${thinkingDelta}` };
+          return next;
+        }
+      }
+      next.push({ id: crypto.randomUUID(), kind: "thinking", text: thinkingDelta, phase: "reasoning" });
+      return next;
+    });
     return;
   }
 
@@ -68,7 +95,8 @@ export function handlePiEvent(
         kind: "tool",
         toolName: event.toolName ?? event.name ?? "tool",
         args: event.args,
-        status: "running"
+        status: "running",
+        startedAt: Date.now()
       }
     ]);
     return;
@@ -79,7 +107,7 @@ export function handlePiEvent(
       if (item.kind !== "tool") return item;
       const eventId = event.toolCallId ?? event.id;
       if (eventId && item.id !== eventId) return item;
-      return { ...item, status: event.isError ? "error" : "done" };
+      return { ...item, status: event.isError ? "error" : "done", endedAt: Date.now() };
     }));
     return;
   }
@@ -185,16 +213,23 @@ export function useAgent(enabled = true) {
     wsRef.current.send(JSON.stringify(cmd));
   }, []);
 
-  const sendPrompt = useCallback((text: string, attachments: Attachment[] = []) => {
-    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "user", text }]);
+  const sendPrompt = useCallback((text: string, attachments: Attachment[] = [], options?: PromptOptions) => {
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "user", text, attachments }]);
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is still connecting. Wait for the connected status, then send again." }]);
       return;
     }
     const attachmentContext = attachments.length
-      ? "\n\nAttached files:\n" + attachments.map((file) => `- ${file.name}${file.size ? `, ${file.size} bytes` : ""}${file.path ? " (selected locally; path withheld)" : ""}${file.text ? `\n${file.text.slice(0, 12000)}` : ""}`).join("\n")
+      ? "\n\nAttached files:\n" + attachments.map((file) => {
+        const location = file.path ? `\nPath: ${file.path}` : "";
+        const preview = file.text ? `\nContent preview:\n${file.text.slice(0, 12000)}` : "";
+        return `- ${file.name}${file.size ? `, ${file.size} bytes` : ""}${location}${preview}`;
+      }).join("\n")
       : "";
-    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext, streamingBehavior: "steer" }));
+    const optionContext = options
+      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled" : "disabled"}\n- advisor: ${options.advisor ? "enabled" : "disabled"}\n- context: ${options.context ? "enabled" : "disabled"}`
+      : "";
+    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext + optionContext, streamingBehavior: "steer" }));
   }, []);
 
   const abort = useCallback(() => {

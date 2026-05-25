@@ -18,8 +18,22 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const clientDist = path.resolve(__dirname, "../../client/dist");
 const clientIndex = path.join(clientDist, "index.html");
+const allowedOrigins = [
+  /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
+  /^http:\/\/localhost:(1456|5173)$/,
+  /^https?:\/\/tauri\.localhost(?::\d+)?$/,
+  /^tauri:\/\/localhost$/
+];
 
-app.use(cors());
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.some((pattern) => pattern.test(origin))) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error("Origin not allowed"));
+  }
+}));
 app.use(express.json());
 app.use("/api/auth", authRouter);
 app.use("/api/sessions", sessionsRouter);
@@ -78,6 +92,42 @@ app.post("/api/open-path", (req, res, next) => {
       }
       res.json({ ok: true, path: openPath });
     });
+  } catch (err) {
+    next(err);
+  }
+});
+app.post("/api/open-file", (req, res, next) => {
+  try {
+    const filePath = String(req.body?.path ?? "");
+    if (!filePath || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) {
+      res.status(400).json({ ok: false, error: "File does not exist" });
+      return;
+    }
+    const command = process.platform === "win32" ? "powershell.exe" : process.platform === "darwin" ? "open" : "xdg-open";
+    const args = process.platform === "win32" ? ["-NoProfile", "-Command", "Invoke-Item", "-LiteralPath", filePath] : [filePath];
+    execFile(command, args, { windowsHide: true }, (error) => {
+      if (error) {
+        res.status(500).json({ ok: false, error: error.message });
+        return;
+      }
+      res.json({ ok: true, path: filePath });
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+app.post("/api/file-preview", (req, res, next) => {
+  try {
+    const filePath = String(req.body?.path ?? "");
+    if (!filePath || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) {
+      res.status(400).json({ ok: false, error: "File does not exist" });
+      return;
+    }
+    const stat = fs.statSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const textLike = [".txt", ".md", ".json", ".ts", ".tsx", ".js", ".jsx", ".css", ".html", ".rs", ".toml", ".yml", ".yaml", ".py"].includes(ext);
+    const text = textLike && stat.size <= 512_000 ? fs.readFileSync(filePath, "utf8").slice(0, 12000) : "";
+    res.json({ ok: true, name: path.basename(filePath), path: filePath, size: stat.size, text });
   } catch (err) {
     next(err);
   }

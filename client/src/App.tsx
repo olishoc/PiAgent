@@ -9,6 +9,8 @@ import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
 import SettingsView from "./components/SettingsView";
 import { checkAndInstallUpdate } from "./lib/updater";
 import UtilityView from "./components/UtilityView";
+import ContextPanel from "./components/ContextPanel";
+import Icon from "./components/Icon";
 
 async function fetchSessions(): Promise<Session[]> {
   const response = await fetch(apiUrl("/api/sessions"));
@@ -35,6 +37,7 @@ export default function App() {
   const [viewHistory, setViewHistory] = useState<Array<typeof view>>(["chat"]);
   const [viewIndex, setViewIndex] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [contextOpen, setContextOpen] = useState(true);
   const [backendError, setBackendError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
   const [settings, setSettings] = useState<AppSettings>({
@@ -150,6 +153,35 @@ export default function App() {
     agent.sendCommand({ type: "get_messages" });
   };
 
+  const runComposerCommand = (command: string) => {
+    if (command === "/new") {
+      newSession();
+      return;
+    }
+    if (command === "/settings" || command === "/permissions") {
+      navigate("settings");
+      return;
+    }
+    if (command === "/sessions") {
+      navigate("search");
+      return;
+    }
+    if (command === "/compact") {
+      agent.sendPrompt("Compact the active context. Summarize important decisions, files, current state, and next steps.");
+      return;
+    }
+    if (command === "/help") {
+      agent.replaceMessages([
+        ...agent.messages,
+        {
+          id: crypto.randomUUID(),
+          kind: "status",
+          text: "Commands: /new, /attach, /compact, /permissions, /sessions, /settings. Toggle web/advisor/context from the composer."
+        }
+      ]);
+    }
+  };
+
   return (
     <div className="app-shell">
       <Sidebar
@@ -171,12 +203,18 @@ export default function App() {
       />
       <main className="main-panel">
         {updateNotice ? <div className="update-notice">{updateNotice}</div> : null}
-        <div className="app-menu">
-          <span>Fichier</span>
-          <span>Modifier</span>
-          <span>Affichage</span>
-          <span>Fenetre</span>
-          <span>Aide</span>
+        <div className="app-toolbar">
+          <div className="toolbar-title">
+            <Icon name="bot" />
+            <span>PiAgent</span>
+            <em>{agent.connectionState}</em>
+          </div>
+          <div className="toolbar-actions">
+            <button onClick={() => navigate("search")}><Icon name="search" /> Search</button>
+            <button onClick={() => navigate("extensions")}><Icon name="plug" /> Extensions</button>
+            <button onClick={() => setContextOpen((current) => !current)}><Icon name="layout" /> Context</button>
+            <button onClick={() => navigate("settings")}><Icon name="gear" /> Settings</button>
+          </div>
         </div>
         {view === "settings" && settings ? (
           <SettingsView settings={settings} onBack={() => navigate("chat")} onChange={async (patch) => {
@@ -198,10 +236,36 @@ export default function App() {
             onNew={newSession}
           />
         ) : (
-          <>
-            <ThreadView messages={agent.messages} isStreaming={agent.isStreaming} footerStatus={agent.footerStatus} connectionState={agent.connectionState} />
-            <Composer onSend={agent.sendPrompt} disabled={agent.connectionState !== "ready"} settings={settings ?? undefined} />
-          </>
+          <div className="chat-workspace">
+            <div className="chat-column">
+              <ThreadView
+                messages={agent.messages}
+                isStreaming={agent.isStreaming}
+                footerStatus={agent.footerStatus}
+                connectionState={agent.connectionState}
+                sessionName={sessions.find((session) => session.id === activeId)?.name}
+                onToggleContext={() => setContextOpen((current) => !current)}
+                onAbort={agent.abort}
+              />
+              <Composer
+                onSend={agent.sendPrompt}
+                onCommand={runComposerCommand}
+                onAbort={agent.abort}
+                disabled={agent.connectionState !== "ready"}
+                isStreaming={agent.isStreaming}
+                settings={settings ?? undefined}
+              />
+            </div>
+            <ContextPanel
+              open={contextOpen}
+              settings={settings}
+              sessions={sessions}
+              messages={agent.messages}
+              connectionState={agent.connectionState}
+              onOpenSettings={() => navigate("settings")}
+              onOpenSessions={() => navigate("search")}
+            />
+          </div>
         )}
       </main>
     </div>

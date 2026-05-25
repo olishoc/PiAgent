@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { DisplayMessage } from "../hooks/useAgent";
+import Icon from "./Icon";
 import MessageBubble from "./MessageBubble";
 import ToolCallRow from "./ToolCallRow";
 
@@ -8,10 +9,15 @@ interface ThreadViewProps {
   isStreaming: boolean;
   footerStatus?: string;
   connectionState?: string;
+  sessionName?: string;
+  onToggleContext: () => void;
+  onAbort: () => void;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus, connectionState }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, sessionName, onToggleContext, onAbort }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const toolCount = useMemo(() => messages.filter((message) => message.kind === "tool").length, [messages]);
+  const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -20,13 +26,26 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   return (
     <section className="thread-shell">
       <header className="thread-header">
-        <span>thread</span>
-        <span>{isStreaming ? "running" : connectionState ?? "idle"}</span>
+        <div>
+          <strong>{sessionName || "New PiAgent thread"}</strong>
+          <span>{connectionState ?? "idle"} / {toolCount} tools / {thinkingCount} activity notes</span>
+        </div>
+        <div className="thread-actions">
+          {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}
+          <button onClick={onToggleContext}><Icon name="layout" /> Context</button>
+        </div>
       </header>
       <div className="thread-feed">
         {messages.length === 0 ? (
           <div className="empty-thread">
-            <h1>Que devrions-nous creer dans Pi Agent UI?</h1>
+            <div className="empty-orbit"><Icon name="bot" size={28} /></div>
+            <h1>What should PiAgent build or inspect?</h1>
+            <p>Attach files, use slash commands, or ask for a concrete coding task. PiAgent will stream activity, tool calls, and responses here.</p>
+            <div className="empty-suggestions">
+              <span>/attach add project files</span>
+              <span>/permissions change access</span>
+              <span>/sessions search history</span>
+            </div>
           </div>
         ) : null}
         {messages.map((message) => (
@@ -36,7 +55,10 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
         ))}
         <div ref={endRef} />
       </div>
-      <div className="thread-footer">{footerStatus}</div>
+      <div className="thread-footer">
+        {isStreaming ? <span className="live-dot" /> : null}
+        {footerStatus}
+      </div>
     </section>
   );
 }

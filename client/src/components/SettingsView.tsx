@@ -2,23 +2,15 @@ import { useState } from "react";
 import { AppSettings } from "../App";
 import { apiUrl } from "../lib/api";
 import { checkAndInstallUpdate, UpdateStatus } from "../lib/updater";
+import Icon, { IconName } from "./Icon";
 
-const nav = [
-  "General",
-  "Apparence",
-  "Configuration",
-  "Personnalisation",
-  "Raccourcis clavier",
-  "Serveurs MCP",
-  "Hooks",
-  "Connexions",
-  "Git",
-  "Environnements",
-  "Arborescences de travail",
-  "Navigateur",
-  "Utilisation de l'ordinateur",
-  "Clavardages archives",
-  "Utilisation et facturation"
+const nav: Array<{ id: string; label: string; icon: IconName }> = [
+  { id: "General", label: "General", icon: "gear" },
+  { id: "Apparence", label: "Apparence", icon: "spark" },
+  { id: "Configuration", label: "Configuration", icon: "shield" },
+  { id: "Raccourcis", label: "Raccourcis", icon: "terminal" },
+  { id: "Extensions", label: "Extensions", icon: "plug" },
+  { id: "Git", label: "Git", icon: "link" }
 ];
 
 interface SettingsViewProps {
@@ -66,10 +58,10 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   return (
     <section className="settings-layout">
       <nav className="settings-nav">
-        <button onClick={onBack}>{"<"} Retour a l'appli</button>
+        <button onClick={onBack}><Icon name="arrowLeft" /> Retour a l'appli</button>
         {nav.map((item) => (
-          <button key={item} className={item === active ? "active" : ""} onClick={() => setActive(item)}>
-            {item}
+          <button key={item.id} className={item.id === active ? "active" : ""} onClick={() => setActive(item.id)}>
+            <Icon name={item.icon} /> {item.label}
           </button>
         ))}
       </nav>
@@ -80,11 +72,11 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <section className="settings-section">
               <h2>Mode de travail</h2>
               <div className="mode-grid">
-                <button className="selected" onClick={() => onChange({ accessMode: "full" })}>
-                  [code] Pour le codage<span>Reponses techniques, outils actifs, workflow Pi complet</span>
+                <button className={settings.accessMode === "full" ? "selected" : ""} onClick={() => onChange({ accessMode: "full" })}>
+                  <Icon name="terminal" /> Pour le codage<span>Reponses techniques, outils actifs, workflow Pi complet</span>
                 </button>
-                <button onClick={() => onChange({ accessMode: "limited" })}>
-                  [chat] Pour le travail quotidien<span>Moins d'outils actifs par defaut, meme modele</span>
+                <button className={settings.accessMode === "limited" ? "selected" : ""} onClick={() => onChange({ accessMode: "limited" })}>
+                  <Icon name="bot" /> Pour le travail quotidien<span>Moins d'outils actifs par defaut, meme modele</span>
                 </button>
               </div>
             </section>
@@ -149,21 +141,51 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <section className="settings-section">
               <h2>Dependances de l'espace de travail</h2>
               <div className="settings-card">
-                <span>Mises a jour PiAgent</span><button disabled={updateBusy} onClick={() => void checkAndInstallUpdate(setUpdateStatus)}>{updateBusy ? "Verification..." : "Verifier"}</button>
+                <span>Mises a jour PiAgent</span><button disabled={updateBusy} onClick={() => void checkAndInstallUpdate(setUpdateStatus)}><Icon name="play" /> {updateBusy ? "Verification..." : "Verifier"}</button>
                 <span>Etat des mises a jour</span><span>{updateStatus.message || "Aucune verification lancee"}</span>
-                <span>Backend PiAgent</span><button onClick={() => void diagnose()}>Diagnostiquer</button>
-                <span>Sessions Pi</span><button onClick={() => void runOpen("sessions")}>Ouvrir le dossier</button>
-                <span>Configuration</span><button onClick={() => void runOpen("settings")}>Ouvrir settings.json</button>
+                <span>Backend PiAgent</span><button onClick={() => void diagnose()}><Icon name="search" /> Diagnostiquer</button>
+                <span>Sessions Pi</span><button onClick={() => void runOpen("sessions")}><Icon name="folder" /> Ouvrir le dossier</button>
+                <span>Configuration</span><button onClick={() => void runOpen("settings")}><Icon name="file" /> Ouvrir settings.json</button>
               </div>
             </section>
           </>
         ) : null}
 
-        {active !== "General" && active !== "Apparence" && active !== "Configuration" ? (
+        {active === "Raccourcis" ? (
           <section className="settings-section">
+            <h2>Raccourcis actifs</h2>
             <div className="settings-card compact">
-              <span>Etat</span><span>Ce panneau est pret. Les options avancees seront ajoutees ici sans casser le workflow principal.</span>
-              <span>Action</span><button onClick={() => setActionStatus(`${active}: aucune action requise maintenant.`)}>Verifier</button>
+              <span>Envoyer</span><span>Enter</span>
+              <span>Nouvelle ligne</span><span>Shift + Enter</span>
+              <span>Commandes</span><span>/help, /attach, /compact, /permissions, /sessions, /settings</span>
+              <span>Piece jointe</span><button onClick={() => setActionStatus("Utilise le bouton trombone dans le composeur, ou tape /attach.")}><Icon name="paperclip" /> Montrer comment joindre</button>
+            </div>
+          </section>
+        ) : null}
+
+        {active === "Extensions" ? (
+          <section className="settings-section">
+            <h2>Extensions et contexte</h2>
+            <div className="settings-card compact">
+              <span>Advisor</span><span>Active depuis le composeur pour demander une passe de revision.</span>
+              <span>Contexte</span><span>Active depuis le composeur pour inclure les chemins et sessions locales.</span>
+              <span>Extensions Pi</span><button onClick={() => void runOpen("config")}><Icon name="folder" /> Ouvrir le dossier config</button>
+              <span>Diagnostics</span><button onClick={() => void diagnose()}><Icon name="search" /> Verifier l'environnement</button>
+            </div>
+          </section>
+        ) : null}
+
+        {active === "Git" ? (
+          <section className="settings-section">
+            <h2>Git local</h2>
+            <div className="settings-card compact">
+              <span>Branche</span><span>Pi utilise le workspace courant et les permissions choisies.</span>
+              <span>Mode</span><select value={settings.approvalPolicy} onChange={(e) => onChange({ approvalPolicy: e.target.value as AppSettings["approvalPolicy"] })}>
+                <option value="on-request">Demander avant action risquee</option>
+                <option value="on-failure">Demander en cas d'echec</option>
+                <option value="never">Ne jamais demander</option>
+              </select>
+              <span>Verifier</span><button onClick={() => void diagnose()}><Icon name="terminal" /> Lire diagnostics Git/agent</button>
             </div>
           </section>
         ) : null}
