@@ -133,8 +133,10 @@ export default function ContextPanel({ open, settings, sessions, messages, conne
         <section>
           <h2><Icon name="plug" /> Capabilities</h2>
           <div className="context-kv"><span>Web</span><strong>{settings.webEnabled ? "on" : "off"}</strong></div>
+          <div className="context-kv"><span>Advisor</span><strong>{settings.advisorEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Chrome</span><strong>{settings.chromeEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Computer</span><strong>{settings.computerUseEnabled ? "full" : "limited"}</strong></div>
+          <div className="context-kv"><span>Speed</span><strong>{settings.speedMode}</strong></div>
           <p>Pi extensions load from Pi when the agent process starts. Use / commands from the composer to invoke installed templates and skills.</p>
         </section>
       </> : null}

@@ -1,5 +1,5 @@
 import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { AppSettings } from "../App";
+import { AppSettings, ProviderOption } from "../App";
 import { Attachment, PromptOptions } from "../hooks/useAgent";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
@@ -11,7 +11,7 @@ interface ComposerProps {
   disabled?: boolean;
   isStreaming?: boolean;
   settings?: AppSettings;
-  models?: Array<{ id: string; name: string; models: string[] }>;
+  models?: ProviderOption[];
   extensionCommands?: Array<{ name: string; description?: string; source?: string }>;
   onSettingsChange: (patch: Partial<AppSettings>) => void;
   onAgentCommand: (cmd: Record<string, unknown>) => Promise<any>;
@@ -39,10 +39,14 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showCommands, setShowCommands] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
+  const permissionsRef = useRef<HTMLDivElement | null>(null);
+  const modelRef = useRef<HTMLDivElement | null>(null);
 
   const filteredCommands = useMemo(() => {
     const dynamicCommands = extensionCommands.slice(0, 40).map((item) => ({
@@ -59,6 +63,42 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     ref.current.style.height = "0px";
     ref.current.style.height = `${Math.min(ref.current.scrollHeight, 130)}px`;
   }, [text]);
+
+  useEffect(() => {
+    setTools({
+      web: Boolean(settings?.webEnabled),
+      advisor: Boolean(settings?.advisorEnabled),
+      context: settings?.contextEnabled !== false
+    });
+  }, [settings?.advisorEnabled, settings?.contextEnabled, settings?.webEnabled]);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (addOpen && addMenuRef.current && !addMenuRef.current.contains(target)) setAddOpen(false);
+      if (permissionsOpen && permissionsRef.current && !permissionsRef.current.contains(target)) setPermissionsOpen(false);
+      if (modelOpen && modelRef.current && !modelRef.current.contains(target)) setModelOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [addOpen, modelOpen, permissionsOpen]);
+
+  const toggleTool = (tool: "web" | "advisor" | "context") => {
+    const next = !tools[tool];
+    setTools((current) => ({ ...current, [tool]: next }));
+    if (tool === "web") onSettingsChange({ webEnabled: next });
+    if (tool === "advisor") onSettingsChange({ advisorEnabled: next });
+    if (tool === "context") onSettingsChange({ contextEnabled: next });
+  };
+
+  const promptOptions = (): PromptOptions => ({
+    ...tools,
+    advisor: tools.advisor || Boolean(settings?.autoReview),
+    speedMode: settings?.speedMode ?? "balanced",
+    accessMode: settings?.accessMode ?? "full",
+    approvalPolicy: settings?.approvalPolicy ?? "on-request",
+    autoReview: Boolean(settings?.autoReview)
+  });
 
   const pickFiles = async () => {
     const tauri = (window as any).__TAURI_INTERNALS__;
@@ -91,6 +131,32 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     fileRef.current?.click();
   };
 
+  const pickFolders = async () => {
+    const tauri = (window as any).__TAURI_INTERNALS__;
+    if (tauri) {
+      try {
+        const { open } = await import("@tauri-apps/plugin-dialog");
+        const selected = await open({ multiple: true, directory: true });
+        const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+        setAttachments((current) => [
+          ...current,
+          ...paths.map((folderPath) => {
+            const pathString = String(folderPath);
+            return {
+              id: crypto.randomUUID(),
+              name: pathString.split(/[\\/]/).pop() ?? pathString,
+              path: pathString,
+              kind: "file" as const,
+              text: "Attached folder. Ask PiAgent to inspect files in this folder by path."
+            };
+          })
+        ]);
+        return;
+      } catch {}
+    }
+    fileRef.current?.click();
+  };
+
   const runCommand = (command: string) => {
     setShowCommands(false);
     if (command === "/attach") {
@@ -99,7 +165,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       return;
     }
     if (!slashCommands.some((item) => item.command === command)) {
-      onSend(command, attachments, tools);
+      onSend(command, attachments, promptOptions());
       setAttachments([]);
       setText("");
       return;
@@ -116,7 +182,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       runCommand(exactCommand.command);
       return;
     }
-    onSend(trimmed, attachments, tools);
+    onSend(trimmed, attachments, promptOptions());
     setText("");
     setAttachments([]);
     setShowCommands(false);
@@ -165,11 +231,28 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
         rows={1}
       />
       <div className="composer-actions">
-        <button className="round-button" onClick={pickFiles} aria-label="attach file" title="Attach file">
-          <Icon name="paperclip" />
-        </button>
+        <div className="pill-menu-wrap add-menu-wrap" ref={addMenuRef}>
+          <button className="round-button" onClick={() => setAddOpen((current) => !current)} aria-label="add tools and files" title="Add tools and files">
+            <Icon name="plus" />
+          </button>
+          {addOpen ? (
+            <div className="pill-menu add-menu">
+              <button onClick={() => { void pickFiles(); setAddOpen(false); }}><Icon name="paperclip" size={13} /> Add files</button>
+              <button onClick={() => { void pickFolders(); setAddOpen(false); }}><Icon name="folder" size={13} /> Add folders</button>
+              <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web research</button>
+              <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Advisor review</button>
+              <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "folder"} size={13} /> Workspace context</button>
+              {extensionCommands.length ? <strong className="menu-heading">Extensions</strong> : null}
+              {extensionCommands.slice(0, 8).map((command) => (
+                <button key={command.name} onClick={() => { runCommand(`/${command.name}`); setAddOpen(false); }}>
+                  <Icon name="plug" size={13} /> /{command.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="tool-pills">
-          <div className="pill-menu-wrap">
+          <div className="pill-menu-wrap" ref={permissionsRef}>
             <button className="access-pill enabled" onClick={() => setPermissionsOpen((current) => !current)}>
               <Icon name="shield" size={13} />
               {settings?.accessMode === "full" ? "Full access" : settings?.accessMode === "read-only" ? "Read only" : "Limited"}
@@ -198,7 +281,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
             <button
               key={tool}
               className={tools[tool] ? "enabled" : ""}
-              onClick={() => setTools((current) => ({ ...current, [tool]: !current[tool] }))}
+              onClick={() => toggleTool(tool)}
               title={`Toggle ${tool}`}
             >
               <Icon name={tool === "web" ? "search" : tool === "advisor" ? "spark" : "folder"} size={13} />
@@ -207,7 +290,10 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
           ))}
         </div>
         <div className="composer-meta">
-          <div className="pill-menu-wrap">
+          <button className={`speed-pill ${settings?.speedMode === "fast" ? "enabled" : ""}`} onClick={() => onSettingsChange({ speedMode: settings?.speedMode === "fast" ? "balanced" : "fast", thinkingLevel: settings?.speedMode === "fast" ? "medium" : "minimal" })}>
+            {settings?.speedMode === "fast" ? "fast" : "balanced"}
+          </button>
+          <div className="pill-menu-wrap" ref={modelRef}>
             <button className="model-pill" onClick={() => setModelOpen((current) => !current)}>
               {settings?.modelLabel ?? "gpt-5.5"} <Icon name="chevronDown" size={12} />
             </button>
@@ -217,20 +303,21 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
                   <div key={provider.id} className="model-group">
                     <strong>{provider.name}</strong>
                     {provider.models.map((model) => (
-                      <button key={`${provider.id}/${model}`} onClick={() => {
-                        onSettingsChange({ provider: provider.id as AppSettings["provider"], modelLabel: model });
-                        void onAgentCommand({ type: "set_model", provider: provider.id, modelId: model });
+                      <button key={`${provider.id}/${model.id}`} onClick={() => {
+                        onSettingsChange({ provider: provider.id as AppSettings["provider"], modelLabel: model.id });
+                        void onAgentCommand({ type: "set_model", provider: provider.id, modelId: model.id });
                         setModelOpen(false);
                       }}>
-                        <Icon name={settings?.provider === provider.id && settings?.modelLabel === model ? "check" : "circle"} size={13} />
-                        {model}
+                        <Icon name={settings?.provider === provider.id && settings?.modelLabel === model.id ? "check" : "circle"} size={13} />
+                        <span>{model.name ?? model.id}</span>
+                        {model.reasoning ? <em>thinking</em> : null}
                       </button>
                     ))}
                   </div>
                 ))}
                 <div className="model-group">
                   <strong>Thinking</strong>
-                  {(["low", "medium", "high"] as const).map((level) => (
+                  {(["off", "minimal", "low", "medium", "high", "xhigh"] as const).map((level) => (
                     <button key={level} onClick={() => {
                       onSettingsChange({ thinkingLevel: level });
                       void onAgentCommand({ type: "set_thinking_level", level });

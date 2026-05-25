@@ -19,32 +19,109 @@ async function fetchSessions(): Promise<Session[]> {
   return data.sessions ?? [];
 }
 
+function normalizeProviders(rawProviders: any[]): ProviderOption[] {
+  return rawProviders.map((provider) => ({
+    id: String(provider.id),
+    name: String(provider.name ?? provider.id),
+    auth: provider.auth,
+    models: (provider.models ?? []).map((model: any) => typeof model === "string"
+      ? { id: model, name: model }
+      : {
+        id: String(model.id),
+        name: model.name,
+        reasoning: Boolean(model.reasoning),
+        contextWindow: model.contextWindow
+      })
+  }));
+}
+
+function groupRpcModels(models: any[]): ProviderOption[] {
+  const names: Record<string, string> = {
+    "openai-codex": "OpenAI Codex",
+    openai: "OpenAI API",
+    anthropic: "Claude",
+    openrouter: "OpenRouter",
+    google: "Google",
+    github: "GitHub Copilot"
+  };
+  const grouped = new Map<string, ProviderOption>();
+  for (const model of models) {
+    const provider = String(model.provider ?? "provider");
+    const group = grouped.get(provider) ?? { id: provider, name: names[provider] ?? provider, models: [] };
+    group.models.push({
+      id: String(model.id),
+      name: model.name,
+      reasoning: Boolean(model.reasoning),
+      contextWindow: model.contextWindow
+    });
+    grouped.set(provider, group);
+  }
+  return [...grouped.values()].map((provider) => ({
+    ...provider,
+    models: provider.models.sort((a, b) => a.id.localeCompare(b.id))
+  }));
+}
+
 export interface AppSettings {
   onboardingComplete: boolean;
   displayName: string;
   accessMode: "read-only" | "limited" | "full";
   approvalPolicy: "on-request" | "on-failure" | "never";
   workspacePath: string;
-  provider: "openai-codex" | "openai" | "anthropic" | "openrouter";
+  provider: string;
   modelLabel: string;
-  thinkingLevel: "low" | "medium" | "high";
+  thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  speedMode: "fast" | "balanced" | "deep";
   autoReview: boolean;
+  advisorEnabled: boolean;
   webEnabled: boolean;
+  contextEnabled: boolean;
   chromeEnabled: boolean;
   computerUseEnabled: boolean;
   githubEnabled: boolean;
-  theme: "dark" | "system";
-  themePreset: "codex" | "graphite" | "midnight" | "ember";
+  theme: "dark" | "light" | "system";
+  themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
   accentColor: string;
   density: "comfortable" | "compact";
 }
 
-const themeSurfaces: Record<AppSettings["themePreset"], { app: string; sidebar: string; main: string; composer: string; surface: string }> = {
-  codex: { app: "#0b0b0b", sidebar: "#171813", main: "#0b0b0b", composer: "#1f1f1f", surface: "#1d1d1d" },
-  graphite: { app: "#101112", sidebar: "#181a1d", main: "#101112", composer: "#202226", surface: "#1c1f23" },
-  midnight: { app: "#070a12", sidebar: "#101624", main: "#070a12", composer: "#171d2b", surface: "#131a29" },
-  ember: { app: "#100d0b", sidebar: "#1d1712", main: "#100d0b", composer: "#241d17", surface: "#211a15" }
+interface ThemeSurface {
+  app: string;
+  sidebar: string;
+  main: string;
+  composer: string;
+  surface: string;
+  textPrimary: string;
+  textSecondary: string;
+  textTertiary: string;
+  border: string;
+  tool: string;
+}
+
+const themeSurfaces: Record<AppSettings["themePreset"], ThemeSurface> = {
+  codex: { app: "#0b0b0b", sidebar: "#171813", main: "#0b0b0b", composer: "#1f1f1f", surface: "#1d1d1d", textPrimary: "#eeeeee", textSecondary: "#a4a4a4", textTertiary: "#666666", border: "rgba(255,255,255,0.08)", tool: "#151515" },
+  graphite: { app: "#101112", sidebar: "#181a1d", main: "#101112", composer: "#202226", surface: "#1c1f23", textPrimary: "#f1f2f3", textSecondary: "#aab0b6", textTertiary: "#6f7780", border: "rgba(255,255,255,0.1)", tool: "#17191c" },
+  midnight: { app: "#070a12", sidebar: "#101624", main: "#070a12", composer: "#171d2b", surface: "#131a29", textPrimary: "#eef3ff", textSecondary: "#a7b1c8", textTertiary: "#65718a", border: "rgba(181,202,255,0.12)", tool: "#0f1521" },
+  ember: { app: "#100d0b", sidebar: "#1d1712", main: "#100d0b", composer: "#241d17", surface: "#211a15", textPrimary: "#fff0e8", textSecondary: "#c8aaa0", textTertiary: "#7b6259", border: "rgba(255,211,189,0.12)", tool: "#19120f" },
+  absolute: { app: "#000000", sidebar: "#10100d", main: "#000000", composer: "#222222", surface: "#1b1b1b", textPrimary: "#ffffff", textSecondary: "#b8b8b8", textTertiary: "#707070", border: "rgba(255,255,255,0.12)", tool: "#111111" },
+  paper: { app: "#f7f7f3", sidebar: "#e7e6df", main: "#fafaf7", composer: "#ffffff", surface: "#efeee8", textPrimary: "#1d1d1b", textSecondary: "#5b5b55", textTertiary: "#8a8981", border: "rgba(0,0,0,0.12)", tool: "#f1f1ec" },
+  dawn: { app: "#fbf4ee", sidebar: "#ede2d8", main: "#fff8f2", composer: "#fffdf9", surface: "#f3e8de", textPrimary: "#261f1a", textSecondary: "#66564d", textTertiary: "#9b887c", border: "rgba(75,47,27,0.14)", tool: "#f6eee7" },
+  contrast: { app: "#050505", sidebar: "#0f0f0f", main: "#050505", composer: "#151515", surface: "#1a1a1a", textPrimary: "#ffffff", textSecondary: "#d7d7d7", textTertiary: "#8e8e8e", border: "rgba(255,255,255,0.22)", tool: "#0c0c0c" }
 };
+
+export interface ModelOption {
+  id: string;
+  name?: string;
+  reasoning?: boolean;
+  contextWindow?: number;
+}
+
+export interface ProviderOption {
+  id: string;
+  name: string;
+  auth?: string;
+  models: ModelOption[];
+}
 
 export default function App() {
   const auth = useAuth();
@@ -56,7 +133,7 @@ export default function App() {
   const [viewIndex, setViewIndex] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextOpen, setContextOpen] = useState(true);
-  const [models, setModels] = useState<Array<{ id: string; name: string; models: string[] }>>([]);
+  const [models, setModels] = useState<ProviderOption[]>([]);
   const [extensionCommands, setExtensionCommands] = useState<Array<{ name: string; description?: string; source?: string }>>([]);
   const [backendError, setBackendError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
@@ -69,8 +146,11 @@ export default function App() {
     provider: "openai-codex",
     modelLabel: "gpt-5.5",
     thinkingLevel: "medium",
+    speedMode: "balanced",
     autoReview: true,
+    advisorEnabled: false,
     webEnabled: false,
+    contextEnabled: true,
     chromeEnabled: false,
     computerUseEnabled: true,
     githubEnabled: true,
@@ -106,7 +186,7 @@ export default function App() {
           }).then((r) => r.json()).then((next) => setSettings(next.settings ?? loaded)).catch(() => {});
         }
       }).catch((error) => setBackendError(String(error)));
-      fetch(apiUrl("/api/models")).then((r) => r.json()).then((data) => setModels(data.providers ?? [])).catch(() => {});
+      fetch(apiUrl("/api/models")).then((r) => r.json()).then((data) => setModels(normalizeProviders(data.providers ?? []))).catch(() => {});
       void checkAndInstallUpdate((status) => {
         if (status.state === "current" || status.state === "idle") return;
         setUpdateNotice(status.message);
@@ -136,7 +216,9 @@ export default function App() {
     void agent.sendCommand({ type: "get_commands" }).then((result) => {
       if (Array.isArray(result?.data?.commands)) setExtensionCommands(result.data.commands);
     });
-    void agent.sendCommand({ type: "get_available_models" });
+    void agent.sendCommand({ type: "get_available_models" }).then((result) => {
+      if (Array.isArray(result?.data?.models) && result.data.models.length) setModels(groupRpcModels(result.data.models));
+    });
   }, [agent.connectionState, agent.sendCommand]);
 
   if (backendError) {
@@ -287,15 +369,25 @@ export default function App() {
     });
   };
 
+  const resolvedThemePreset = settings?.theme === "light" ? "paper" : settings?.themePreset ?? "codex";
+  const surface = themeSurfaces[resolvedThemePreset];
+
   return (
     <div
       className={`app-shell density-${settings?.density ?? "comfortable"}`}
       style={{
-        "--bg-app": themeSurfaces[settings?.themePreset ?? "codex"].app,
-        "--bg-sidebar": themeSurfaces[settings?.themePreset ?? "codex"].sidebar,
-        "--bg-main": themeSurfaces[settings?.themePreset ?? "codex"].main,
-        "--bg-composer": themeSurfaces[settings?.themePreset ?? "codex"].composer,
-        "--surface": themeSurfaces[settings?.themePreset ?? "codex"].surface,
+        "--bg-app": surface.app,
+        "--bg-sidebar": surface.sidebar,
+        "--bg-main": surface.main,
+        "--bg-composer": surface.composer,
+        "--bg-tool": surface.tool,
+        "--surface": surface.surface,
+        "--surface-hover": surface.composer,
+        "--text-primary": surface.textPrimary,
+        "--text-secondary": surface.textSecondary,
+        "--text-tertiary": surface.textTertiary,
+        "--border": surface.border,
+        "--border-hover": surface.border,
         "--accent": settings?.accentColor ?? "#58a6ff",
         "--accent-blue": settings?.accentColor ?? "#58a6ff"
       } as CSSProperties}
@@ -304,6 +396,7 @@ export default function App() {
         sessions={sessions}
         activeId={activeId}
         accountId={auth.accountId}
+        displayName={settings.displayName}
         activeView={view}
         collapsed={sidebarCollapsed}
         onNew={newSession}
@@ -344,6 +437,13 @@ export default function App() {
             onBackToChat={() => navigate("chat")}
             onSelectSession={selectSession}
             onNew={newSession}
+            settings={settings}
+            extensionCommands={extensionCommands}
+            onSettingsChange={updateSettings}
+            onRunCommand={(command) => {
+              navigate("chat");
+              agent.sendPrompt(`/${command}`);
+            }}
           />
         ) : (
           <div className="chat-workspace">

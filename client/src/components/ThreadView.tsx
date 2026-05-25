@@ -17,12 +17,22 @@ interface ThreadViewProps {
 
 export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, sessionName, contextUsage, onToggleContext, onAbort }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const feedRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
   const toolCount = useMemo(() => messages.filter((message) => message.kind === "tool").length, [messages]);
   const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
 
   useEffect(() => {
+    if (!stickToBottomRef.current) return;
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, footerStatus]);
+
+  const onScroll = () => {
+    const feed = feedRef.current;
+    if (!feed) return;
+    const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 96;
+  };
 
   return (
     <section className="thread-shell">
@@ -36,7 +46,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
           <button onClick={onToggleContext}><Icon name="layout" /> Context</button>
         </div>
       </header>
-      <div className="thread-feed">
+      <div className="thread-feed" ref={feedRef} onScroll={onScroll}>
         {messages.length === 0 ? (
           <div className="empty-thread">
             <div className="empty-orbit"><Icon name="bot" size={28} /></div>

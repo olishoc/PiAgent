@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AppSettings } from "../App";
 import { Session } from "./Sidebar";
 import Icon from "./Icon";
 
@@ -9,10 +10,16 @@ interface UtilityViewProps {
   onBackToChat: () => void;
   onSelectSession: (session: Session) => void;
   onNew: () => void;
+  settings: AppSettings;
+  extensionCommands: Array<{ name: string; description?: string; source?: string }>;
+  onSettingsChange: (patch: Partial<AppSettings>) => void;
+  onRunCommand: (command: string) => void;
 }
 
-export default function UtilityView({ view, sessions, onOpenSettings, onBackToChat, onSelectSession, onNew }: UtilityViewProps) {
+export default function UtilityView({ view, sessions, onOpenSettings, onBackToChat, onSelectSession, onNew, settings, extensionCommands, onSettingsChange, onRunCommand }: UtilityViewProps) {
   const [query, setQuery] = useState("");
+  const [extensionTab, setExtensionTab] = useState<"plugins" | "skills">("plugins");
+  const [extensionFilter, setExtensionFilter] = useState<"all" | "built-in">("all");
   const filteredSessions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return sessions;
@@ -42,16 +49,75 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
   }
 
   if (view === "extensions") {
+    const featured = [
+      { id: "webEnabled", title: "Web research", description: "Search and cite current information when Pi has a web/search extension installed.", icon: "search" as const, enabled: settings.webEnabled, kind: "plugin" },
+      { id: "advisorEnabled", title: "Advisor", description: "Injects a concrete review pass into prompts so Pi checks risks before finalizing.", icon: "spark" as const, enabled: settings.advisorEnabled, kind: "skill" },
+      { id: "chromeEnabled", title: "Chrome", description: "Prepares browser-control workflows through installed Pi extensions.", icon: "layout" as const, enabled: settings.chromeEnabled, kind: "plugin" },
+      { id: "githubEnabled", title: "GitHub", description: "Shows project Git state and keeps GitHub workflow context visible.", icon: "link" as const, enabled: settings.githubEnabled, kind: "plugin" },
+      { id: "computerUseEnabled", title: "Computer use", description: "Allows full local-computer workflow instructions when access mode permits.", icon: "terminal" as const, enabled: settings.computerUseEnabled, kind: "plugin" },
+      { id: "contextEnabled", title: "Workspace context", description: "Includes local paths, attachments, and project context in prompts.", icon: "folder" as const, enabled: settings.contextEnabled, kind: "skill" }
+    ];
+    const extensionNeedle = query.trim().toLowerCase();
+    const visibleFeatured = featured.filter((item) => {
+      const matchesTab = extensionTab === "plugins" ? item.kind === "plugin" : item.kind === "skill";
+      const matchesQuery = !extensionNeedle || `${item.title} ${item.description}`.toLowerCase().includes(extensionNeedle);
+      const matchesFilter = extensionFilter === "all" || item.kind === "plugin" || item.kind === "skill";
+      return matchesTab && matchesQuery && matchesFilter;
+    });
+    const visibleCommands = extensionFilter === "built-in" ? [] : extensionCommands.filter((command) => {
+      if (!extensionNeedle) return true;
+      return `${command.name} ${command.description ?? ""} ${command.source ?? ""}`.toLowerCase().includes(extensionNeedle);
+    });
     return (
-      <section className="utility-view">
-        <header>
-          <h1>Modules d'extension</h1>
-          <button onClick={onOpenSettings}><Icon name="gear" /> Configuration</button>
+      <section className="utility-view extensions-view">
+        <header className="extensions-header">
+          <div>
+            <div className="tabs-inline">
+              <button className={extensionTab === "plugins" ? "active" : ""} onClick={() => setExtensionTab("plugins")}>Plugiciels</button>
+              <button className={extensionTab === "skills" ? "active" : ""} onClick={() => setExtensionTab("skills")}>Competences</button>
+            </div>
+            <h1>Adaptez PiAgent a vos besoins</h1>
+          </div>
+          <div className="header-actions">
+            <button onClick={onOpenSettings}><Icon name="gear" /> Gerer</button>
+            <button onClick={onNew}><Icon name="plus" /> Creer</button>
+          </div>
         </header>
+        <div className="extension-searchbar">
+          <Icon name="search" />
+          <input value={query} placeholder="Rechercher des modules d'extension" onChange={(event) => setQuery(event.target.value)} />
+          <button className={extensionFilter === "built-in" ? "active" : ""} onClick={() => setExtensionFilter("built-in")}>Built by PiAgent</button>
+          <button className={extensionFilter === "all" ? "active" : ""} onClick={() => setExtensionFilter("all")}>Tout</button>
+        </div>
+        <div className="extension-hero">
+          <div>
+            <strong>Advisor</strong>
+            <span>Review risks, missing tests, and UX issues before the final response.</span>
+          </div>
+          <button onClick={() => onSettingsChange({ advisorEnabled: !settings.advisorEnabled })}>
+            <Icon name={settings.advisorEnabled ? "check" : "plus"} /> {settings.advisorEnabled ? "Active" : "Try in chat"}
+          </button>
+        </div>
+        <h2>Featured</h2>
+        <div className="extension-grid">
+          {visibleFeatured.map((item) => (
+            <button key={item.id} onClick={() => onSettingsChange({ [item.id]: !item.enabled } as Partial<AppSettings>)}>
+              <span className="extension-icon"><Icon name={item.icon} /></span>
+              <span><strong>{item.title}</strong><em>{item.description}</em></span>
+              <Icon name={item.enabled ? "check" : "plus"} />
+            </button>
+          ))}
+          {!visibleFeatured.length ? <span className="empty-result">No matching module.</span> : null}
+        </div>
+        <h2>Installed Pi commands</h2>
         <div className="utility-grid">
-          <button onClick={onOpenSettings}><Icon name="shield" /><strong>Advisor</strong><span>Configurer les revisions et permissions.</span></button>
-          <button onClick={onBackToChat}><Icon name="layout" /><strong>Contexte</strong><span>Retourner au chat avec le panneau contexte actif.</span></button>
-          <button onClick={onNew}><Icon name="plus" /><strong>Installer une extension</strong><span>Ouvre un chat pret a demander l'installation Pi.</span></button>
+          {visibleCommands.length ? visibleCommands.map((command) => (
+            <button key={command.name} onClick={() => onRunCommand(command.name)}>
+              <Icon name="plug" /><strong>/{command.name}</strong><span>{command.description ?? command.source ?? "Pi command"}</span>
+            </button>
+          )) : (
+            <button onClick={onNew}><Icon name="plus" /><strong>Install an extension</strong><span>Open a new chat ready to install or configure Pi extensions.</span></button>
+          )}
         </div>
       </section>
     );

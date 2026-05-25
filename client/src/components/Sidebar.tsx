@@ -15,6 +15,7 @@ interface SidebarProps {
   sessions: Session[];
   activeId: string;
   accountId?: string;
+  displayName?: string;
   activeView: string;
   collapsed?: boolean;
   onSelect: (session: Session) => void;
@@ -44,6 +45,7 @@ export default function Sidebar({
   sessions,
   activeId,
   accountId,
+  displayName,
   activeView,
   collapsed,
   onSelect,
@@ -59,7 +61,8 @@ export default function Sidebar({
   onBack,
   onForward
 }: SidebarProps) {
-  const initials = accountId?.slice(0, 2).toUpperCase() ?? "PI";
+  const shownName = displayName?.trim() || "PiAgent user";
+  const initials = shownName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "PI";
   const pinned = sessions.filter((session) => session.pinned);
   const recent = sessions.filter((session) => !session.pinned);
   const renderSession = (session: Session) => {
@@ -127,8 +130,8 @@ export default function Sidebar({
       <footer className="sidebar-footer">
         <div className="avatar">{initials}</div>
         <div className="user-copy">
-          <span>{accountId ?? "local account"}</span>
-          <span>gpt-5.5 / openai-codex</span>
+          <span>{shownName}</span>
+          <span>{accountId ? "OpenAI connected" : "local account"}</span>
         </div>
         <button className={`settings ${activeView === "settings" ? "active" : ""}`} onClick={onSettings} aria-label="settings" title="Settings"><Icon name="gear" /></button>
       </footer>

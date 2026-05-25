@@ -4,8 +4,9 @@ import { APP_CONFIG_DIR } from "./tokenStore.js";
 
 export type AccessMode = "read-only" | "limited" | "full";
 export type ApprovalPolicy = "on-request" | "on-failure" | "never";
-export type ProviderId = "openai-codex" | "openai" | "anthropic" | "openrouter";
-export type ThinkingLevel = "low" | "medium" | "high";
+export type ProviderId = string;
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+export type SpeedMode = "fast" | "balanced" | "deep";
 
 export interface AppSettings {
   onboardingComplete: boolean;
@@ -16,12 +17,15 @@ export interface AppSettings {
   provider: ProviderId;
   modelLabel: string;
   thinkingLevel: ThinkingLevel;
+  speedMode: SpeedMode;
   autoReview: boolean;
+  advisorEnabled: boolean;
   webEnabled: boolean;
+  contextEnabled: boolean;
   chromeEnabled: boolean;
   computerUseEnabled: boolean;
   githubEnabled: boolean;
-  theme: "dark" | "system";
+  theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember";
   accentColor: string;
   density: "comfortable" | "compact";
@@ -38,8 +42,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   provider: "openai-codex",
   modelLabel: "gpt-5.5",
   thinkingLevel: "medium",
+  speedMode: "balanced",
   autoReview: true,
+  advisorEnabled: false,
   webEnabled: false,
+  contextEnabled: true,
   chromeEnabled: false,
   computerUseEnabled: true,
   githubEnabled: true,

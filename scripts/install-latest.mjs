@@ -22,6 +22,7 @@ if (!existsSync(installer)) {
 
 const actions = [
   "Close running PiAgent instances",
+  "Close orphaned PiAgent backend sidecars",
   `Run installer silently: ${installer}`,
 ];
 
@@ -31,5 +32,30 @@ if (dryRun) {
 }
 
 spawnSync("taskkill", ["/IM", "piagent.exe", "/F"], { stdio: "ignore" });
+spawnSync(
+  "powershell.exe",
+  [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "Get-CimInstance Win32_Process | Where-Object { ($_.Name -eq 'node.exe' -or $_.Name -eq 'node-x86_64-pc-windows-msvc.exe') -and $_.CommandLine -like '*PiAgent*server\\dist\\index.js*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }",
+  ],
+  { stdio: "ignore", windowsHide: true },
+);
+const portCheck = spawnSync(
+  "powershell.exe",
+  [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    "$deadline = (Get-Date).AddSeconds(5); do { $conn = Get-NetTCPConnection -State Listen -LocalPort 1456 -ErrorAction SilentlyContinue; if (-not $conn) { exit 0 }; Start-Sleep -Milliseconds 250 } while ((Get-Date) -lt $deadline); $conn | Select-Object LocalAddress,LocalPort,OwningProcess | ConvertTo-Json -Compress; exit 1",
+  ],
+  { encoding: "utf8", windowsHide: true },
+);
+if (portCheck.status !== 0) {
+  throw new Error(`PiAgent backend port 1456 is still occupied: ${portCheck.stdout.trim()}`);
+}
 execFileSync(installer, ["/S"], { stdio: "inherit" });
 console.log("PiAgent updated.");

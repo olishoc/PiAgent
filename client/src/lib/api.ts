@@ -21,7 +21,11 @@ export async function healthCheck() {
   try {
     const response = await fetch(apiUrl("/api/health"));
     if (!response.ok) return { ok: false, error: `HTTP ${response.status}` };
-    return { ok: true, data: await response.json() };
+    const data = await response.json();
+    if (data.app !== "PiAgent" || data.features?.subagents !== true) {
+      return { ok: false, error: "Local backend is outdated or incompatible" };
+    }
+    return { ok: true, data };
   } catch {
     return { ok: false, error: "Local backend is not reachable" };
   }

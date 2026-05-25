@@ -40,6 +40,10 @@ export interface PromptOptions {
   web: boolean;
   advisor: boolean;
   context: boolean;
+  speedMode?: "fast" | "balanced" | "deep";
+  accessMode?: "read-only" | "limited" | "full";
+  approvalPolicy?: "on-request" | "on-failure" | "never";
+  autoReview?: boolean;
 }
 
 export interface ContextUsage {
@@ -111,6 +115,7 @@ function updateThinkingSnapshot(messages: DisplayMessage[], text: string, active
     const item = next[i];
     if (item.kind === "user") break;
     if (item.kind === "thinking") {
+      if (item.phase?.startsWith("model") && active) return next;
       const previous = item.detail || item.text;
       const detail = previous && previous !== text ? `${previous}\n${text}` : text;
       next[i] = { ...item, text, detail, phase: active ? "thinking" : "thought", active };
@@ -118,6 +123,43 @@ function updateThinkingSnapshot(messages: DisplayMessage[], text: string, active
     }
   }
   next.push({ id: crypto.randomUUID(), kind: "thinking", text, detail: text, phase: active ? "thinking" : "thought", active, createdAt: Date.now() });
+  return next;
+}
+
+function latestThinkingLine(text: string) {
+  const cleaned = text.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "Thinking...";
+  const sentences = cleaned.match(/[^.!?]+[.!?]?/g) ?? [cleaned];
+  const latest = sentences[sentences.length - 1]?.trim() || cleaned;
+  return latest.length > 220 ? `${latest.slice(-217).trimStart()}` : latest;
+}
+
+function appendThinkingDelta(messages: DisplayMessage[], delta: string, active = true) {
+  const next = [...messages];
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    const item = next[i];
+    if (item.kind === "user") break;
+    if (item.kind === "thinking") {
+      const detail = item.phase?.startsWith("model") ? `${item.detail ?? item.text}${delta}` : delta;
+      next[i] = { ...item, detail, text: latestThinkingLine(detail), phase: active ? "model thinking" : "model thought", active };
+      return next;
+    }
+  }
+  next.push({ id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(delta), detail: delta, phase: "model thinking", active, createdAt: Date.now() });
+  return next;
+}
+
+function replaceThinkingDetail(messages: DisplayMessage[], detail: string, active = false) {
+  const next = [...messages];
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    const item = next[i];
+    if (item.kind === "user") break;
+    if (item.kind === "thinking") {
+      next[i] = { ...item, text: latestThinkingLine(detail), detail, phase: active ? "model thinking" : "model thought", active };
+      return next;
+    }
+  }
+  next.push({ id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(detail), detail, phase: active ? "model thinking" : "model thought", active, createdAt: Date.now() });
   return next;
 }
 
@@ -142,6 +184,22 @@ export function handlePiEvent(
 
   if (event.type === "message_update" && assistantEvent?.type === "text_start") {
     setMessages((items) => ensureAgentMessage(updateThinkingSnapshot(items, "Writing the answer."), assistantEvent?.partial?.responseId));
+    return;
+  }
+
+  if (event.type === "message_update" && assistantEvent?.type === "thinking_start") {
+    setMessages((items) => updateThinkingSnapshot(items, "Starting reasoning block..."));
+    return;
+  }
+
+  if (event.type === "message_update" && assistantEvent?.type === "thinking_delta" && typeof assistantEvent.delta === "string") {
+    setMessages((items) => appendThinkingDelta(items, assistantEvent.delta));
+    return;
+  }
+
+  if (event.type === "message_update" && assistantEvent?.type === "thinking_end") {
+    const fullThinking = typeof assistantEvent.thinking === "string" ? assistantEvent.thinking : undefined;
+    setMessages((items) => fullThinking ? replaceThinkingDetail(items, fullThinking, false) : updateThinkingSnapshot(items, "Finished reasoning block.", false));
     return;
   }
 
@@ -255,8 +313,20 @@ function normalizeMessages(rawMessages: any[]): DisplayMessage[] {
     }
     const role = message.role === "user" ? "user" : "agent";
     const content = message.text ?? message.content ?? "";
+    if (message.role === "assistant" && Array.isArray(content)) {
+      return content.flatMap((part: any): DisplayMessage[] => {
+        if (part.type === "thinking" && typeof part.thinking === "string") {
+          return [{ id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
+        }
+        if (part.type === "toolCall") {
+          return [{ id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" }];
+        }
+        const partText = part.text ?? "";
+        return partText ? [{ id: crypto.randomUUID(), kind: "agent", text: String(partText), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }] : [];
+      });
+    }
     const text = Array.isArray(content)
-      ? content.map((part) => part.text ?? part.thinking ?? JSON.stringify(part)).join("\n")
+      ? content.map((part) => part.text ?? "").filter(Boolean).join("\n")
       : content;
     return [{ id: message.id ?? crypto.randomUUID(), kind: role, text: String(text), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
   });
@@ -336,7 +406,7 @@ export function useAgent(enabled = true) {
       }).join("\n")
       : "";
     const optionContext = options
-      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled" : "disabled"}\n- advisor: ${options.advisor ? "enabled" : "disabled"}\n- context: ${options.context ? "enabled" : "disabled"}`
+      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor || options.autoReview ? "enabled; before final answer, run a concise advisor-style review for bugs, risks, and missed verification" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
       : "";
     wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext + optionContext, streamingBehavior: "steer" }));
   }, []);

@@ -8,6 +8,8 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
   { id: "General", label: "General", icon: "gear" },
   { id: "Apparence", label: "Apparence", icon: "spark" },
   { id: "Configuration", label: "Configuration", icon: "shield" },
+  { id: "Modeles", label: "Modeles", icon: "bot" },
+  { id: "Sous-agents", label: "Sous-agents", icon: "plug" },
   { id: "Raccourcis", label: "Raccourcis", icon: "terminal" },
   { id: "Extensions", label: "Extensions", icon: "plug" },
   { id: "Git", label: "Git", icon: "link" }
@@ -35,6 +37,8 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle", message: "" });
   const [actionStatus, setActionStatus] = useState("");
   const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [gitName, setGitName] = useState("");
+  const [gitEmail, setGitEmail] = useState("");
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
 
   const diagnose = async () => {
@@ -117,6 +121,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Theme</span>
               <select value={settings.theme} onChange={(e) => onChange({ theme: e.target.value as AppSettings["theme"] })}>
                 <option value="dark">Fonce</option>
+                <option value="light">Clair</option>
                 <option value="system">Systeme</option>
               </select>
               <span>Palette</span>
@@ -125,6 +130,10 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="graphite">Graphite</option>
                 <option value="midnight">Midnight</option>
                 <option value="ember">Ember</option>
+                <option value="absolute">Absolutely</option>
+                <option value="paper">Paper light</option>
+                <option value="dawn">Dawn light</option>
+                <option value="contrast">High contrast</option>
               </select>
               <span>Accent</span>
               <input type="color" value={settings.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />
@@ -132,6 +141,71 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <select value={settings.density} onChange={(e) => onChange({ density: e.target.value as AppSettings["density"] })}>
                 <option value="comfortable">Comfortable</option>
                 <option value="compact">Compact</option>
+              </select>
+            </div>
+          </section>
+        ) : null}
+
+        {active === "Modeles" ? (
+          <section className="settings-section">
+            <h2>Modele, vitesse et thinking</h2>
+            <div className="settings-card compact">
+              <span>Fournisseur</span>
+              <select value={settings.provider} onChange={(e) => onChange({ provider: e.target.value as AppSettings["provider"] })}>
+                <option value="openai-codex">OpenAI Codex OAuth</option>
+                <option value="openai">OpenAI API</option>
+                <option value="anthropic">Claude</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+              <span>Modele</span>
+              <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
+              <span>Vitesse ChatGPT</span>
+              <select value={settings.speedMode} onChange={(e) => onChange({ speedMode: e.target.value as AppSettings["speedMode"] })}>
+                <option value="fast">Fast</option>
+                <option value="balanced">Balanced</option>
+                <option value="deep">Deep</option>
+              </select>
+              <span>Thinking</span>
+              <select value={settings.thinkingLevel} onChange={(e) => onChange({ thinkingLevel: e.target.value as AppSettings["thinkingLevel"] })}>
+                <option value="off">Off</option>
+                <option value="minimal">Minimal</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+              </select>
+            </div>
+          </section>
+        ) : null}
+
+        {active === "Sous-agents" ? (
+          <section className="settings-section">
+            <h2>Sous-agents et outils actifs</h2>
+            <div className="settings-card compact">
+              <span>Advisor</span>
+              <select value={settings.advisorEnabled ? "on" : "off"} onChange={(e) => onChange({ advisorEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Web</span>
+              <select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Chrome</span>
+              <select value={settings.chromeEnabled ? "on" : "off"} onChange={(e) => onChange({ chromeEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Contexte</span>
+              <select value={settings.contextEnabled ? "on" : "off"} onChange={(e) => onChange({ contextEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Acces ordinateur</span>
+              <select value={settings.computerUseEnabled ? "on" : "off"} onChange={(e) => onChange({ computerUseEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
               </select>
             </div>
           </section>
@@ -148,12 +222,6 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="openai">OpenAI API</option>
                 <option value="anthropic">Claude</option>
                 <option value="openrouter">OpenRouter</option>
-              </select>
-              <span>Thinking</span>
-              <select value={settings.thinkingLevel} onChange={(e) => onChange({ thinkingLevel: e.target.value as AppSettings["thinkingLevel"] })}>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
               </select>
               <span>Espace de travail</span>
               <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
@@ -219,6 +287,18 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
           <section className="settings-section">
             <h2>Git local</h2>
             <div className="settings-card compact">
+              <span>Nom Git</span><input value={gitName} placeholder="Your name" onChange={(e) => setGitName(e.target.value)} />
+              <span>Email Git</span><input value={gitEmail} placeholder="you@example.com" onChange={(e) => setGitEmail(e.target.value)} />
+              <span>Configurer Git</span><button onClick={async () => {
+                setActionStatus("Configuring Git...");
+                const response = await fetch(apiUrl("/api/git/config"), {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ name: gitName, email: gitEmail, defaultBranch: "main" })
+                });
+                const data = await response.json();
+                setActionStatus(data.ok ? "Git user configured." : data.error ?? "Git configuration failed.");
+              }}><Icon name="check" /> Save Git identity</button>
               <span>Branche</span><span>Pi utilise le workspace courant et les permissions choisies.</span>
               <span>Mode</span><select value={settings.approvalPolicy} onChange={(e) => onChange({ approvalPolicy: e.target.value as AppSettings["approvalPolicy"] })}>
                 <option value="on-request">Demander avant action risquee</option>

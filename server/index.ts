@@ -18,6 +18,13 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server });
 const clientDist = path.resolve(__dirname, "../../client/dist");
 const clientIndex = path.join(clientDist, "index.html");
+const BACKEND_VERSION = process.env.PIAGENT_VERSION ?? "dev";
+const BACKEND_FEATURES = {
+  subagents: true,
+  trueThinking: true,
+  persistentTools: true,
+  installSidecarCleanup: true
+};
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
   /^http:\/\/localhost:(1456|5173)$/,
@@ -44,15 +51,32 @@ app.patch("/api/settings", (req, res) => {
   res.json({ settings: writeSettings(req.body ?? {}) });
 });
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, settings: readSettings(), defaultSettings: DEFAULT_SETTINGS });
+  res.json({
+    ok: true,
+    app: "PiAgent",
+    version: BACKEND_VERSION,
+    features: BACKEND_FEATURES,
+    settings: readSettings(),
+    defaultSettings: DEFAULT_SETTINGS
+  });
 });
 app.get("/api/models", (_req, res) => {
   res.json({
     providers: [
-      { id: "openai-codex", name: "OpenAI Codex", auth: "OAuth", models: ["gpt-5.5", "gpt-5", "gpt-5-mini"] },
-      { id: "openai", name: "OpenAI API", auth: "Pi auth/API key", models: ["gpt-4.1", "gpt-4o", "gpt-4o-mini"] },
-      { id: "anthropic", name: "Claude", auth: "Pi auth/API key", models: ["claude-sonnet-4", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"] },
-      { id: "openrouter", name: "OpenRouter", auth: "Pi auth/API key", models: ["openrouter/auto", "anthropic/claude-sonnet-4", "openai/gpt-4.1"] }
+      { id: "openai-codex", name: "OpenAI Codex", auth: "OAuth", models: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2"] },
+      { id: "openai", name: "OpenAI API", auth: "Pi auth/API key", models: ["gpt-5.1", "gpt-5", "gpt-5-mini", "gpt-4.1", "gpt-4.1-mini", "gpt-4o", "gpt-4o-mini"] },
+      { id: "anthropic", name: "Claude", auth: "Pi auth/API key", models: ["claude-sonnet-4-5", "claude-sonnet-4", "claude-opus-4", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"] },
+      { id: "openrouter", name: "OpenRouter", auth: "Pi auth/API key", models: ["openrouter/auto", "openai/gpt-5", "openai/gpt-4.1", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-pro"] }
+    ]
+  });
+});
+app.get("/api/subagents", (_req, res) => {
+  res.json({
+    subagents: [
+      { id: "advisor", name: "Advisor", enabledBy: "advisorEnabled", description: "Runs an explicit review pass before final answers when enabled." },
+      { id: "web", name: "Web research", enabledBy: "webEnabled", description: "Asks Pi to use installed web/search extensions when available." },
+      { id: "chrome", name: "Chrome", enabledBy: "chromeEnabled", description: "Coordinates browser work through installed Pi extensions or local instructions." },
+      { id: "github", name: "GitHub", enabledBy: "githubEnabled", description: "Surfaces Git state and project publishing context." }
     ]
   });
 });
@@ -90,6 +114,26 @@ app.get("/api/git/status", (req, res) => {
       });
     });
   });
+});
+app.post("/api/git/config", async (req, res) => {
+  const cwd = path.resolve(String(req.body?.cwd ?? readSettings().workspacePath ?? process.cwd()));
+  const scope = req.body?.scope === "local" ? "--local" : "--global";
+  const entries: Array<[string, string]> = [
+    ["user.name", String(req.body?.name ?? "").trim()],
+    ["user.email", String(req.body?.email ?? "").trim()],
+    ["init.defaultBranch", String(req.body?.defaultBranch ?? "").trim()]
+  ].filter((entry): entry is [string, string] => Boolean(entry[1]));
+  try {
+    await Promise.all(entries.map(([key, value]) => new Promise<void>((resolvePromise, rejectPromise) => {
+      execFile("git", ["config", scope, key, value], { cwd, windowsHide: true }, (error) => {
+        if (error) rejectPromise(error);
+        else resolvePromise();
+      });
+    })));
+    res.json({ ok: true, scope, entries: entries.map(([key]) => key) });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+  }
 });
 app.get("/api/workspace/files", (req, res, next) => {
   try {
