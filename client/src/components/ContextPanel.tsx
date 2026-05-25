@@ -1,5 +1,5 @@
 import { AppSettings } from "../App";
-import { DisplayMessage } from "../hooks/useAgent";
+import { ContextUsage, DisplayMessage } from "../hooks/useAgent";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
 import { Session } from "./Sidebar";
@@ -10,11 +10,20 @@ interface ContextPanelProps {
   sessions: Session[];
   messages: DisplayMessage[];
   connectionState: string;
+  contextUsage?: ContextUsage | null;
   onOpenSettings: () => void;
   onOpenSessions: () => void;
+  onCompact: () => void;
 }
 
-export default function ContextPanel({ open, settings, sessions, messages, connectionState, onOpenSettings, onOpenSessions }: ContextPanelProps) {
+function formatTokens(value?: number) {
+  if (!value) return "0";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
+}
+
+export default function ContextPanel({ open, settings, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
   if (!open) return null;
   const lastTools = messages.filter((message) => message.kind === "tool").slice(-5).reverse();
   const openConfig = async () => {
@@ -32,6 +41,16 @@ export default function ContextPanel({ open, settings, sessions, messages, conne
         <div className="context-kv"><span>Status</span><strong>{connectionState}</strong></div>
         <div className="context-kv"><span>Model</span><strong>{settings.modelLabel}</strong></div>
         <div className="context-kv"><span>Access</span><strong>{settings.accessMode}</strong></div>
+        <div className="context-kv"><span>Thinking</span><strong>{contextUsage?.thinkingLevel ?? "medium"}</strong></div>
+      </section>
+      <section>
+        <h2><Icon name="circle" /> Context</h2>
+        <div className="context-meter" title={`${contextUsage?.used ?? 0} / ${contextUsage?.limit ?? 0} tokens`}>
+          <span style={{ width: `${contextUsage?.percent ?? 0}%` }} />
+        </div>
+        <div className="context-kv"><span>Used</span><strong>{contextUsage?.percent ?? 0}%</strong></div>
+        <div className="context-kv"><span>Tokens</span><strong>{formatTokens(contextUsage?.used)} / {formatTokens(contextUsage?.limit)}</strong></div>
+        <button onClick={onCompact}><Icon name="spark" /> Compress context</button>
       </section>
       <section>
         <h2><Icon name="folder" /> Workspace</h2>

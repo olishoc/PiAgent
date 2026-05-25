@@ -62,7 +62,7 @@ export default function Sidebar({
         <button aria-label="forward" onClick={onForward} title="Forward"><Icon name="arrowRight" /></button>
       </div>
       <div className="sidebar-actions">
-        <button className={activeView === "chat" ? "active" : ""} onClick={() => { onChat(); onNew(); }}><Icon name="plus" /> <span>New thread</span></button>
+        <button className={activeView === "chat" ? "active" : ""} onClick={onNew}><Icon name="plus" /> <span>New thread</span></button>
         <button className={activeView === "search" ? "active" : ""} onClick={onSearch}><Icon name="search" /> <span>Search</span></button>
         <button className={activeView === "extensions" ? "active" : ""} onClick={onExtensions}><Icon name="plug" /> <span>Extensions</span></button>
         <button className={activeView === "automations" ? "active" : ""} onClick={onAutomations}><Icon name="clock" /> <span>Automations</span></button>

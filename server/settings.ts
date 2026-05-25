@@ -13,6 +13,9 @@ export interface AppSettings {
   workspacePath: string;
   modelLabel: string;
   theme: "dark" | "system";
+  themePreset: "codex" | "graphite" | "midnight" | "ember";
+  accentColor: string;
+  density: "comfortable" | "compact";
 }
 
 const SETTINGS_PATH = path.join(APP_CONFIG_DIR, "settings.json");
@@ -24,7 +27,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   approvalPolicy: "on-request",
   workspacePath: process.cwd(),
   modelLabel: "gpt-5.5",
-  theme: "dark"
+  theme: "dark",
+  themePreset: "codex",
+  accentColor: "#58a6ff",
+  density: "comfortable"
 };
 
 export function readSettings(): AppSettings {

@@ -134,10 +134,12 @@
 .thinking-message {
   display: flex;
   gap: 10px;
-  padding: 10px 12px;
-  border: 0.5px solid rgba(210,153,34,0.18);
-  border-radius: 8px;
-  background: rgba(210,153,34,0.055);
+  max-width: 760px;
+  padding: 7px 10px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.025);
+  opacity: 0.86;
 }
 
 .thinking-pulse {
@@ -149,6 +151,18 @@
   border-radius: 50%;
   color: var(--accent-amber);
   animation: breathe 1.7s ease-in-out infinite;
+}
+
+.thinking-message .message-label {
+  margin-bottom: 3px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.thinking-message .message-text {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .message-label,
@@ -368,6 +382,7 @@
 }
 
 .mode-grid button.selected { background: #292929; }
+.mode-grid button.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hover)); }
 
 .mode-grid span,
 .settings-card p {
@@ -400,6 +415,11 @@
   border-radius: 8px;
   background: #2b2b2b;
   color: var(--text-primary);
+}
+
+.settings-card input[type="color"] {
+  min-height: 34px;
+  padding: 4px;
 }
 
 .settings-card button {

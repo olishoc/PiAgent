@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import Composer from "./components/Composer";
 import LoginScreen from "./components/LoginScreen";
 import Sidebar, { Session } from "./components/Sidebar";
@@ -26,7 +27,17 @@ export interface AppSettings {
   workspacePath: string;
   modelLabel: string;
   theme: "dark" | "system";
+  themePreset: "codex" | "graphite" | "midnight" | "ember";
+  accentColor: string;
+  density: "comfortable" | "compact";
 }
+
+const themeSurfaces: Record<AppSettings["themePreset"], { app: string; sidebar: string; main: string; composer: string; surface: string }> = {
+  codex: { app: "#0b0b0b", sidebar: "#171813", main: "#0b0b0b", composer: "#1f1f1f", surface: "#1d1d1d" },
+  graphite: { app: "#101112", sidebar: "#181a1d", main: "#101112", composer: "#202226", surface: "#1c1f23" },
+  midnight: { app: "#070a12", sidebar: "#101624", main: "#070a12", composer: "#171d2b", surface: "#131a29" },
+  ember: { app: "#100d0b", sidebar: "#1d1712", main: "#100d0b", composer: "#241d17", surface: "#211a15" }
+};
 
 export default function App() {
   const auth = useAuth();
@@ -47,7 +58,10 @@ export default function App() {
     approvalPolicy: "on-request",
     workspacePath: "",
     modelLabel: "gpt-5.5",
-    theme: "dark"
+    theme: "dark",
+    themePreset: "codex",
+    accentColor: "#58a6ff",
+    density: "comfortable"
   });
 
   useEffect(() => {
@@ -94,6 +108,11 @@ export default function App() {
     }).catch(() => {});
   }, [auth.loggedIn, activeId]);
 
+  useEffect(() => {
+    if (!auth.loggedIn || agent.isStreaming) return;
+    fetchSessions().then(setSessions).catch(() => {});
+  }, [auth.loggedIn, agent.isStreaming]);
+
   if (backendError) {
     return (
       <div className="app-shell">
@@ -114,10 +133,24 @@ export default function App() {
     if (items[0]) setActiveId(items[0].id);
   };
 
-  const newSession = () => {
+  useEffect(() => {
+    if (agent.connectionState !== "ready") return;
+    void agent.sendCommand({ type: "get_state" });
+  }, [agent.connectionState, agent.sendCommand]);
+
+  const newSession = async () => {
     navigate("chat");
-    agent.sendCommand({ type: "new_session" });
-    setTimeout(() => void refreshSessionList(), 300);
+    agent.replaceMessages([]);
+    const result = await agent.sendCommand({ type: "new_session" });
+    const state = await agent.sendCommand({ type: "get_state" });
+    const sessionId = state?.data?.sessionId;
+    if (typeof sessionId === "string") setActiveId(sessionId);
+    const items = await fetchSessions();
+    setSessions(items);
+    if (!sessionId && items[0]) setActiveId(items[0].id);
+    if (!result?.success) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: result?.error ?? "Unable to create a new thread." }]);
+    }
   };
 
   const navigate = (next: typeof view) => {
@@ -167,7 +200,7 @@ export default function App() {
       return;
     }
     if (command === "/compact") {
-      agent.sendPrompt("Compact the active context. Summarize important decisions, files, current state, and next steps.");
+      compactContext();
       return;
     }
     if (command === "/help") {
@@ -182,8 +215,36 @@ export default function App() {
     }
   };
 
+  const compactContext = () => {
+    agent.replaceMessages([
+      ...agent.messages,
+      { id: crypto.randomUUID(), kind: "status", text: "Requested context compression." }
+    ]);
+    void agent.sendCommand({ type: "compact" }).then((result) => {
+      if (result?.success) {
+        void agent.sendCommand({ type: "get_state" });
+        return;
+      }
+      agent.replaceMessages([
+        ...agent.messages,
+        { id: crypto.randomUUID(), kind: "status", text: result?.error ?? "Context compression could not run yet." }
+      ]);
+    });
+  };
+
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell density-${settings?.density ?? "comfortable"}`}
+      style={{
+        "--bg-app": themeSurfaces[settings?.themePreset ?? "codex"].app,
+        "--bg-sidebar": themeSurfaces[settings?.themePreset ?? "codex"].sidebar,
+        "--bg-main": themeSurfaces[settings?.themePreset ?? "codex"].main,
+        "--bg-composer": themeSurfaces[settings?.themePreset ?? "codex"].composer,
+        "--surface": themeSurfaces[settings?.themePreset ?? "codex"].surface,
+        "--accent": settings?.accentColor ?? "#58a6ff",
+        "--accent-blue": settings?.accentColor ?? "#58a6ff"
+      } as CSSProperties}
+    >
       <Sidebar
         sessions={sessions}
         activeId={activeId}
@@ -244,6 +305,7 @@ export default function App() {
                 footerStatus={agent.footerStatus}
                 connectionState={agent.connectionState}
                 sessionName={sessions.find((session) => session.id === activeId)?.name}
+                contextUsage={agent.contextUsage}
                 onToggleContext={() => setContextOpen((current) => !current)}
                 onAbort={agent.abort}
               />
@@ -262,8 +324,10 @@ export default function App() {
               sessions={sessions}
               messages={agent.messages}
               connectionState={agent.connectionState}
+              contextUsage={agent.contextUsage}
               onOpenSettings={() => navigate("settings")}
               onOpenSessions={() => navigate("search")}
+              onCompact={compactContext}
             />
           </div>
         )}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { DisplayMessage } from "../hooks/useAgent";
+import { ContextUsage, DisplayMessage } from "../hooks/useAgent";
 import Icon from "./Icon";
 import MessageBubble from "./MessageBubble";
 import ToolCallRow from "./ToolCallRow";
@@ -10,11 +10,12 @@ interface ThreadViewProps {
   footerStatus?: string;
   connectionState?: string;
   sessionName?: string;
+  contextUsage?: ContextUsage | null;
   onToggleContext: () => void;
   onAbort: () => void;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, sessionName, onToggleContext, onAbort }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, sessionName, contextUsage, onToggleContext, onAbort }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const toolCount = useMemo(() => messages.filter((message) => message.kind === "tool").length, [messages]);
   const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
@@ -28,7 +29,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
       <header className="thread-header">
         <div>
           <strong>{sessionName || "New PiAgent thread"}</strong>
-          <span>{connectionState ?? "idle"} / {toolCount} tools / {thinkingCount} activity notes</span>
+          <span>{connectionState ?? "idle"} / {toolCount} tools / {thinkingCount} thoughts / context {contextUsage?.percent ?? 0}%</span>
         </div>
         <div className="thread-actions">
           {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}

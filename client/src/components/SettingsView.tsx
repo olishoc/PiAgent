@@ -119,10 +119,20 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="dark">Fonce</option>
                 <option value="system">Systeme</option>
               </select>
-              <span>Police de code</span>
-              <input value={"SF Mono / Cascadia Code"} readOnly />
-              <span>Contraste</span>
-              <input value={"Codex dark"} readOnly />
+              <span>Palette</span>
+              <select value={settings.themePreset} onChange={(e) => onChange({ themePreset: e.target.value as AppSettings["themePreset"] })}>
+                <option value="codex">Codex</option>
+                <option value="graphite">Graphite</option>
+                <option value="midnight">Midnight</option>
+                <option value="ember">Ember</option>
+              </select>
+              <span>Accent</span>
+              <input type="color" value={settings.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />
+              <span>Densite</span>
+              <select value={settings.density} onChange={(e) => onChange({ density: e.target.value as AppSettings["density"] })}>
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+              </select>
             </div>
           </section>
         ) : null}

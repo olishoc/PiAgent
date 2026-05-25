@@ -212,6 +212,23 @@ button:active {
   color: var(--text-primary);
 }
 
+.context-meter {
+  overflow: hidden;
+  height: 8px;
+  margin-bottom: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.045);
+}
+
+.context-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-green));
+  transition: width 240ms ease;
+}
+
 .context-panel p {
   margin: 0;
   color: var(--text-tertiary);
@@ -370,6 +387,18 @@ button:active {
     width: 16px;
     height: 16px;
   }
+}
+
+.density-compact .thread-feed {
+  padding-top: 18px;
+}
+
+.density-compact .message {
+  margin-bottom: 12px;
+}
+
+.density-compact .composer {
+  margin-bottom: 10px;
 }
 
 @keyframes slideIn {
