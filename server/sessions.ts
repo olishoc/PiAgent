@@ -9,9 +9,39 @@ export interface SessionInfo {
   lastModified: number;
   messageCount: number;
   path: string;
+  pinned: boolean;
+  archived: boolean;
 }
 
 export const SESSION_DIR = path.join(APP_CONFIG_DIR, "sessions");
+const SESSION_META_PATH = path.join(APP_CONFIG_DIR, "session-meta.json");
+
+interface SessionMeta {
+  pinned?: boolean;
+  archived?: boolean;
+}
+
+function readSessionMeta(): Record<string, SessionMeta> {
+  try {
+    if (!fs.existsSync(SESSION_META_PATH)) return {};
+    return JSON.parse(fs.readFileSync(SESSION_META_PATH, "utf8").replace(/^\uFEFF/, ""));
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionMeta(meta: Record<string, SessionMeta>) {
+  fs.mkdirSync(APP_CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(SESSION_META_PATH, JSON.stringify(meta, null, 2));
+  fs.chmodSync(SESSION_META_PATH, 0o600);
+}
+
+export function updateSessionMeta(id: string, patch: SessionMeta) {
+  const meta = readSessionMeta();
+  meta[id] = { ...(meta[id] ?? {}), ...patch };
+  writeSessionMeta(meta);
+  return meta[id];
+}
 
 function parseSessionName(line: string): string | null {
   try {
@@ -58,6 +88,7 @@ function parseFirstUserTitle(line: string): string | null {
 
 export function listSessions(): SessionInfo[] {
   fs.mkdirSync(SESSION_DIR, { recursive: true });
+  const meta = readSessionMeta();
   return fs.readdirSync(SESSION_DIR)
     .filter((file) => file.endsWith(".jsonl"))
     .map((file) => {
@@ -77,9 +108,19 @@ export function listSessions(): SessionInfo[] {
         } catch {}
       }
       if (name === path.basename(file, ".jsonl") && generatedName) name = generatedName;
-      return { id: path.basename(file, ".jsonl"), name, lastModified: stat.mtimeMs, messageCount, path: filePath };
+      const id = path.basename(file, ".jsonl");
+      return {
+        id,
+        name,
+        lastModified: stat.mtimeMs,
+        messageCount,
+        path: filePath,
+        pinned: Boolean(meta[id]?.pinned),
+        archived: Boolean(meta[id]?.archived)
+      };
     })
-    .sort((a, b) => b.lastModified - a.lastModified);
+    .filter((session) => !session.archived)
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastModified - a.lastModified);
 }
 
 export const sessionsRouter = Router();
@@ -87,6 +128,20 @@ export const sessionsRouter = Router();
 sessionsRouter.get("/", (_req, res, next) => {
   try {
     res.json({ sessions: listSessions() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+sessionsRouter.patch("/:id", (req, res, next) => {
+  try {
+    const id = req.params.id;
+    const patch = {
+      pinned: typeof req.body?.pinned === "boolean" ? req.body.pinned : undefined,
+      archived: typeof req.body?.archived === "boolean" ? req.body.archived : undefined
+    };
+    const cleaned = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    res.json({ ok: true, meta: updateSessionMeta(id, cleaned) });
   } catch (err) {
     next(err);
   }

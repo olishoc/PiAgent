@@ -1,13 +1,14 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync, spawnSync } from "node:child_process";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const tauriConfig = JSON.parse(readFileSync(resolve(repoRoot, "src-tauri/tauri.conf.json"), "utf8"));
 const installer = resolve(
   repoRoot,
-  "src-tauri/target/release/bundle/nsis/PiAgent_0.1.0_x64-setup.exe",
+  `src-tauri/target/release/bundle/nsis/PiAgent_${tauriConfig.version}_x64-setup.exe`,
 );
 const dryRun = process.argv.includes("--dry-run");
 

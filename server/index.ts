@@ -46,6 +46,16 @@ app.patch("/api/settings", (req, res) => {
 app.get("/api/health", (_req, res) => {
   res.json({ ok: true, settings: readSettings(), defaultSettings: DEFAULT_SETTINGS });
 });
+app.get("/api/models", (_req, res) => {
+  res.json({
+    providers: [
+      { id: "openai-codex", name: "OpenAI Codex", auth: "OAuth", models: ["gpt-5.5", "gpt-5", "gpt-5-mini"] },
+      { id: "openai", name: "OpenAI API", auth: "Pi auth/API key", models: ["gpt-4.1", "gpt-4o", "gpt-4o-mini"] },
+      { id: "anthropic", name: "Claude", auth: "Pi auth/API key", models: ["claude-sonnet-4", "claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"] },
+      { id: "openrouter", name: "OpenRouter", auth: "Pi auth/API key", models: ["openrouter/auto", "anthropic/claude-sonnet-4", "openai/gpt-4.1"] }
+    ]
+  });
+});
 app.get("/api/diagnostics", async (_req, res, next) => {
   try {
     await maybeRefresh();
@@ -60,9 +70,51 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       hasOAuthToken: fs.existsSync(TOKEN_PATH),
       hasPiAuth: fs.existsSync(PI_AUTH_PATH),
       sessionCount: listSessions().length,
-      provider: "openai-codex",
+      provider: settings.provider,
       model: settings.modelLabel || "gpt-5.5"
     });
+  } catch (err) {
+    next(err);
+  }
+});
+app.get("/api/git/status", (req, res) => {
+  const cwd = path.resolve(String(req.query.cwd ?? readSettings().workspacePath ?? process.cwd()));
+  execFile("git", ["status", "--short", "--branch"], { cwd, windowsHide: true }, (statusError, stdout) => {
+    execFile("git", ["remote", "-v"], { cwd, windowsHide: true }, (_remoteError, remoteOut) => {
+      res.json({
+        ok: !statusError,
+        cwd,
+        status: stdout.trim(),
+        remotes: remoteOut.trim(),
+        error: statusError?.message
+      });
+    });
+  });
+});
+app.get("/api/workspace/files", (req, res, next) => {
+  try {
+    const root = path.resolve(String(req.query.cwd ?? readSettings().workspacePath ?? process.cwd()));
+    const maxFiles = Math.min(250, Number(req.query.limit ?? 80));
+    const skip = new Set(["node_modules", ".git", "dist", "target", ".next", ".vite", "src-tauri\\target"]);
+    const files: Array<{ name: string; path: string; size: number; modified: number; ext: string }> = [];
+    const visit = (dir: string, depth: number) => {
+      if (files.length >= maxFiles || depth > 5) return;
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (files.length >= maxFiles) break;
+        if (skip.has(entry.name)) continue;
+        const full = path.join(dir, entry.name);
+        if (!full.startsWith(root)) continue;
+        if (entry.isDirectory()) {
+          visit(full, depth + 1);
+          continue;
+        }
+        const stat = fs.statSync(full);
+        files.push({ name: entry.name, path: full, size: stat.size, modified: stat.mtimeMs, ext: path.extname(entry.name).toLowerCase() });
+      }
+    };
+    if (fs.existsSync(root)) visit(root, 0);
+    files.sort((a, b) => b.modified - a.modified);
+    res.json({ ok: true, root, files: files.slice(0, maxFiles) });
   } catch (err) {
     next(err);
   }
@@ -161,10 +213,12 @@ wss.on("connection", async (ws) => {
     const settings = readSettings();
     const session = new PiSession(SESSION_DIR, freshToken.access, {
       extraArgs: piArgsForAccess(settings),
-      model: settings.modelLabel || "gpt-5.5"
+      provider: settings.provider || "openai-codex",
+      model: settings.modelLabel || "gpt-5.5",
+      thinkingLevel: settings.thinkingLevel || "medium"
     });
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "agent_ready", provider: "openai-codex", model: settings.modelLabel || "gpt-5.5" }));
+      ws.send(JSON.stringify({ type: "agent_ready", provider: settings.provider || "openai-codex", model: settings.modelLabel || "gpt-5.5", thinkingLevel: settings.thinkingLevel || "medium" }));
     }
     session.onEvent = (event) => {
       if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));

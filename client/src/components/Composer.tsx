@@ -11,6 +11,10 @@ interface ComposerProps {
   disabled?: boolean;
   isStreaming?: boolean;
   settings?: AppSettings;
+  models?: Array<{ id: string; name: string; models: string[] }>;
+  extensionCommands?: Array<{ name: string; description?: string; source?: string }>;
+  onSettingsChange: (patch: Partial<AppSettings>) => void;
+  onAgentCommand: (cmd: Record<string, unknown>) => Promise<any>;
 }
 
 const slashCommands = [
@@ -30,18 +34,25 @@ function formatBytes(size?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings }: ComposerProps) {
+export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand }: ComposerProps) {
   const [text, setText] = useState("");
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showCommands, setShowCommands] = useState(false);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const filteredCommands = useMemo(() => {
+    const dynamicCommands = extensionCommands.slice(0, 40).map((item) => ({
+      command: `/${item.name}`,
+      label: item.description || item.source || "Pi extension command"
+    }));
+    const allCommands = [...slashCommands, ...dynamicCommands];
     if (!text.startsWith("/")) return slashCommands;
-    return slashCommands.filter((item) => item.command.startsWith(text.trim()));
-  }, [text]);
+    return allCommands.filter((item) => item.command.toLowerCase().startsWith(text.trim().toLowerCase()));
+  }, [extensionCommands, text]);
 
   useEffect(() => {
     if (!ref.current) return;
@@ -84,6 +95,12 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     setShowCommands(false);
     if (command === "/attach") {
       void pickFiles();
+      setText("");
+      return;
+    }
+    if (!slashCommands.some((item) => item.command === command)) {
+      onSend(command, attachments, tools);
+      setAttachments([]);
       setText("");
       return;
     }
@@ -152,10 +169,31 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
           <Icon name="paperclip" />
         </button>
         <div className="tool-pills">
-          <button className="access-pill enabled" onClick={() => onCommand("/permissions")}>
-            <Icon name="shield" size={13} />
-            {settings?.accessMode === "full" ? "Full access" : settings?.accessMode === "read-only" ? "Read only" : "Limited"}
-          </button>
+          <div className="pill-menu-wrap">
+            <button className="access-pill enabled" onClick={() => setPermissionsOpen((current) => !current)}>
+              <Icon name="shield" size={13} />
+              {settings?.accessMode === "full" ? "Full access" : settings?.accessMode === "read-only" ? "Read only" : "Limited"}
+              <Icon name="chevronDown" size={12} />
+            </button>
+            {permissionsOpen ? (
+              <div className="pill-menu">
+                {(["full", "limited", "read-only"] as const).map((mode) => (
+                  <button key={mode} onClick={() => { onSettingsChange({ accessMode: mode }); setPermissionsOpen(false); }}>
+                    <Icon name={settings?.accessMode === mode ? "check" : "circle"} size={13} />
+                    {mode === "full" ? "Full access" : mode === "limited" ? "Limited tools" : "Read only"}
+                  </button>
+                ))}
+                <button onClick={() => onSettingsChange({ autoReview: !settings?.autoReview })}>
+                  <Icon name={settings?.autoReview ? "check" : "circle"} size={13} />
+                  Automatic review
+                </button>
+                <button onClick={() => onSettingsChange({ approvalPolicy: settings?.approvalPolicy === "never" ? "on-request" : "never" })}>
+                  <Icon name="shield" size={13} />
+                  Approval: {settings?.approvalPolicy ?? "on-request"}
+                </button>
+              </div>
+            ) : null}
+          </div>
           {(["web", "advisor", "context"] as const).map((tool) => (
             <button
               key={tool}
@@ -169,7 +207,42 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
           ))}
         </div>
         <div className="composer-meta">
-          <button className="model-pill" onClick={() => onCommand("/settings")}>{settings?.modelLabel ?? "gpt-5.5"}</button>
+          <div className="pill-menu-wrap">
+            <button className="model-pill" onClick={() => setModelOpen((current) => !current)}>
+              {settings?.modelLabel ?? "gpt-5.5"} <Icon name="chevronDown" size={12} />
+            </button>
+            {modelOpen ? (
+              <div className="pill-menu model-menu">
+                {models.map((provider) => (
+                  <div key={provider.id} className="model-group">
+                    <strong>{provider.name}</strong>
+                    {provider.models.map((model) => (
+                      <button key={`${provider.id}/${model}`} onClick={() => {
+                        onSettingsChange({ provider: provider.id as AppSettings["provider"], modelLabel: model });
+                        void onAgentCommand({ type: "set_model", provider: provider.id, modelId: model });
+                        setModelOpen(false);
+                      }}>
+                        <Icon name={settings?.provider === provider.id && settings?.modelLabel === model ? "check" : "circle"} size={13} />
+                        {model}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                <div className="model-group">
+                  <strong>Thinking</strong>
+                  {(["low", "medium", "high"] as const).map((level) => (
+                    <button key={level} onClick={() => {
+                      onSettingsChange({ thinkingLevel: level });
+                      void onAgentCommand({ type: "set_thinking_level", level });
+                    }}>
+                      <Icon name={settings?.thinkingLevel === level ? "check" : "circle"} size={13} />
+                      {level}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
           {isStreaming ? (
             <button className="round-button stop" onClick={onAbort} aria-label="stop generation" title="Stop">
               <Icon name="stop" />

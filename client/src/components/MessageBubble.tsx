@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { TextMessage } from "../hooks/useAgent";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
@@ -10,7 +11,13 @@ function renderCodeAware(text: string) {
   });
 }
 
+function timeLabel(timestamp?: number) {
+  if (!timestamp) return "";
+  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
+}
+
 export default function MessageBubble({ message }: { message: TextMessage }) {
+  const [expanded, setExpanded] = useState(false);
   const openAttachment = async (path?: string) => {
     if (!path) return;
     await fetch(apiUrl("/api/open-file"), {
@@ -24,6 +31,7 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
     return (
       <article className="message user-message">
         <div className="message-label">you</div>
+        <div className="message-time">{timeLabel(message.createdAt)}</div>
         <div className="message-text">{message.text}</div>
         {message.attachments?.length ? (
           <div className="message-attachments">
@@ -45,11 +53,14 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
 
   if (message.kind === "thinking") {
     return (
-      <article className="message thinking-message">
+      <article className={`message thinking-message ${expanded ? "expanded" : ""}`}>
         <div className="thinking-pulse"><Icon name="spark" size={14} /></div>
-        <div>
-          <div className="message-label">{message.phase ?? "thinking"}</div>
-          <div className="message-text">{message.text}</div>
+        <div className="thinking-body">
+          <button className="thinking-head" onClick={() => setExpanded((current) => !current)}>
+            <span>{message.phase ?? "thinking"}</span>
+            <em>{expanded ? "hide full thought" : "show full thought"}</em>
+          </button>
+          <div className="message-text">{expanded ? message.detail ?? message.text : message.text}</div>
         </div>
       </article>
     );
@@ -57,7 +68,7 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
 
   return (
     <article className="message agent-message">
-      <div className="agent-label"><Icon name="bot" size={14} /> agent</div>
+      <div className="agent-label"><Icon name="bot" size={14} /> agent <span>{timeLabel(message.createdAt)}</span></div>
       <div className="agent-text">{renderCodeAware(message.text)}</div>
     </article>
   );

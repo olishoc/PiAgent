@@ -4,6 +4,8 @@ import { APP_CONFIG_DIR } from "./tokenStore.js";
 
 export type AccessMode = "read-only" | "limited" | "full";
 export type ApprovalPolicy = "on-request" | "on-failure" | "never";
+export type ProviderId = "openai-codex" | "openai" | "anthropic" | "openrouter";
+export type ThinkingLevel = "low" | "medium" | "high";
 
 export interface AppSettings {
   onboardingComplete: boolean;
@@ -11,7 +13,14 @@ export interface AppSettings {
   accessMode: AccessMode;
   approvalPolicy: ApprovalPolicy;
   workspacePath: string;
+  provider: ProviderId;
   modelLabel: string;
+  thinkingLevel: ThinkingLevel;
+  autoReview: boolean;
+  webEnabled: boolean;
+  chromeEnabled: boolean;
+  computerUseEnabled: boolean;
+  githubEnabled: boolean;
   theme: "dark" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember";
   accentColor: string;
@@ -26,7 +35,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accessMode: "full",
   approvalPolicy: "on-request",
   workspacePath: process.cwd(),
+  provider: "openai-codex",
   modelLabel: "gpt-5.5",
+  thinkingLevel: "medium",
+  autoReview: true,
+  webEnabled: false,
+  chromeEnabled: false,
+  computerUseEnabled: true,
+  githubEnabled: true,
   theme: "dark",
   themePreset: "codex",
   accentColor: "#58a6ff",
@@ -38,6 +54,7 @@ export function readSettings(): AppSettings {
     if (!fs.existsSync(SETTINGS_PATH)) return DEFAULT_SETTINGS;
     const loaded = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8").replace(/^\uFEFF/, "")) };
     if (loaded.modelLabel === "openai/default") loaded.modelLabel = "gpt-5.5";
+    if (!loaded.provider) loaded.provider = "openai-codex";
     return loaded;
   } catch {
     return DEFAULT_SETTINGS;

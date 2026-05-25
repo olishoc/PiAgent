@@ -6,6 +6,8 @@ export interface Session {
   lastModified: number;
   messageCount: number;
   path: string;
+  pinned?: boolean;
+  archived?: boolean;
   status?: "running" | "done" | "queued";
 }
 
@@ -22,6 +24,8 @@ interface SidebarProps {
   onSearch: () => void;
   onExtensions: () => void;
   onAutomations: () => void;
+  onPin: (session: Session) => void;
+  onArchive: (session: Session) => void;
   onToggle: () => void;
   onBack: () => void;
   onForward: () => void;
@@ -49,11 +53,56 @@ export default function Sidebar({
   onSearch,
   onExtensions,
   onAutomations,
+  onPin,
+  onArchive,
   onToggle,
   onBack,
   onForward
 }: SidebarProps) {
   const initials = accountId?.slice(0, 2).toUpperCase() ?? "PI";
+  const pinned = sessions.filter((session) => session.pinned);
+  const recent = sessions.filter((session) => !session.pinned);
+  const renderSession = (session: Session) => {
+    const status = session.status ?? "done";
+    return (
+      <button
+        key={session.id}
+        className={`task-row ${session.id === activeId ? "active" : ""}`}
+        onClick={() => onSelect(session)}
+        title={session.name}
+      >
+        <span className={`status-dot ${status}`} />
+        <span className="task-copy">
+          <span className="task-name">{session.name}</span>
+          <span className="task-time">{session.messageCount} messages - {ageLabel({ ...session, status })}</span>
+        </span>
+        <span className="task-actions">
+          <span
+            role="button"
+            tabIndex={0}
+            title={session.pinned ? "Unpin" : "Pin"}
+            onClick={(event) => {
+              event.stopPropagation();
+              onPin(session);
+            }}
+          >
+            <Icon name={session.pinned ? "pinOff" : "pin"} size={13} />
+          </span>
+          <span
+            role="button"
+            tabIndex={0}
+            title="Archive"
+            onClick={(event) => {
+              event.stopPropagation();
+              onArchive(session);
+            }}
+          >
+            <Icon name="archive" size={13} />
+          </span>
+        </span>
+      </button>
+    );
+  };
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-topnav">
@@ -69,25 +118,11 @@ export default function Sidebar({
       </div>
       <div className="sidebar-label">Project</div>
       <button className="project-row" onClick={onChat}><Icon name="folder" /> <span>Pi Agent UI</span></button>
-      <div className="sidebar-label">Threads</div>
       <div className="task-list">
-        {sessions.map((session) => {
-          const status = session.status ?? "done";
-          return (
-            <button
-              key={session.id}
-              className={`task-row ${session.id === activeId ? "active" : ""}`}
-              onClick={() => onSelect(session)}
-              title={session.name}
-            >
-              <span className={`status-dot ${status}`} />
-              <span className="task-copy">
-                <span className="task-name">{session.name}</span>
-                <span className="task-time">{session.messageCount} messages - {ageLabel({ ...session, status })}</span>
-              </span>
-            </button>
-          );
-        })}
+        {pinned.length ? <div className="sidebar-label inline">Pinned</div> : null}
+        {pinned.map(renderSession)}
+        <div className="sidebar-label inline">Chats</div>
+        {recent.map(renderSession)}
       </div>
       <footer className="sidebar-footer">
         <div className="avatar">{initials}</div>

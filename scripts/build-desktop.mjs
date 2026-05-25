@@ -9,6 +9,13 @@ const tauriCli = resolve(repoRoot, "node_modules/@tauri-apps/cli/tauri.js");
 const privateKeyPath = resolve(repoRoot, "src-tauri/updater.key");
 const passwordPath = resolve(repoRoot, "src-tauri/updater.key.password");
 const env = { ...process.env };
+const cargoBin = resolve(process.env.USERPROFILE ?? "", ".cargo/bin");
+const pathKey = process.platform === "win32" ? "Path" : "PATH";
+const currentPath = env[pathKey] ?? env.PATH ?? "";
+
+if (existsSync(resolve(cargoBin, process.platform === "win32" ? "cargo.exe" : "cargo"))) {
+  env[pathKey] = `${cargoBin}${process.platform === "win32" ? ";" : ":"}${currentPath}`;
+}
 
 if (!env.TAURI_SIGNING_PRIVATE_KEY && existsSync(privateKeyPath)) {
   env.TAURI_SIGNING_PRIVATE_KEY = readFileSync(privateKeyPath, "utf8");

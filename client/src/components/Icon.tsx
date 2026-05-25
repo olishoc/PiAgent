@@ -15,6 +15,8 @@ export type IconName =
   | "layout"
   | "link"
   | "paperclip"
+  | "pin"
+  | "pinOff"
   | "play"
   | "plug"
   | "plus"
@@ -47,6 +49,8 @@ const paths: Record<IconName, string> = {
   layout: "M4 5h16v14H4V5M9 5v14M4 10h5",
   link: "M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1",
   paperclip: "M21 12l-8.5 8.5a6 6 0 01-8.5-8.5L13 3a4 4 0 115.7 5.7l-9 9a2 2 0 11-2.8-2.8l8.5-8.5",
+  pin: "M12 17v5M7 3h10l-2 7 3 3v2H6v-2l3-3-2-7z",
+  pinOff: "M3 3l18 18M12 17v5M7 3h5M15.5 6.5L15 10l3 3v2h-5M6 15h5",
   play: "M8 5v14l11-7-11-7",
   plug: "M8 2v6M16 2v6M7 8h10v4a5 5 0 01-10 0V8M12 17v5",
   plus: "M12 5v14M5 12h14",

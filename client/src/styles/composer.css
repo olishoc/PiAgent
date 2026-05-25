@@ -163,6 +163,78 @@
   font-size: 11px;
 }
 
+.pill-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.pill-menu {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: grid;
+  min-width: 218px;
+  gap: 3px;
+  padding: 7px;
+  border: 0.5px solid var(--border-hover);
+  border-radius: 9px;
+  background: #191919;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.42);
+  animation: paletteIn 120ms ease;
+}
+
+.composer-meta .pill-menu {
+  right: 0;
+  left: auto;
+}
+
+.pill-menu button {
+  display: flex;
+  width: 100%;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+}
+
+.pill-menu button:hover {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-primary);
+}
+
+.model-menu {
+  width: 280px;
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+}
+
+.model-group {
+  display: grid;
+  gap: 2px;
+  padding-bottom: 5px;
+}
+
+.model-group + .model-group {
+  border-top: 0.5px solid var(--border);
+  padding-top: 5px;
+}
+
+.model-group strong {
+  padding: 4px 8px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
 .tool-pills button.enabled,
 .model-pill:hover {
   border-color: var(--border-hover);

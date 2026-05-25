@@ -19,6 +19,8 @@ function piCommand(): { command: string; argsPrefix: string[] } {
 interface PiSessionOptions {
   extraArgs?: string[];
   model?: string;
+  provider?: string;
+  thinkingLevel?: string;
 }
 
 export class PiSession {
@@ -35,9 +37,11 @@ export class PiSession {
       "--mode",
       "rpc",
       "--provider",
-      "openai-codex",
+      options.provider || "openai-codex",
       "--model",
       options.model || "gpt-5.5",
+      "--thinking",
+      options.thinkingLevel || "medium",
       "--session-dir",
       sessionDir,
       ...(options.extraArgs ?? [])

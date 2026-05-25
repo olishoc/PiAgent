@@ -165,6 +165,32 @@ button:active {
   background: #1a1a1a;
 }
 
+.context-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border: 0.5px solid var(--border);
+  border-radius: 9px;
+  background: #181818;
+}
+
+.context-tabs button {
+  justify-content: center;
+  min-height: 28px;
+  margin: 0;
+  border-color: transparent;
+  background: transparent;
+  font-size: 11px;
+}
+
+.context-tabs button.active {
+  border-color: var(--border);
+  background: rgba(255,255,255,0.07);
+  color: var(--text-primary);
+}
+
 .context-panel h2 {
   display: flex;
   align-items: center;
@@ -233,6 +259,45 @@ button:active {
   margin: 0;
   color: var(--text-tertiary);
   font-size: 11px;
+}
+
+.file-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.file-list button {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  margin: 0;
+}
+
+.file-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-list em {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.file-preview pre,
+.git-status {
+  overflow: auto;
+  max-height: 360px;
+  margin: 8px 0 0;
+  padding: 10px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: #070707;
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
 .onboarding,

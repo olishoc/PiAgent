@@ -17,6 +17,7 @@
 .sidebar.collapsed .project-row span,
 .sidebar.collapsed .sidebar-label,
 .sidebar.collapsed .task-copy,
+.sidebar.collapsed .task-actions,
 .sidebar.collapsed .user-copy {
   display: none;
 }
@@ -105,6 +106,10 @@
   text-transform: uppercase;
 }
 
+.sidebar-label.inline {
+  padding: 10px 8px 6px;
+}
+
 .task-list {
   flex: 1;
   overflow-y: auto;
@@ -159,6 +164,33 @@
   flex: 1;
   flex-direction: column;
   gap: 4px;
+}
+
+.task-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.task-row:hover .task-actions,
+.task-row.active .task-actions {
+  opacity: 1;
+}
+
+.task-actions span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--text-tertiary);
+}
+
+.task-actions span:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-primary);
 }
 
 .task-name {

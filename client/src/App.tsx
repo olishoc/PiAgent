@@ -25,7 +25,14 @@ export interface AppSettings {
   accessMode: "read-only" | "limited" | "full";
   approvalPolicy: "on-request" | "on-failure" | "never";
   workspacePath: string;
+  provider: "openai-codex" | "openai" | "anthropic" | "openrouter";
   modelLabel: string;
+  thinkingLevel: "low" | "medium" | "high";
+  autoReview: boolean;
+  webEnabled: boolean;
+  chromeEnabled: boolean;
+  computerUseEnabled: boolean;
+  githubEnabled: boolean;
   theme: "dark" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember";
   accentColor: string;
@@ -49,6 +56,8 @@ export default function App() {
   const [viewIndex, setViewIndex] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [contextOpen, setContextOpen] = useState(true);
+  const [models, setModels] = useState<Array<{ id: string; name: string; models: string[] }>>([]);
+  const [extensionCommands, setExtensionCommands] = useState<Array<{ name: string; description?: string; source?: string }>>([]);
   const [backendError, setBackendError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
   const [settings, setSettings] = useState<AppSettings>({
@@ -57,7 +66,14 @@ export default function App() {
     accessMode: "full",
     approvalPolicy: "on-request",
     workspacePath: "",
+    provider: "openai-codex",
     modelLabel: "gpt-5.5",
+    thinkingLevel: "medium",
+    autoReview: true,
+    webEnabled: false,
+    chromeEnabled: false,
+    computerUseEnabled: true,
+    githubEnabled: true,
     theme: "dark",
     themePreset: "codex",
     accentColor: "#58a6ff",
@@ -90,6 +106,7 @@ export default function App() {
           }).then((r) => r.json()).then((next) => setSettings(next.settings ?? loaded)).catch(() => {});
         }
       }).catch((error) => setBackendError(String(error)));
+      fetch(apiUrl("/api/models")).then((r) => r.json()).then((data) => setModels(data.providers ?? [])).catch(() => {});
       void checkAndInstallUpdate((status) => {
         if (status.state === "current" || status.state === "idle") return;
         setUpdateNotice(status.message);
@@ -113,6 +130,15 @@ export default function App() {
     fetchSessions().then(setSessions).catch(() => {});
   }, [auth.loggedIn, agent.isStreaming]);
 
+  useEffect(() => {
+    if (agent.connectionState !== "ready") return;
+    void agent.sendCommand({ type: "get_state" });
+    void agent.sendCommand({ type: "get_commands" }).then((result) => {
+      if (Array.isArray(result?.data?.commands)) setExtensionCommands(result.data.commands);
+    });
+    void agent.sendCommand({ type: "get_available_models" });
+  }, [agent.connectionState, agent.sendCommand]);
+
   if (backendError) {
     return (
       <div className="app-shell">
@@ -127,16 +153,29 @@ export default function App() {
 
   if (!auth.loggedIn) return <LoginScreen onLogin={auth.login} loading={auth.loading} authUrl={auth.authUrl} error={auth.error} message={auth.loginMessage} />;
 
-  const refreshSessionList = async () => {
-    const items = await fetchSessions();
-    setSessions(items);
-    if (items[0]) setActiveId(items[0].id);
+  const updateSettings = async (patch: Partial<AppSettings>) => {
+    const response = await fetch(apiUrl("/api/settings"), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch)
+    });
+    const data = await response.json();
+    setSettings(data.settings);
   };
 
-  useEffect(() => {
-    if (agent.connectionState !== "ready") return;
-    void agent.sendCommand({ type: "get_state" });
-  }, [agent.connectionState, agent.sendCommand]);
+  const patchSession = async (session: Session, patch: Partial<Session>) => {
+    await fetch(apiUrl(`/api/sessions/${encodeURIComponent(session.id)}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch)
+    });
+    const items = await fetchSessions();
+    setSessions(items);
+    if (patch.archived && activeId === session.id) {
+      setActiveId(items[0]?.id ?? "");
+      agent.replaceMessages([]);
+    }
+  };
 
   const newSession = async () => {
     navigate("chat");
@@ -215,6 +254,22 @@ export default function App() {
     }
   };
 
+  const generatedTitle = (text: string) => {
+    const cleaned = text.replace(/^[/#>\-\s]+/, "").replace(/\s+/g, " ").trim();
+    if (!cleaned) return "New thread";
+    const words = cleaned.split(" ").slice(0, 7).join(" ");
+    return words.length > 58 ? `${words.slice(0, 55).trim()}...` : words;
+  };
+
+  const sendPrompt = (text: string, attachments?: Parameters<typeof agent.sendPrompt>[1], options?: Parameters<typeof agent.sendPrompt>[2]) => {
+    agent.sendPrompt(text, attachments, options);
+    const current = sessions.find((session) => session.id === activeId);
+    if (!current || current.messageCount < 2 || current.name === "New thread") {
+      void agent.sendCommand({ type: "set_session_name", name: generatedTitle(text) })
+        .then(() => fetchSessions().then(setSessions).catch(() => {}));
+    }
+  };
+
   const compactContext = () => {
     agent.replaceMessages([
       ...agent.messages,
@@ -258,6 +313,8 @@ export default function App() {
         onSearch={() => navigate("search")}
         onExtensions={() => navigate("extensions")}
         onAutomations={() => navigate("automations")}
+        onPin={(session) => void patchSession(session, { pinned: !session.pinned })}
+        onArchive={(session) => void patchSession(session, { archived: true })}
         onToggle={() => setSidebarCollapsed((current) => !current)}
         onBack={goBack}
         onForward={goForward}
@@ -278,15 +335,7 @@ export default function App() {
           </div>
         </div>
         {view === "settings" && settings ? (
-          <SettingsView settings={settings} onBack={() => navigate("chat")} onChange={async (patch) => {
-            const response = await fetch(apiUrl("/api/settings"), {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(patch)
-            });
-            const data = await response.json();
-            setSettings(data.settings);
-          }} />
+          <SettingsView settings={settings} onBack={() => navigate("chat")} onChange={updateSettings} />
         ) : view === "search" || view === "extensions" || view === "automations" ? (
           <UtilityView
             view={view}
@@ -310,12 +359,16 @@ export default function App() {
                 onAbort={agent.abort}
               />
               <Composer
-                onSend={agent.sendPrompt}
+                onSend={sendPrompt}
                 onCommand={runComposerCommand}
                 onAbort={agent.abort}
                 disabled={agent.connectionState !== "ready"}
                 isStreaming={agent.isStreaming}
                 settings={settings ?? undefined}
+                models={models}
+                extensionCommands={extensionCommands}
+                onSettingsChange={updateSettings}
+                onAgentCommand={agent.sendCommand}
               />
             </div>
             <ContextPanel

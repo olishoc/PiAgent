@@ -17,9 +17,11 @@ export interface TextMessage {
   id: string;
   kind: "user" | "agent" | "status" | "thinking";
   text: string;
+  detail?: string;
   attachments?: Attachment[];
   phase?: string;
   active?: boolean;
+  createdAt?: number;
 }
 
 export type DisplayMessage = ToolMessage | TextMessage;
@@ -91,7 +93,7 @@ function appendAgentDelta(messages: DisplayMessage[], delta: string) {
       return next;
     }
   }
-  next.push({ id: crypto.randomUUID(), kind: "agent", text: delta });
+  next.push({ id: crypto.randomUUID(), kind: "agent", text: delta, createdAt: Date.now() });
   return next;
 }
 
@@ -99,7 +101,7 @@ function ensureAgentMessage(messages: DisplayMessage[], id?: string) {
   const next = [...messages];
   const last = next[next.length - 1];
   if (last?.kind === "agent" && !last.text) return next;
-  next.push({ id: id ?? crypto.randomUUID(), kind: "agent", text: "" });
+  next.push({ id: id ?? crypto.randomUUID(), kind: "agent", text: "", createdAt: Date.now() });
   return next;
 }
 
@@ -109,11 +111,13 @@ function updateThinkingSnapshot(messages: DisplayMessage[], text: string, active
     const item = next[i];
     if (item.kind === "user") break;
     if (item.kind === "thinking") {
-      next[i] = { ...item, text, phase: active ? "thinking snapshot" : "thought", active };
+      const previous = item.detail || item.text;
+      const detail = previous && previous !== text ? `${previous}\n${text}` : text;
+      next[i] = { ...item, text, detail, phase: active ? "thinking" : "thought", active };
       return next;
     }
   }
-  next.push({ id: crypto.randomUUID(), kind: "thinking", text, phase: active ? "thinking snapshot" : "thought", active });
+  next.push({ id: crypto.randomUUID(), kind: "thinking", text, detail: text, phase: active ? "thinking" : "thought", active, createdAt: Date.now() });
   return next;
 }
 
@@ -223,6 +227,11 @@ export function handlePiEvent(
     return;
   }
 
+  if (event.type === "response" && event.command === "get_available_models" && event.data?.models) {
+    setFooterStatus(`${event.data.models.length} models available`);
+    return;
+  }
+
   if (event.type === "error" || event.type === "process_error" || event.type === "parse_error") {
     setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: event.message ?? event.line ?? "agent error" }]);
     return;
@@ -249,7 +258,7 @@ function normalizeMessages(rawMessages: any[]): DisplayMessage[] {
     const text = Array.isArray(content)
       ? content.map((part) => part.text ?? part.thinking ?? JSON.stringify(part)).join("\n")
       : content;
-    return [{ id: message.id ?? crypto.randomUUID(), kind: role, text: String(text) }];
+    return [{ id: message.id ?? crypto.randomUUID(), kind: role, text: String(text), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
   });
 }
 
@@ -314,7 +323,7 @@ export function useAgent(enabled = true) {
   }, []);
 
   const sendPrompt = useCallback((text: string, attachments: Attachment[] = [], options?: PromptOptions) => {
-    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "user", text, attachments }]);
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() }]);
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is still connecting. Wait for the connected status, then send again." }]);
       return;

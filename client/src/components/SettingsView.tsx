@@ -142,10 +142,28 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <section className="settings-card compact">
               <span>Modele</span>
               <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
+              <span>Fournisseur</span>
+              <select value={settings.provider} onChange={(e) => onChange({ provider: e.target.value as AppSettings["provider"] })}>
+                <option value="openai-codex">OpenAI Codex OAuth</option>
+                <option value="openai">OpenAI API</option>
+                <option value="anthropic">Claude</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+              <span>Thinking</span>
+              <select value={settings.thinkingLevel} onChange={(e) => onChange({ thinkingLevel: e.target.value as AppSettings["thinkingLevel"] })}>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
               <span>Espace de travail</span>
               <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
               <span>Nom affiche</span>
               <input value={settings.displayName} onChange={(e) => onChange({ displayName: e.target.value })} />
+              <span>Revision automatique</span>
+              <select value={settings.autoReview ? "on" : "off"} onChange={(e) => onChange({ autoReview: e.target.value === "on" })}>
+                <option value="on">Activee</option>
+                <option value="off">Desactivee</option>
+              </select>
             </section>
 
             <section className="settings-section">
@@ -178,6 +196,18 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <h2>Extensions et contexte</h2>
             <div className="settings-card compact">
               <span>Advisor</span><span>Active depuis le composeur pour demander une passe de revision.</span>
+              <span>Web</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Chrome</span><select value={settings.chromeEnabled ? "on" : "off"} onChange={(e) => onChange({ chromeEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Computer use</span><select value={settings.computerUseEnabled ? "on" : "off"} onChange={(e) => onChange({ computerUseEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
               <span>Contexte</span><span>Active depuis le composeur pour inclure les chemins et sessions locales.</span>
               <span>Extensions Pi</span><button onClick={() => void runOpen("config")}><Icon name="folder" /> Ouvrir le dossier config</button>
               <span>Diagnostics</span><button onClick={() => void diagnose()}><Icon name="search" /> Verifier l'environnement</button>
@@ -194,6 +224,10 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="on-request">Demander avant action risquee</option>
                 <option value="on-failure">Demander en cas d'echec</option>
                 <option value="never">Ne jamais demander</option>
+              </select>
+              <span>GitHub</span><select value={settings.githubEnabled ? "on" : "off"} onChange={(e) => onChange({ githubEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
               </select>
               <span>Verifier</span><button onClick={() => void diagnose()}><Icon name="terminal" /> Lire diagnostics Git/agent</button>
             </div>
