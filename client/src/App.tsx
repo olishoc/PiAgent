@@ -101,6 +101,11 @@ export interface AppSettings {
   memoryLearnTools: boolean;
   memoryProfileEnabled: boolean;
   memoryEventLogEnabled: boolean;
+  memoryEpisodicEnabled: boolean;
+  memoryHybridRecallEnabled: boolean;
+  memoryCorrectionsEnabled: boolean;
+  memoryMaxEpisodicHits: number;
+  memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
   accentColor: string;
@@ -255,6 +260,11 @@ export default function App() {
     memoryLearnTools: true,
     memoryProfileEnabled: true,
     memoryEventLogEnabled: true,
+    memoryEpisodicEnabled: true,
+    memoryHybridRecallEnabled: true,
+    memoryCorrectionsEnabled: true,
+    memoryMaxEpisodicHits: 8,
+    memoryMinConfidence: 0.35,
     theme: "dark",
     themePreset: "codex",
     accentColor: "#58a6ff",

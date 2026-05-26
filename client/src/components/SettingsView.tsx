@@ -439,6 +439,25 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="on">Conserver un journal inspectable</option>
                 <option value="off">Souvenirs seulement</option>
               </select>
+              <span>Memoire episodique</span>
+              <select value={settings.memoryEpisodicEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEpisodicEnabled: e.target.value === "on" })}>
+                <option value="on">Messages, outils et checkpoints consultables</option>
+                <option value="off">Seulement faits durables</option>
+              </select>
+              <span>Rappel hybride</span>
+              <select value={settings.memoryHybridRecallEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryHybridRecallEnabled: e.target.value === "on" })}>
+                <option value="on">Faits + episodes + entites + recence</option>
+                <option value="off">Contexte durable seulement</option>
+              </select>
+              <span>Corrections</span>
+              <select value={settings.memoryCorrectionsEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryCorrectionsEnabled: e.target.value === "on" })}>
+                <option value="on">Superseder les souvenirs faux</option>
+                <option value="off">Archivage manuel seulement</option>
+              </select>
+              <span>Episodes injectes</span>
+              <input type="number" min="0" max="30" step="1" value={settings.memoryMaxEpisodicHits} onChange={(e) => onChange({ memoryMaxEpisodicHits: Number(e.target.value) })} />
+              <span>Confiance minimale</span>
+              <input type="number" min="0" max="1" step="0.05" value={settings.memoryMinConfidence} onChange={(e) => onChange({ memoryMinConfidence: Number(e.target.value) })} />
               <span>Budget max</span>
               <input type="number" min="100" max="4000" step="50" value={settings.memoryBudgetTokens} onChange={(e) => onChange({ memoryBudgetTokens: Number(e.target.value) })} />
               <span>Isolation</span>
@@ -453,10 +472,17 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             {memoryStatus ? (
               <pre className="diagnostics-output">{JSON.stringify({
                 backend: memoryStatus.backend,
+                version: memoryStatus.version,
                 count: memoryStatus.count,
+                activeCount: memoryStatus.activeCount,
+                episodeCount: memoryStatus.episodeCount,
                 eventCount: memoryStatus.eventCount,
+                correctionCount: memoryStatus.correctionCount,
                 byScope: memoryStatus.byScope,
                 byKind: memoryStatus.byKind,
+                byTier: memoryStatus.byTier,
+                byStatus: memoryStatus.byStatus,
+                architecture: memoryStatus.architecture,
                 profile: memoryStatus.profile
               }, null, 2)}</pre>
             ) : null}

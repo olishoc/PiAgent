@@ -34,7 +34,9 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const [git, setGit] = useState<{ status?: string; remotes?: string; error?: string } | null>(null);
   const [memoryQuery, setMemoryQuery] = useState("");
   const [memoryDraft, setMemoryDraft] = useState("");
-  const [memory, setMemory] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; tags?: string[]; updatedAt: number }>>([]);
+  const [correctionDraft, setCorrectionDraft] = useState("");
+  const [memory, setMemory] = useState<Array<{ id: string; title: string; text: string; kind: string; tier?: string; scope: string; status?: string; confidence?: number; importance?: number; provenance?: Array<{ source?: string; sessionId?: string; projectId?: string; note?: string }>; tags?: string[]; updatedAt: number }>>([]);
+  const [memoryEpisodes, setMemoryEpisodes] = useState<Array<{ id: string; title: string; text: string; type: string; role?: string; toolName?: string; outcome?: string; confidence?: number; projectId?: string | null; sessionId?: string | null; updatedAt: number }>>([]);
   const [memoryProfile, setMemoryProfile] = useState<any>(null);
   const [memorySkills, setMemorySkills] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; updatedAt: number }>>([]);
   const [memoryStats, setMemoryStats] = useState<any>(null);
@@ -74,9 +76,17 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
     if (memoryScope === "session" && activeSessionId) params.set("sessionId", activeSessionId);
     if (memoryScope === "global") params.set("global", "1");
     params.set("limit", "30");
-    fetch(apiUrl(`/api/memory/search?${params.toString()}`))
+    params.set("episodes", settings.memoryEpisodicEnabled && settings.memoryHybridRecallEnabled ? "1" : "0");
+    params.set("corrections", settings.memoryCorrectionsEnabled ? "1" : "0");
+    params.set("episodeLimit", String(settings.memoryMaxEpisodicHits ?? 8));
+    params.set("minConfidence", String(settings.memoryMinConfidence ?? 0));
+    fetch(apiUrl(`/api/memory/recall?${params.toString()}`))
       .then((r) => r.json())
-      .then((data) => setMemory(data.records ?? []))
+      .then((data) => {
+        const hits = Array.isArray(data.hits) ? data.hits : [];
+        setMemory(hits.flatMap((hit: any) => hit.record ? [hit.record] : []));
+        setMemoryEpisodes(hits.flatMap((hit: any) => hit.episode ? [hit.episode] : []));
+      })
       .catch(() => setMemoryStatus("Memory search failed."));
     fetch(apiUrl("/api/memory/status"))
       .then((r) => r.json())
@@ -89,7 +99,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       .then((r) => r.json())
       .then((data) => setMemorySkills(data.skills ?? []))
       .catch(() => {});
-  }, [open, tab, memoryQuery, activeProject?.id, activeSessionId, memoryScope]);
+  }, [open, tab, memoryQuery, activeProject?.id, activeSessionId, memoryScope, settings.memoryEpisodicEnabled, settings.memoryHybridRecallEnabled, settings.memoryCorrectionsEnabled, settings.memoryMaxEpisodicHits, settings.memoryMinConfidence]);
 
   if (!open) return null;
   const lastTools = messages.flatMap((message) => {
@@ -156,6 +166,34 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const archiveMemory = async (id: string) => {
     await fetch(apiUrl(`/api/memory/${encodeURIComponent(id)}`), { method: "DELETE" }).catch(() => null);
     setMemory((items) => items.filter((item) => item.id !== id));
+    setMemoryEpisodes((items) => items.filter((item) => item.id !== id));
+  };
+
+  const correctMemory = async (targetId?: string) => {
+    if (!correctionDraft.trim()) {
+      setMemoryStatus("Write the correction first.");
+      return;
+    }
+    setMemoryStatus("Saving correction...");
+    const response = await fetch(apiUrl("/api/memory/correct"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: correctionDraft,
+        targetId,
+        projectId: memoryScope === "project" ? activeProject?.id ?? null : null,
+        sessionId: memoryScope === "session" ? activeSessionId ?? null : null,
+        scope: memoryScope
+      })
+    }).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (data?.ok) {
+      setCorrectionDraft("");
+      setMemoryStatus(data.superseded?.length ? `Correction saved. Superseded ${data.superseded.length} memory entries.` : "Correction saved.");
+      setMemory((items) => [data.correction, ...items.filter((item) => !data.superseded?.includes(item.id))]);
+      return;
+    }
+    setMemoryStatus(data?.error ?? "Unable to save correction.");
   };
 
   return (
@@ -234,7 +272,9 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <div className="context-kv"><span>Project</span><strong>{activeProject ? activeProject.name : "unassociated"}</strong></div>
           <div className="context-kv"><span>Mode</span><strong>{settings.memoryMode}</strong></div>
           <div className="context-kv"><span>Records</span><strong>{memoryStats?.count ?? 0}</strong></div>
+          <div className="context-kv"><span>Episodes</span><strong>{memoryStats?.episodeCount ?? 0}</strong></div>
           <div className="context-kv"><span>Events</span><strong>{memoryStats?.eventCount ?? 0}</strong></div>
+          <div className="context-kv"><span>Recall</span><strong>{settings.memoryHybridRecallEnabled ? "hybrid" : "records only"}</strong></div>
           <div className="context-kv"><span>Profile</span><strong>{Math.round((memoryProfile?.confidence ?? 0) * 100)}%</strong></div>
           {memoryProfile?.summary ? <p>{memoryProfile.summary}</p> : null}
           <select className="context-input" value={memoryScope} onChange={(event) => setMemoryScope(event.target.value as "project" | "session" | "global")}>
@@ -246,6 +286,8 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <input className="context-input" value={memoryQuery} placeholder="Search memory..." onChange={(event) => setMemoryQuery(event.target.value)} />
           <textarea className="context-textarea" value={memoryDraft} placeholder="Remember a tool, preference, decision, or project fact..." onChange={(event) => setMemoryDraft(event.target.value)} />
           <button onClick={() => void remember()}><Icon name="plus" /> Remember</button>
+          <textarea className="context-textarea" value={correctionDraft} placeholder="Correct a stale or wrong memory. It will supersede matching entries instead of silently deleting them." onChange={(event) => setCorrectionDraft(event.target.value)} />
+          <button onClick={() => void correctMemory()}><Icon name="spark" /> Save correction</button>
           <button onClick={() => void consolidateMemory()}><Icon name="spark" /> Consolidate old chats</button>
           {memoryStatus ? <p>{memoryStatus}</p> : null}
         </section>
@@ -275,12 +317,25 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <div className="memory-list">
             {memory.map((item) => (
               <article key={item.id}>
-                <header><strong>{item.title}</strong><button onClick={() => void archiveMemory(item.id)} title="Archive memory"><Icon name="x" size={12} /></button></header>
+                <header><strong>{item.title}</strong><button onClick={() => void correctMemory(item.id)} title="Apply correction to this memory"><Icon name="spark" size={12} /></button><button onClick={() => void archiveMemory(item.id)} title="Archive memory"><Icon name="x" size={12} /></button></header>
                 <p>{item.text}</p>
-                <em>{item.scope} / {item.kind}</em>
+                <em>{item.scope} / {item.kind}{item.tier ? ` / ${item.tier}` : ""}{item.confidence ? ` / ${Math.round(item.confidence * 100)}%` : ""}</em>
               </article>
             ))}
             {!memory.length ? <p>No memory found for this scope yet.</p> : null}
+          </div>
+        </section>
+        <section>
+          <h2><Icon name="terminal" /> Past episodes</h2>
+          <div className="memory-list">
+            {memoryEpisodes.map((item) => (
+              <article key={item.id}>
+                <header><strong>{item.title}</strong><button onClick={() => void archiveMemory(item.id)} title="Forget episode"><Icon name="x" size={12} /></button></header>
+                <p>{item.text}</p>
+                <em>{item.type}{item.toolName ? ` / ${item.toolName}` : ""}{item.outcome ? ` / ${item.outcome}` : ""}{item.confidence ? ` / ${Math.round(item.confidence * 100)}%` : ""}</em>
+              </article>
+            ))}
+            {!memoryEpisodes.length ? <p>No relevant raw episode found.</p> : null}
           </div>
         </section>
       </> : null}

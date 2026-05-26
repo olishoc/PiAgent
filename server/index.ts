@@ -40,6 +40,9 @@ const BACKEND_FEATURES = {
   memoryProfile: true,
   memoryConsolidation: true,
   proceduralMemory: true,
+  episodicMemory: true,
+  memoryCorrections: true,
+  hybridMemoryRecall: true,
   realAdvisor: true,
   piAdvisorExtension: true,
   piSubagentsExtension: true,
@@ -377,7 +380,8 @@ wss.on("connection", async (ws) => {
               sessionId: activeSessionId,
               logEvent: currentSettings.memoryEventLogEnabled,
               learnTools: currentSettings.memoryLearnTools,
-              learnSummaries: currentSettings.memoryLearnFromChats
+              learnSummaries: currentSettings.memoryLearnFromChats,
+              learnEpisodes: currentSettings.memoryEpisodicEnabled
             });
           }
         }
@@ -452,6 +456,10 @@ wss.on("connection", async (ws) => {
               sessionId: activeSessionId,
               includeGlobal: true,
               includeProfile: settings.memoryProfileEnabled,
+              includeEpisodes: settings.memoryEpisodicEnabled && settings.memoryHybridRecallEnabled,
+              includeCorrections: settings.memoryCorrectionsEnabled,
+              episodeLimit: settings.memoryMaxEpisodicHits,
+              minConfidence: settings.memoryMinConfidence,
               budgetTokens: settings.memoryMode === "deep" ? Math.max(settings.memoryBudgetTokens, 1_200) : settings.memoryBudgetTokens
             });
             if (memory.text) {
@@ -463,6 +471,7 @@ wss.on("connection", async (ws) => {
                 ws.send(JSON.stringify({
                   type: "memory_context",
                   count: memory.records.length,
+                  episodeCount: memory.episodes.length,
                   estimatedTokens: memory.estimatedTokens,
                   budgetTokens: memory.budgetTokens,
                   profileConfidence: memory.profile?.confidence,

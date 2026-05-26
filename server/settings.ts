@@ -44,6 +44,11 @@ export interface AppSettings {
   memoryLearnTools: boolean;
   memoryProfileEnabled: boolean;
   memoryEventLogEnabled: boolean;
+  memoryEpisodicEnabled: boolean;
+  memoryHybridRecallEnabled: boolean;
+  memoryCorrectionsEnabled: boolean;
+  memoryMaxEpisodicHits: number;
+  memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
   themePreset: ThemePreset;
   accentColor: string;
@@ -103,6 +108,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memoryLearnTools: true,
   memoryProfileEnabled: true,
   memoryEventLogEnabled: true,
+  memoryEpisodicEnabled: true,
+  memoryHybridRecallEnabled: true,
+  memoryCorrectionsEnabled: true,
+  memoryMaxEpisodicHits: 8,
+  memoryMinConfidence: 0.35,
   theme: "dark",
   themePreset: "codex",
   accentColor: "#58a6ff",
@@ -154,6 +164,9 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "memoryLearnTools",
   "memoryProfileEnabled",
   "memoryEventLogEnabled",
+  "memoryEpisodicEnabled",
+  "memoryHybridRecallEnabled",
+  "memoryCorrectionsEnabled",
   "longRunningMode",
   "autoLaunchAdvisor",
   "autoLaunchSubagents",
@@ -168,6 +181,8 @@ const NUMBER_KEYS = new Set<keyof AppSettings>([
   "composerFontSize",
   "messageSpacing",
   "memoryBudgetTokens",
+  "memoryMaxEpisodicHits",
+  "memoryMinConfidence",
   "advisorMaxUsesPerRun",
   "advisorMaxTokens",
   "advisorMaxContextMessages",
@@ -227,6 +242,8 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   loaded.composerFontSize = clampNumber(loaded.composerFontSize, DEFAULT_SETTINGS.composerFontSize, 11, 18);
   loaded.messageSpacing = clampNumber(loaded.messageSpacing, DEFAULT_SETTINGS.messageSpacing, 8, 28);
   loaded.memoryBudgetTokens = clampNumber(loaded.memoryBudgetTokens, DEFAULT_SETTINGS.memoryBudgetTokens, 100, 4000);
+  loaded.memoryMaxEpisodicHits = clampNumber(loaded.memoryMaxEpisodicHits, DEFAULT_SETTINGS.memoryMaxEpisodicHits, 0, 30);
+  loaded.memoryMinConfidence = clampNumber(loaded.memoryMinConfidence, DEFAULT_SETTINGS.memoryMinConfidence, 0, 1);
   loaded.advisorMaxUsesPerRun = clampNumber(loaded.advisorMaxUsesPerRun, DEFAULT_SETTINGS.advisorMaxUsesPerRun, 1, 12);
   loaded.advisorMaxTokens = clampNumber(loaded.advisorMaxTokens, DEFAULT_SETTINGS.advisorMaxTokens, 100, 65_536);
   loaded.advisorMaxContextMessages = clampNumber(loaded.advisorMaxContextMessages, DEFAULT_SETTINGS.advisorMaxContextMessages, 4, 80);
