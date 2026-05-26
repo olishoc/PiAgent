@@ -52,7 +52,8 @@ function redactSecrets(text: string) {
     .replace(/\b(sk-[A-Za-z0-9_-]{16,})\b/g, "[redacted-openai-key]")
     .replace(/\b(gh[pousr]_[A-Za-z0-9_]{16,})\b/g, "[redacted-github-token]")
     .replace(/\b(xox[baprs]-[A-Za-z0-9-]{16,})\b/g, "[redacted-slack-token]")
-    .replace(/\b((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,;]+/gi, "$1[redacted]");
+    .replace(/(["']?(?:api[_-]?key|token|secret|password|authorization)["']?\s*[:=]\s*["']?)([^"',;\s}]+)/gi, "$1[redacted]")
+    .replace(/(bearer\s+)[A-Za-z0-9._-]{12,}/gi, "$1[redacted]");
 }
 
 function tokenize(text: string): string[] {
@@ -179,7 +180,7 @@ export function buildMemoryContext(options: MemorySearchOptions & { budgetTokens
   const selected: MemoryRecord[] = [];
   let usedTokens = 0;
   for (const record of records) {
-    if (record.sensitivity === "sensitive" && record.scope === "global") continue;
+    if (record.sensitivity === "sensitive") continue;
     const line = `- [${record.scope}/${record.kind}] ${record.title}: ${record.text}`;
     const cost = estimateTokens(line);
     if (usedTokens + cost > budgetTokens) continue;
@@ -213,6 +214,16 @@ export function updateMemory(id: string, patch: Partial<MemoryRecord>) {
   records[index] = next;
   rewriteMemory(records);
   return next;
+}
+
+export function exportMemories(options: MemorySearchOptions = {}) {
+  const query = String(options.query ?? "");
+  return readAllMemory()
+    .filter((record) => memoryVisible(record, { ...options, includeArchived: true }))
+    .map((record) => ({ record, score: scoreMemory(record, query) }))
+    .filter((item) => !query.trim() || item.score > 0)
+    .sort((a, b) => b.score - a.score || b.record.updatedAt - a.record.updatedAt)
+    .map((item) => item.record);
 }
 
 export const memoryRouter = Router();
@@ -300,6 +311,6 @@ memoryRouter.get("/export", (req, res) => {
   const sessionId = typeof req.query.sessionId === "string" ? req.query.sessionId : null;
   res.json({
     ok: true,
-    records: searchMemories({ projectId, sessionId, includeGlobal: req.query.global !== "0", includeArchived: true, limit: 10_000 })
+    records: exportMemories({ projectId, sessionId, includeGlobal: req.query.global !== "0", query: String(req.query.q ?? "") })
   });
 });

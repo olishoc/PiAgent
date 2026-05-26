@@ -410,9 +410,9 @@ export function handlePiEvent(
 }
 
 function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMessage[] {
-  return rawMessages.flatMap((message): DisplayMessage[] => {
+  return rawMessages.reduce<DisplayMessage[]>((acc, message) => {
     if (message.role === "toolResult") {
-      return addToolMessage([], {
+      return addToolMessage(acc, {
         id: message.toolCallId ?? crypto.randomUUID(),
         kind: "tool" as const,
         toolName: message.toolName ?? "tool",
@@ -422,23 +422,23 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
     const role = message.role === "user" ? "user" : "agent";
     const content = message.text ?? message.content ?? "";
     if (message.role === "assistant" && Array.isArray(content)) {
-      return content.flatMap((part: any): DisplayMessage[] => {
+      return content.reduce<DisplayMessage[]>((innerAcc, part: any) => {
         if (part.type === "thinking" && typeof part.thinking === "string") {
-          if (!showThinking) return [];
-          return [{ id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
+          if (!showThinking) return innerAcc;
+          return [...innerAcc, { id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
         }
         if (part.type === "toolCall") {
-          return addToolMessage([], { id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" });
+          return addToolMessage(innerAcc, { id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" });
         }
         const partText = part.text ?? "";
-        return partText ? [{ id: crypto.randomUUID(), kind: "agent", text: String(partText), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }] : [];
-      });
+        return partText ? [...innerAcc, { id: crypto.randomUUID(), kind: "agent", text: String(partText), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }] : innerAcc;
+      }, acc);
     }
     const text = Array.isArray(content)
       ? content.map((part) => part.text ?? "").filter(Boolean).join("\n")
       : content;
-    return [{ id: message.id ?? crypto.randomUUID(), kind: role, text: String(text), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
-  });
+    return [...acc, { id: message.id ?? crypto.randomUUID(), kind: role, text: String(text), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
+  }, []);
 }
 
 export function useAgent(enabled = true, showThinking = true) {

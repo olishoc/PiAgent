@@ -350,10 +350,17 @@ export default function App() {
   const refreshScopedSessions = async (projectId: string | null = activeProjectId || null) => {
     const items = await fetchSessions(projectId);
     setSessions(items);
-    setActiveId((current) => {
-      if (current && items.some((session) => session.id === current)) return current;
-      return items[0]?.id ?? "";
-    });
+    const nextActive = items.some((session) => session.id === activeId) ? activeId : items[0]?.id ?? "";
+    setActiveId(nextActive);
+    if (nextActive) {
+      const nextSession = items.find((session) => session.id === nextActive);
+      if (nextSession) {
+        await agent.sendCommand({ type: "switch_session", sessionPath: nextSession.path });
+        await agent.sendCommand({ type: "get_messages" });
+      }
+    } else {
+      agent.replaceMessages([]);
+    }
     return items;
   };
 
@@ -418,7 +425,8 @@ export default function App() {
     setActiveProjectId("");
     navigate("chat");
     agent.replaceMessages([]);
-    await refreshScopedSessions(null);
+    const items = await refreshScopedSessions(null);
+    if (!items.length) await createScopedSession(null);
   };
 
   const patchSession = async (session: Session, patch: Partial<Session>) => {
@@ -432,6 +440,10 @@ export default function App() {
     if (patch.archived && activeId === session.id) {
       setActiveId(items[0]?.id ?? "");
       agent.replaceMessages([]);
+      if (items[0]) {
+        await agent.sendCommand({ type: "switch_session", sessionPath: items[0].path });
+        await agent.sendCommand({ type: "get_messages" });
+      }
     }
   };
 
@@ -694,6 +706,7 @@ export default function App() {
               open={contextOpen}
               settings={settings}
               activeProject={activeProject}
+              activeSessionId={activeId}
               sessions={sessions}
               messages={visibleMessages}
               connectionState={agent.connectionState}

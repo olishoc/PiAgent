@@ -9,6 +9,7 @@ interface ContextPanelProps {
   open: boolean;
   settings: AppSettings;
   activeProject?: ProjectInfo;
+  activeSessionId?: string;
   sessions: Session[];
   messages: DisplayMessage[];
   connectionState: string;
@@ -25,8 +26,9 @@ function formatTokens(value?: number) {
   return String(value);
 }
 
-export default function ContextPanel({ open, settings, activeProject, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
+export default function ContextPanel({ open, settings, activeProject, activeSessionId, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
   const [tab, setTab] = useState<"context" | "files" | "memory" | "apps">("context");
+  const [memoryScope, setMemoryScope] = useState<"project" | "session" | "global">("project");
   const [files, setFiles] = useState<Array<{ name: string; path: string; size: number; modified: number; ext: string }>>([]);
   const [preview, setPreview] = useState<{ name: string; path: string; size: number; text?: string } | null>(null);
   const [git, setGit] = useState<{ status?: string; remotes?: string; error?: string } | null>(null);
@@ -61,13 +63,15 @@ export default function ContextPanel({ open, settings, activeProject, sessions, 
     if (!open || tab !== "memory") return;
     const params = new URLSearchParams();
     if (memoryQuery.trim()) params.set("q", memoryQuery.trim());
-    if (activeProject?.id) params.set("projectId", activeProject.id);
+    if (memoryScope === "project" && activeProject?.id) params.set("projectId", activeProject.id);
+    if (memoryScope === "session" && activeSessionId) params.set("sessionId", activeSessionId);
+    if (memoryScope === "global") params.set("global", "1");
     params.set("limit", "30");
     fetch(apiUrl(`/api/memory/search?${params.toString()}`))
       .then((r) => r.json())
       .then((data) => setMemory(data.records ?? []))
       .catch(() => setMemoryStatus("Memory search failed."));
-  }, [open, tab, memoryQuery, activeProject?.id]);
+  }, [open, tab, memoryQuery, activeProject?.id, activeSessionId, memoryScope]);
 
   if (!open) return null;
   const lastTools = messages.flatMap((message) => {
@@ -103,9 +107,10 @@ export default function ContextPanel({ open, settings, activeProject, sessions, 
         text: memoryDraft,
         title: memoryDraft.split(/\r?\n/)[0]?.slice(0, 90),
         kind: activeProject ? "project" : "fact",
-        scope: activeProject ? "project" : "global",
-        projectId: activeProject?.id ?? null,
-        tags: activeProject ? ["project", activeProject.name.toLowerCase()] : ["global"]
+        scope: memoryScope,
+        projectId: memoryScope === "project" ? activeProject?.id ?? null : null,
+        sessionId: memoryScope === "session" ? activeSessionId ?? null : null,
+        tags: memoryScope === "project" && activeProject ? ["project", activeProject.name.toLowerCase()] : [memoryScope]
       })
     }).catch(() => null);
     const data = response?.ok ? await response.json().catch(() => null) : null;
@@ -196,7 +201,12 @@ export default function ContextPanel({ open, settings, activeProject, sessions, 
       {tab === "memory" ? <>
         <section>
           <h2><Icon name="spark" /> Scoped memory</h2>
-          <div className="context-kv"><span>Scope</span><strong>{activeProject ? activeProject.name : "global"}</strong></div>
+          <div className="context-kv"><span>Project</span><strong>{activeProject ? activeProject.name : "unassociated"}</strong></div>
+          <select className="context-input" value={memoryScope} onChange={(event) => setMemoryScope(event.target.value as "project" | "session" | "global")}>
+            <option value="project">Project memory</option>
+            <option value="session">Current chat memory</option>
+            <option value="global">Global memory</option>
+          </select>
           <div className="context-kv"><span>Injection</span><strong>{settings.memoryEnabled && settings.memoryAutoInject ? `${settings.memoryBudgetTokens} token budget` : "off"}</strong></div>
           <input className="context-input" value={memoryQuery} placeholder="Search memory..." onChange={(event) => setMemoryQuery(event.target.value)} />
           <textarea className="context-textarea" value={memoryDraft} placeholder="Remember a tool, preference, decision, or project fact..." onChange={(event) => setMemoryDraft(event.target.value)} />
