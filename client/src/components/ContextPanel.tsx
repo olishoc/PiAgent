@@ -35,6 +35,9 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const [memoryQuery, setMemoryQuery] = useState("");
   const [memoryDraft, setMemoryDraft] = useState("");
   const [memory, setMemory] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; tags?: string[]; updatedAt: number }>>([]);
+  const [memoryProfile, setMemoryProfile] = useState<any>(null);
+  const [memorySkills, setMemorySkills] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; updatedAt: number }>>([]);
+  const [memoryStats, setMemoryStats] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState("");
 
   useEffect(() => {
@@ -71,6 +74,17 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       .then((r) => r.json())
       .then((data) => setMemory(data.records ?? []))
       .catch(() => setMemoryStatus("Memory search failed."));
+    fetch(apiUrl("/api/memory/status"))
+      .then((r) => r.json())
+      .then((data) => {
+        setMemoryStats(data);
+        setMemoryProfile(data.profile);
+      })
+      .catch(() => {});
+    fetch(apiUrl("/api/memory/skills?limit=12"))
+      .then((r) => r.json())
+      .then((data) => setMemorySkills(data.skills ?? []))
+      .catch(() => {});
   }, [open, tab, memoryQuery, activeProject?.id, activeSessionId, memoryScope]);
 
   if (!open) return null;
@@ -121,6 +135,18 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       return;
     }
     setMemoryStatus(data?.error ?? "Unable to save memory.");
+  };
+
+  const consolidateMemory = async () => {
+    setMemoryStatus("Consolidating memory...");
+    const response = await fetch(apiUrl("/api/memory/consolidate"), { method: "POST" }).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (data?.ok) {
+      setMemoryStatus(`Learned ${data.memories ?? 0} memories from ${data.messages ?? 0} messages.`);
+      setMemoryProfile(data.profile);
+      return;
+    }
+    setMemoryStatus(data?.error ?? "Memory consolidation failed.");
   };
 
   const archiveMemory = async (id: string) => {
@@ -200,8 +226,13 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       </> : null}
       {tab === "memory" ? <>
         <section>
-          <h2><Icon name="spark" /> Scoped memory</h2>
+          <h2><Icon name="spark" /> Global memory</h2>
           <div className="context-kv"><span>Project</span><strong>{activeProject ? activeProject.name : "unassociated"}</strong></div>
+          <div className="context-kv"><span>Mode</span><strong>{settings.memoryMode}</strong></div>
+          <div className="context-kv"><span>Records</span><strong>{memoryStats?.count ?? 0}</strong></div>
+          <div className="context-kv"><span>Events</span><strong>{memoryStats?.eventCount ?? 0}</strong></div>
+          <div className="context-kv"><span>Profile</span><strong>{Math.round((memoryProfile?.confidence ?? 0) * 100)}%</strong></div>
+          {memoryProfile?.summary ? <p>{memoryProfile.summary}</p> : null}
           <select className="context-input" value={memoryScope} onChange={(event) => setMemoryScope(event.target.value as "project" | "session" | "global")}>
             <option value="project">Project memory</option>
             <option value="session">Current chat memory</option>
@@ -211,7 +242,29 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <input className="context-input" value={memoryQuery} placeholder="Search memory..." onChange={(event) => setMemoryQuery(event.target.value)} />
           <textarea className="context-textarea" value={memoryDraft} placeholder="Remember a tool, preference, decision, or project fact..." onChange={(event) => setMemoryDraft(event.target.value)} />
           <button onClick={() => void remember()}><Icon name="plus" /> Remember</button>
+          <button onClick={() => void consolidateMemory()}><Icon name="spark" /> Consolidate old chats</button>
           {memoryStatus ? <p>{memoryStatus}</p> : null}
+        </section>
+        {memoryProfile ? (
+          <section>
+            <h2><Icon name="bot" /> User representation</h2>
+            {memoryProfile.preferences?.slice(0, 4).map((item: string, index: number) => <p key={`pref-${index}`}>Preference: {item}</p>)}
+            {memoryProfile.workflows?.slice(0, 3).map((item: string, index: number) => <p key={`flow-${index}`}>Workflow: {item}</p>)}
+            {memoryProfile.constraints?.slice(0, 3).map((item: string, index: number) => <p key={`constraint-${index}`}>Constraint: {item}</p>)}
+          </section>
+        ) : null}
+        <section>
+          <h2><Icon name="terminal" /> Learned skills/tools</h2>
+          <div className="memory-list">
+            {memorySkills.slice(0, 8).map((item) => (
+              <article key={item.id}>
+                <header><strong>{item.title}</strong></header>
+                <p>{item.text}</p>
+                <em>{item.scope} / {item.kind}</em>
+              </article>
+            ))}
+            {!memorySkills.length ? <p>No learned tool memory yet.</p> : null}
+          </div>
         </section>
         <section>
           <h2><Icon name="archive" /> Retrieved memories</h2>

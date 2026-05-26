@@ -42,6 +42,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [gitName, setGitName] = useState("");
   const [gitEmail, setGitEmail] = useState("");
   const [githubStatus, setGithubStatus] = useState<any>(null);
+  const [memoryStatus, setMemoryStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
 
   const refreshGithubStatus = async () => {
@@ -78,6 +79,25 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
     const data = await response.json().catch(() => ({}));
     setActionStatus(data.message ?? data.error ?? "GitHub sign-in request sent.");
     window.setTimeout(() => void refreshGithubStatus(), 2000);
+  };
+
+  const refreshMemoryStatus = async () => {
+    const response = await fetch(apiUrl("/api/memory/status"));
+    const data = await response.json();
+    setMemoryStatus(data);
+    setActionStatus("Memory status refreshed.");
+  };
+
+  const consolidateMemory = async () => {
+    setActionStatus("Consolidating global memory from saved sessions...");
+    const response = await fetch(apiUrl("/api/memory/consolidate"), { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      setActionStatus(data.error ?? "Memory consolidation failed.");
+      return;
+    }
+    setMemoryStatus(data);
+    setActionStatus(`Consolidated ${data.memories ?? 0} memories from ${data.messages ?? 0} messages.`);
   };
 
   return (
@@ -282,10 +302,19 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
 
         {active === "Memoire" ? (
           <section className="settings-section">
-            <h2>Memoire longue duree</h2>
+            <h2>Memoire globale longue duree</h2>
             <div className="settings-card compact">
+              <span>Architecture</span>
+              <span>Local-first global memory: representation utilisateur, souvenirs atomiques, skills/outils, journal d'observations, scopes projet/session.</span>
+              <span>Mode</span>
+              <select value={settings.memoryMode} onChange={(e) => onChange({ memoryMode: e.target.value as AppSettings["memoryMode"], memoryEnabled: e.target.value !== "off" })}>
+                <option value="off">Off</option>
+                <option value="manual">Manual only</option>
+                <option value="assistive">Assistive</option>
+                <option value="deep">Deep Hermes-style</option>
+              </select>
               <span>Memoire PiAgent</span>
-              <select value={settings.memoryEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEnabled: e.target.value === "on" })}>
+              <select value={settings.memoryEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEnabled: e.target.value === "on", memoryMode: e.target.value === "on" ? "deep" : "off" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactivee</option>
               </select>
@@ -294,13 +323,47 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="on">Recuperer un petit contexte pertinent</option>
                 <option value="off">Recherche manuelle seulement</option>
               </select>
+              <span>Apprendre des chats</span>
+              <select value={settings.memoryLearnFromChats ? "on" : "off"} onChange={(e) => onChange({ memoryLearnFromChats: e.target.value === "on" })}>
+                <option value="on">Extraire preferences, workflows, decisions</option>
+                <option value="off">Ne pas apprendre automatiquement</option>
+              </select>
+              <span>Apprendre les outils</span>
+              <select value={settings.memoryLearnTools ? "on" : "off"} onChange={(e) => onChange({ memoryLearnTools: e.target.value === "on" })}>
+                <option value="on">Construire une memoire de skills/outils</option>
+                <option value="off">Ne pas suivre les outils</option>
+              </select>
+              <span>Profil global</span>
+              <select value={settings.memoryProfileEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryProfileEnabled: e.target.value === "on" })}>
+                <option value="on">Peer card globale</option>
+                <option value="off">Souvenirs sans profil</option>
+              </select>
+              <span>Journal d'observations</span>
+              <select value={settings.memoryEventLogEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEventLogEnabled: e.target.value === "on" })}>
+                <option value="on">Conserver un journal inspectable</option>
+                <option value="off">Souvenirs seulement</option>
+              </select>
               <span>Budget max</span>
-              <input type="number" min="100" max="2000" step="50" value={settings.memoryBudgetTokens} onChange={(e) => onChange({ memoryBudgetTokens: Number(e.target.value) })} />
+              <input type="number" min="100" max="4000" step="50" value={settings.memoryBudgetTokens} onChange={(e) => onChange({ memoryBudgetTokens: Number(e.target.value) })} />
               <span>Isolation</span>
-              <span>Les souvenirs projet/session ne sont recuperes que dans le projet ou la session correspondante. Les souvenirs globaux restent separes des secrets.</span>
+              <span>Les souvenirs projet/session restent isoles. La couche globale ne stocke pas les secrets detectes et injecte seulement un contexte source-labelle.</span>
+              <span>Etat</span>
+              <button onClick={() => void refreshMemoryStatus()}><Icon name="search" /> Lire status memoire</button>
+              <span>Consolidation</span>
+              <button onClick={() => void consolidateMemory()}><Icon name="spark" /> Apprendre depuis les anciennes sessions</button>
               <span>Dossier memoire</span>
               <button onClick={() => void runOpen("config")}><Icon name="folder" /> Ouvrir la configuration</button>
             </div>
+            {memoryStatus ? (
+              <pre className="diagnostics-output">{JSON.stringify({
+                backend: memoryStatus.backend,
+                count: memoryStatus.count,
+                eventCount: memoryStatus.eventCount,
+                byScope: memoryStatus.byScope,
+                byKind: memoryStatus.byKind,
+                profile: memoryStatus.profile
+              }, null, 2)}</pre>
+            ) : null}
           </section>
         ) : null}
 

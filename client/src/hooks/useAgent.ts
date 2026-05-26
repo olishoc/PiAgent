@@ -379,7 +379,8 @@ export function handlePiEvent(
   }
 
   if (event.type === "memory_context") {
-    setFooterStatus(`memory: ${event.count ?? 0} items / ${event.estimatedTokens ?? 0}/${event.budgetTokens ?? 0} est. tokens`);
+    const confidence = typeof event.profileConfidence === "number" ? ` / profile ${Math.round(event.profileConfidence * 100)}%` : "";
+    setFooterStatus(`global memory: ${event.count ?? 0} items / ${event.estimatedTokens ?? 0}/${event.budgetTokens ?? 0} est. tokens${confidence}`);
     return;
   }
 

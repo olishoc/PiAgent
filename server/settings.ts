@@ -9,6 +9,7 @@ export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhi
 export type SpeedMode = "fast" | "balanced" | "deep";
 export type ThemePreset = "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
 export type TextDensity = "compact" | "codex" | "comfortable" | "custom";
+export type MemoryMode = "off" | "manual" | "assistive" | "deep";
 
 export interface AppSettings {
   onboardingComplete: boolean;
@@ -30,6 +31,11 @@ export interface AppSettings {
   memoryEnabled: boolean;
   memoryAutoInject: boolean;
   memoryBudgetTokens: number;
+  memoryMode: MemoryMode;
+  memoryLearnFromChats: boolean;
+  memoryLearnTools: boolean;
+  memoryProfileEnabled: boolean;
+  memoryEventLogEnabled: boolean;
   theme: "dark" | "light" | "system";
   themePreset: ThemePreset;
   accentColor: string;
@@ -68,6 +74,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memoryEnabled: true,
   memoryAutoInject: true,
   memoryBudgetTokens: 700,
+  memoryMode: "deep",
+  memoryLearnFromChats: true,
+  memoryLearnTools: true,
+  memoryProfileEnabled: true,
+  memoryEventLogEnabled: true,
   theme: "dark",
   themePreset: "codex",
   accentColor: "#58a6ff",
@@ -89,6 +100,7 @@ const TEXT_DENSITIES: TextDensity[] = ["compact", "codex", "comfortable", "custo
 const ACCESS_MODES: AccessMode[] = ["read-only", "limited", "full"];
 const APPROVAL_POLICIES: ApprovalPolicy[] = ["on-request", "on-failure", "never"];
 const SPEED_MODES: SpeedMode[] = ["fast", "balanced", "deep"];
+const MEMORY_MODES: MemoryMode[] = ["off", "manual", "assistive", "deep"];
 const THEMES: Array<AppSettings["theme"]> = ["dark", "light", "system"];
 const DENSITIES: Array<AppSettings["density"]> = ["comfortable", "compact"];
 const BOOLEAN_KEYS = new Set<keyof AppSettings>([
@@ -102,6 +114,10 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "githubEnabled",
   "memoryEnabled",
   "memoryAutoInject",
+  "memoryLearnFromChats",
+  "memoryLearnTools",
+  "memoryProfileEnabled",
+  "memoryEventLogEnabled",
   "longRunningMode",
   "autoLaunchAdvisor",
   "autoLaunchSubagents"
@@ -126,6 +142,7 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   approvalPolicy: APPROVAL_POLICIES,
   thinkingLevel: THINKING_LEVELS,
   speedMode: SPEED_MODES,
+  memoryMode: MEMORY_MODES,
   theme: THEMES,
   themePreset: THEME_PRESETS,
   density: DENSITIES,
@@ -149,11 +166,12 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   if (!THEME_PRESETS.includes(loaded.themePreset as ThemePreset)) loaded.themePreset = "codex";
   if (!THINKING_LEVELS.includes(loaded.thinkingLevel as ThinkingLevel)) loaded.thinkingLevel = "medium";
   if (!TEXT_DENSITIES.includes(loaded.textDensity as TextDensity)) loaded.textDensity = "codex";
+  if (!MEMORY_MODES.includes(loaded.memoryMode as MemoryMode)) loaded.memoryMode = loaded.memoryEnabled ? "assistive" : "off";
   loaded.messageFontSize = clampNumber(loaded.messageFontSize, DEFAULT_SETTINGS.messageFontSize, 11, 18);
   loaded.messageLineHeight = clampNumber(loaded.messageLineHeight, DEFAULT_SETTINGS.messageLineHeight, 1.25, 1.9);
   loaded.composerFontSize = clampNumber(loaded.composerFontSize, DEFAULT_SETTINGS.composerFontSize, 11, 18);
   loaded.messageSpacing = clampNumber(loaded.messageSpacing, DEFAULT_SETTINGS.messageSpacing, 8, 28);
-  loaded.memoryBudgetTokens = clampNumber(loaded.memoryBudgetTokens, DEFAULT_SETTINGS.memoryBudgetTokens, 100, 2000);
+  loaded.memoryBudgetTokens = clampNumber(loaded.memoryBudgetTokens, DEFAULT_SETTINGS.memoryBudgetTokens, 100, 4000);
   loaded.fontFamily = typeof loaded.fontFamily === "string" && loaded.fontFamily.trim()
     ? loaded.fontFamily.trim()
     : DEFAULT_SETTINGS.fontFamily;

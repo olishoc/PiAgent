@@ -90,6 +90,11 @@ export interface AppSettings {
   memoryEnabled: boolean;
   memoryAutoInject: boolean;
   memoryBudgetTokens: number;
+  memoryMode: "off" | "manual" | "assistive" | "deep";
+  memoryLearnFromChats: boolean;
+  memoryLearnTools: boolean;
+  memoryProfileEnabled: boolean;
+  memoryEventLogEnabled: boolean;
   theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
   accentColor: string;
@@ -223,6 +228,11 @@ export default function App() {
     memoryEnabled: true,
     memoryAutoInject: true,
     memoryBudgetTokens: 700,
+    memoryMode: "deep",
+    memoryLearnFromChats: true,
+    memoryLearnTools: true,
+    memoryProfileEnabled: true,
+    memoryEventLogEnabled: true,
     theme: "dark",
     themePreset: "codex",
     accentColor: "#58a6ff",

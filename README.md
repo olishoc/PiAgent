@@ -76,5 +76,10 @@ pi install npm:@juicesharp/rpiv-advisor
 
 Extensions load automatically when Pi spawns.
 
+## Global memory
+PiAgent includes a local-first global memory layer under `~/.config/pi-app/memory/`.
+It learns user preferences, workflows, project facts, skills, and tool usage without
+putting the full history into every prompt. See `docs/GLOBAL_MEMORY.md`.
+
 ## Architecture
 See `docs/ARCHITECTURE.md`.

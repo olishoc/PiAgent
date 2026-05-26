@@ -79,9 +79,9 @@ const entries: Omit<ExtensionCatalogEntry, "status">[] = [
   },
   {
     id: "memory",
-    title: "PiAgent Memory",
+    title: "PiAgent Global Memory",
     category: "Featured",
-    description: "Scoped long-term memory with project/session separation and a small retrieval budget.",
+    description: "Hermes/Honcho-inspired local-first memory: user representation, skills, tools, scoped recall, and consolidation.",
     authType: "none",
     source: "built-in",
     settingKey: "memoryEnabled",
