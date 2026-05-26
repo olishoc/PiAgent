@@ -19,7 +19,11 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   const endRef = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
-  const toolCount = useMemo(() => messages.filter((message) => message.kind === "tool").length, [messages]);
+  const toolCount = useMemo(() => messages.reduce((count, message) => {
+    if (message.kind === "tool") return count + 1;
+    if (message.kind === "tool_group") return count + message.tools.length;
+    return count;
+  }, 0), [messages]);
   const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
 
   useEffect(() => {
@@ -61,6 +65,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
         ) : null}
         {messages.map((message) => (
           message.kind === "tool"
+          || message.kind === "tool_group"
             ? <ToolCallRow key={message.id} message={message} />
             : <MessageBubble key={message.id} message={message} />
         ))}

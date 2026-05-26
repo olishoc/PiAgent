@@ -109,8 +109,32 @@ function defaultWorkflows(): ProjectWorkflow[] {
       status: "idle",
       steps: ["Review risks", "Fix P0/P1", "Record residual risk"],
       updatedAt: now
+    },
+    {
+      id: "memory",
+      name: "Memory capture",
+      description: "Save reusable project facts, tool recipes, decisions, and handoff notes without filling the active context.",
+      status: "idle",
+      steps: ["Extract durable facts", "Tag project memories", "Keep prompt context under budget"],
+      updatedAt: now
+    },
+    {
+      id: "handoff",
+      name: "Long-run handoff",
+      description: "Keep the next milestone, verification state, risks, and subagent opportunities resumable.",
+      status: "idle",
+      steps: ["Update task state", "Queue advisor checkpoint", "Identify subagent slices", "Resume next action"],
+      updatedAt: now
     }
   ];
+}
+
+function mergeWorkflows(existing: unknown): ProjectWorkflow[] {
+  const current = Array.isArray(existing) ? existing as ProjectWorkflow[] : [];
+  const defaults = defaultWorkflows();
+  if (!current.length) return defaults;
+  const ids = new Set(current.map((workflow) => workflow.id));
+  return [...current, ...defaults.filter((workflow) => !ids.has(workflow.id))];
 }
 
 export function readProjects(): ProjectInfo[] {
@@ -124,7 +148,7 @@ export function readProjects(): ProjectInfo[] {
     createdAt: Number(project.createdAt ?? Date.now()),
     lastOpenedAt: Number(project.lastOpenedAt ?? project.createdAt ?? Date.now()),
     sessionIds: Array.isArray(project.sessionIds) ? project.sessionIds.map(String) : [],
-    workflowConfig: Array.isArray(project.workflowConfig) && project.workflowConfig.length ? project.workflowConfig as ProjectWorkflow[] : defaultWorkflows(),
+    workflowConfig: mergeWorkflows(project.workflowConfig),
     pinned: Boolean(project.pinned),
     archived: Boolean(project.archived)
   }));

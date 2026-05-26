@@ -213,7 +213,7 @@ button:active {
 
 .context-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 4px;
   margin-bottom: 10px;
   padding: 4px;
@@ -344,6 +344,74 @@ button:active {
   font-size: 10px;
   line-height: 1.45;
   white-space: pre-wrap;
+}
+
+.context-input,
+.context-textarea {
+  width: 100%;
+  margin-top: 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.context-input {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+.context-textarea {
+  min-height: 86px;
+  padding: 8px 9px;
+  resize: vertical;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.memory-list {
+  display: grid;
+  gap: 8px;
+}
+
+.memory-list article {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--subtle-bg);
+}
+
+.memory-list header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.memory-list header button {
+  width: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  justify-content: center;
+}
+
+.memory-list strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-list em {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-style: normal;
 }
 
 .onboarding,
@@ -520,6 +588,30 @@ button:active {
   font-style: normal;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.extension-grid small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+}
+
+.extension-category {
+  display: grid;
+  gap: 8px;
+}
+
+.extension-icon.risk-high {
+  color: var(--accent-amber);
+}
+
+.extension-icon.risk-medium {
+  color: var(--accent-blue);
+}
+
+.extension-icon.risk-low {
+  color: var(--accent-green);
 }
 
 .empty-result {

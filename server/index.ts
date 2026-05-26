@@ -12,6 +12,8 @@ import { APP_CONFIG_DIR, PI_AUTH_PATH, TOKEN_PATH, readTokens } from "./tokenSto
 import { SESSION_DIR, listSessions, sessionsRouter } from "./sessions.js";
 import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, writeSettings } from "./settings.js";
 import { listProjects, projectsRouter } from "./projects.js";
+import { extensionsRouter, listExtensionCatalog } from "./extensions.js";
+import { buildMemoryContext, MEMORY_DIR, memoryRouter } from "./memory.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -27,7 +29,11 @@ const BACKEND_FEATURES = {
   installSidecarCleanup: true,
   projects: true,
   githubConnect: true,
-  typographyControls: true
+  typographyControls: true,
+  scopedMemory: true,
+  extensionCatalog: true,
+  projectScopedChats: true,
+  groupedToolCalls: true
 };
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
@@ -49,6 +55,8 @@ app.use(express.json());
 app.use("/api/auth", authRouter);
 app.use("/api/sessions", sessionsRouter);
 app.use("/api/projects", projectsRouter);
+app.use("/api/extensions", extensionsRouter);
+app.use("/api/memory", memoryRouter);
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });
@@ -100,6 +108,8 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       hasPiAuth: fs.existsSync(PI_AUTH_PATH),
       sessionCount: listSessions().length,
       projectCount: listProjects().length,
+      memoryDir: MEMORY_DIR,
+      extensionCount: listExtensionCatalog().length,
       provider: settings.provider,
       model: settings.modelLabel || "gpt-5.5"
     });
@@ -363,7 +373,35 @@ wss.on("connection", async (ws) => {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: true }));
           return;
         }
-        const result = await session.send(cmd);
+        let outbound = cmd;
+        if (cmd.type === "prompt" && typeof cmd.message === "string") {
+          settings = readSettings();
+          if (settings.memoryEnabled && settings.memoryAutoInject) {
+            const memory = buildMemoryContext({
+              query: cmd.message,
+              projectId: typeof cmd.projectId === "string" ? cmd.projectId : null,
+              sessionId: typeof cmd.sessionId === "string" ? cmd.sessionId : null,
+              includeGlobal: true,
+              budgetTokens: settings.memoryBudgetTokens
+            });
+            if (memory.text) {
+              outbound = {
+                ...cmd,
+                message: `${cmd.message}\n\nPiAgent retrieved memory (scoped, ${memory.estimatedTokens}/${memory.budgetTokens} estimated tokens${memory.truncated ? ", truncated" : ""}):\n${memory.text}\n\nUse this memory only when it is relevant. Do not repeat it to the user unless it matters.`
+              };
+              if (ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                  type: "memory_context",
+                  count: memory.records.length,
+                  estimatedTokens: memory.estimatedTokens,
+                  budgetTokens: memory.budgetTokens,
+                  truncated: memory.truncated
+                }));
+              }
+            }
+          }
+        }
+        const result = await session.send(outbound);
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", ...result }));
       } catch (err) {
         const message = err instanceof Error ? err.message : "Unknown WebSocket command error";

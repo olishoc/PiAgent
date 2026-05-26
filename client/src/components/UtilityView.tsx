@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppSettings } from "../App";
 import { Session } from "./Sidebar";
 import Icon from "./Icon";
@@ -17,16 +17,42 @@ interface UtilityViewProps {
   onRunCommand: (command: string) => void;
 }
 
+interface ExtensionCatalogEntry {
+  id: string;
+  title: string;
+  category: string;
+  description: string;
+  status: "enabled" | "available" | "setup-required" | "guidance-only";
+  authType: string;
+  source: string;
+  sourceUrl?: string;
+  settingKey?: keyof AppSettings;
+  connectAction?: string;
+  setupCommand?: string;
+  permissions: string[];
+  risk: "low" | "medium" | "high";
+  recommended: boolean;
+}
+
 export default function UtilityView({ view, sessions, onOpenSettings, onBackToChat, onSelectSession, onNew, settings, extensionCommands, onSettingsChange, onRunCommand }: UtilityViewProps) {
   const [query, setQuery] = useState("");
   const [extensionTab, setExtensionTab] = useState<"plugins" | "skills">("plugins");
   const [extensionFilter, setExtensionFilter] = useState<"all" | "built-in">("all");
+  const [catalog, setCatalog] = useState<ExtensionCatalogEntry[]>([]);
   const [status, setStatus] = useState("");
   const filteredSessions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return sessions;
     return sessions.filter((session) => session.name.toLowerCase().includes(needle));
   }, [query, sessions]);
+
+  useEffect(() => {
+    if (view !== "extensions") return;
+    fetch(apiUrl("/api/extensions/catalog"))
+      .then((response) => response.json())
+      .then((data) => setCatalog(data.catalog ?? []))
+      .catch(() => setStatus("Extension catalog unavailable."));
+  }, [view]);
 
   if (view === "search") {
     return (
@@ -57,21 +83,36 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
       const data = await response.json().catch(() => ({}));
       setStatus(data.message ?? data.error ?? "GitHub sign-in request sent.");
     };
-    const featured = [
-      { id: "webEnabled", title: "Web research", description: "Search and cite current information when Pi has a web/search extension installed.", icon: "search" as const, enabled: settings.webEnabled, kind: "plugin" },
-      { id: "advisorEnabled", title: "Advisor", description: "Injects a concrete review pass into prompts so Pi checks risks before finalizing.", icon: "spark" as const, enabled: settings.advisorEnabled, kind: "skill" },
-      { id: "chromeEnabled", title: "Chrome", description: "Prepares browser-control workflows through installed Pi extensions.", icon: "layout" as const, enabled: settings.chromeEnabled, kind: "plugin" },
-      { id: "githubEnabled", title: "GitHub", description: "Shows project Git state and keeps GitHub workflow context visible.", icon: "link" as const, enabled: settings.githubEnabled, kind: "plugin" },
-      { id: "computerUseEnabled", title: "Computer use", description: "Allows full local-computer workflow instructions when access mode permits.", icon: "terminal" as const, enabled: settings.computerUseEnabled, kind: "plugin" },
-      { id: "contextEnabled", title: "Workspace context", description: "Includes local paths, attachments, and project context in prompts.", icon: "folder" as const, enabled: settings.contextEnabled, kind: "skill" }
-    ];
+    const actionFor = async (entry: ExtensionCatalogEntry) => {
+      if (entry.connectAction === "github-login") {
+        await connectGithub();
+        return;
+      }
+      if (entry.connectAction === "openai-oauth") {
+        window.location.href = apiUrl("/api/auth/login?redirect=1");
+        return;
+      }
+      if (entry.settingKey) {
+        onSettingsChange({ [entry.settingKey]: !settings[entry.settingKey] } as Partial<AppSettings>);
+        setStatus(`${entry.title} ${settings[entry.settingKey] ? "disabled" : "enabled"}.`);
+        return;
+      }
+      const setup = entry.setupCommand
+        ? `Set up the ${entry.title} extension for PiAgent. Use this command or equivalent MCP configuration when appropriate:\n\n${entry.setupCommand}\n\nExplain the permissions and verify it is available before using it.`
+        : `Plan how to connect and use the ${entry.title} extension in PiAgent. Treat it as ${entry.source}/${entry.authType}, explain required credentials, and do not assume it is installed until verified.`;
+      onRunCommand(setup);
+    };
     const extensionNeedle = query.trim().toLowerCase();
-    const visibleFeatured = featured.filter((item) => {
-      const matchesTab = extensionTab === "plugins" ? item.kind === "plugin" : item.kind === "skill";
-      const matchesQuery = !extensionNeedle || `${item.title} ${item.description}`.toLowerCase().includes(extensionNeedle);
-      const matchesFilter = extensionFilter === "all" || item.kind === "plugin" || item.kind === "skill";
+    const visibleCatalog = catalog.filter((item) => {
+      const matchesTab = extensionTab === "plugins" ? item.source !== "built-in" || item.authType !== "skill" : item.source === "built-in" || item.authType === "skill";
+      const matchesQuery = !extensionNeedle || `${item.title} ${item.description} ${item.category} ${item.permissions.join(" ")}`.toLowerCase().includes(extensionNeedle);
+      const matchesFilter = extensionFilter === "all" || item.source === "built-in";
       return matchesTab && matchesQuery && matchesFilter;
     });
+    const groupedCatalog = visibleCatalog.reduce<Record<string, ExtensionCatalogEntry[]>>((acc, item) => {
+      acc[item.category] = [...(acc[item.category] ?? []), item];
+      return acc;
+    }, {});
     const visibleCommands = extensionFilter === "built-in" ? [] : extensionCommands.filter((command) => {
       if (!extensionNeedle) return true;
       return `${command.name} ${command.description ?? ""} ${command.source ?? ""}`.toLowerCase().includes(extensionNeedle);
@@ -107,21 +148,29 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
           </button>
         </div>
         {status ? <p className="settings-status">{status}</p> : null}
-        <h2>Featured</h2>
-        <div className="extension-grid">
-          {visibleFeatured.map((item) => (
-            <button key={item.id} onClick={() => onSettingsChange({ [item.id]: !item.enabled } as Partial<AppSettings>)}>
-              <span className="extension-icon"><Icon name={item.icon} /></span>
-              <span><strong>{item.title}</strong><em>{item.description}</em></span>
-              <Icon name={item.enabled ? "check" : "plus"} />
-            </button>
-          ))}
-          {!visibleFeatured.length ? <span className="empty-result">No matching module.</span> : null}
-        </div>
+        {Object.entries(groupedCatalog).map(([category, items]) => (
+          <div key={category} className="extension-category">
+            <h2>{category}</h2>
+            <div className="extension-grid">
+              {items.map((item) => (
+                <button key={item.id} onClick={() => void actionFor(item)}>
+                  <span className={`extension-icon risk-${item.risk}`}><Icon name={item.status === "enabled" ? "check" : item.authType === "oauth" ? "link" : "plus"} /></span>
+                  <span>
+                    <strong>{item.title}</strong>
+                    <em>{item.description}</em>
+                    <small>{item.source} / {item.authType} / {item.risk} risk</small>
+                  </span>
+                  <Icon name={item.status === "enabled" ? "check" : item.status === "setup-required" ? "gear" : "plus"} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {!visibleCatalog.length ? <span className="empty-result">No matching module.</span> : null}
         <h2>Installed Pi commands</h2>
         <div className="utility-grid">
           {visibleCommands.length ? visibleCommands.map((command) => (
-            <button key={command.name} onClick={() => onRunCommand(command.name)}>
+            <button key={command.name} onClick={() => onRunCommand(`/${command.name}`)}>
               <Icon name="plug" /><strong>/{command.name}</strong><span>{command.description ?? command.source ?? "Pi command"}</span>
             </button>
           )) : (

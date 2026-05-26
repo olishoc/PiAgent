@@ -11,6 +11,7 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
   { id: "Modeles", label: "Modeles", icon: "bot" },
   { id: "Sous-agents", label: "Sous-agents", icon: "plug" },
   { id: "Projets", label: "Projets", icon: "folder" },
+  { id: "Memoire", label: "Memoire", icon: "spark" },
   { id: "Raccourcis", label: "Raccourcis", icon: "terminal" },
   { id: "Extensions", label: "Extensions", icon: "plug" },
   { id: "Git", label: "Git", icon: "link" }
@@ -275,6 +276,30 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
               <span>Workflow</span>
               <span>Les projets enregistrent un arbre de fichiers, l'etat Git, les workflows Plan/Build/Review, et l'espace actif que Pi utilise.</span>
+            </div>
+          </section>
+        ) : null}
+
+        {active === "Memoire" ? (
+          <section className="settings-section">
+            <h2>Memoire longue duree</h2>
+            <div className="settings-card compact">
+              <span>Memoire PiAgent</span>
+              <select value={settings.memoryEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEnabled: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactivee</option>
+              </select>
+              <span>Injection automatique</span>
+              <select value={settings.memoryAutoInject ? "on" : "off"} onChange={(e) => onChange({ memoryAutoInject: e.target.value === "on" })}>
+                <option value="on">Recuperer un petit contexte pertinent</option>
+                <option value="off">Recherche manuelle seulement</option>
+              </select>
+              <span>Budget max</span>
+              <input type="number" min="100" max="2000" step="50" value={settings.memoryBudgetTokens} onChange={(e) => onChange({ memoryBudgetTokens: Number(e.target.value) })} />
+              <span>Isolation</span>
+              <span>Les souvenirs projet/session ne sont recuperes que dans le projet ou la session correspondante. Les souvenirs globaux restent separes des secrets.</span>
+              <span>Dossier memoire</span>
+              <button onClick={() => void runOpen("config")}><Icon name="folder" /> Ouvrir la configuration</button>
             </div>
           </section>
         ) : null}

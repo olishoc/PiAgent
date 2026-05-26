@@ -333,6 +333,59 @@
   white-space: pre-wrap;
 }
 
+.tool-list {
+  display: grid;
+  gap: 4px;
+  padding: 0 10px 10px 34px;
+}
+
+.tool-list details {
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--subtle-bg);
+}
+
+.tool-list summary {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 8px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.tool-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-list summary span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-mini.done { color: var(--accent-green); }
+.tool-mini.error { color: var(--accent-red); }
+.tool-mini.running { color: var(--accent-amber); }
+
+.tool-list em {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.tool-list pre,
+.tool-list p {
+  overflow-x: auto;
+  margin: 0;
+  padding: 0 8px 8px 31px;
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+  white-space: pre-wrap;
+}
+
 .thread-status,
 .thread-footer {
   min-height: 20px;

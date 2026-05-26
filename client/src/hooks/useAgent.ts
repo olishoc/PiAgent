@@ -7,8 +7,20 @@ export interface ToolMessage {
   id: string;
   kind: "tool";
   toolName: string;
+  groupKey?: string;
   args?: unknown;
   status: ToolStatus;
+  startedAt?: number;
+  endedAt?: number;
+}
+
+export interface ToolGroupMessage {
+  id: string;
+  kind: "tool_group";
+  groupKey: string;
+  label: string;
+  status: ToolStatus;
+  tools: ToolMessage[];
   startedAt?: number;
   endedAt?: number;
 }
@@ -24,7 +36,7 @@ export interface TextMessage {
   createdAt?: number;
 }
 
-export type DisplayMessage = ToolMessage | TextMessage;
+export type DisplayMessage = ToolMessage | ToolGroupMessage | TextMessage;
 export type ConnectionState = "idle" | "connecting" | "ready" | "closed" | "error";
 
 export interface Attachment {
@@ -47,6 +59,11 @@ export interface PromptOptions {
   longRunningMode?: boolean;
   autoLaunchAdvisor?: boolean;
   autoLaunchSubagents?: boolean;
+}
+
+export interface PromptMeta {
+  projectId?: string;
+  sessionId?: string;
 }
 
 export interface ContextUsage {
@@ -167,6 +184,95 @@ function replaceThinkingDetail(messages: DisplayMessage[], detail: string, activ
   return next;
 }
 
+function toolGroupFor(toolName: string) {
+  const name = toolName.toLowerCase();
+  if (/(bash|shell|command|terminal|exec|run_|npm|pnpm|yarn|cargo|git|test)/.test(name)) {
+    return { key: "commands", label: "commands" };
+  }
+  if (/(read|list|grep|search|find|glob|rg|scan|cat|open_file|file)/.test(name)) {
+    return { key: "file_reads", label: "file reads" };
+  }
+  return null;
+}
+
+function groupStatus(tools: ToolMessage[]): ToolStatus {
+  if (tools.some((tool) => tool.status === "error")) return "error";
+  if (tools.some((tool) => tool.status === "running")) return "running";
+  return "done";
+}
+
+function addToolMessage(messages: DisplayMessage[], tool: ToolMessage): DisplayMessage[] {
+  const group = toolGroupFor(tool.toolName);
+  if (!group) return [...messages, tool];
+  const groupedTool = { ...tool, groupKey: group.key };
+  const next = [...messages];
+  for (let i = next.length - 1; i >= 0; i -= 1) {
+    const item = next[i];
+    if (item.kind === "user" || item.kind === "agent") break;
+    if (item.kind === "tool_group" && item.groupKey === group.key) {
+      const tools = [...item.tools, groupedTool];
+      next[i] = {
+        ...item,
+        status: groupStatus(tools),
+        tools,
+        endedAt: undefined
+      };
+      return next;
+    }
+    if (item.kind === "tool" && item.groupKey === group.key) {
+      const tools = [item, groupedTool];
+      next[i] = {
+        id: crypto.randomUUID(),
+        kind: "tool_group",
+        groupKey: group.key,
+        label: group.label,
+        status: groupStatus(tools),
+        tools,
+        startedAt: item.startedAt ?? groupedTool.startedAt,
+        endedAt: undefined
+      };
+      return next;
+    }
+  }
+  return [...next, {
+    id: crypto.randomUUID(),
+    kind: "tool_group",
+    groupKey: group.key,
+    label: group.label,
+    status: tool.status,
+    tools: [groupedTool],
+    startedAt: tool.startedAt,
+    endedAt: tool.endedAt
+  }];
+}
+
+function updateToolMessage(messages: DisplayMessage[], event: any): DisplayMessage[] {
+  const eventId = event.toolCallId ?? event.id;
+  return messages.map((item) => {
+    if (item.kind === "tool") {
+      if (eventId && item.id !== eventId) return item;
+      return { ...item, status: event.isError ? "error" as const : "done" as const, endedAt: Date.now() };
+    }
+    if (item.kind === "tool_group") {
+      let changed = false;
+      const tools = item.tools.map((tool) => {
+        if (eventId && tool.id !== eventId) return tool;
+        changed = true;
+        return { ...tool, status: event.isError ? "error" as const : "done" as const, endedAt: Date.now() };
+      });
+      if (!changed) return item;
+      const status = groupStatus(tools);
+      return {
+        ...item,
+        tools,
+        status,
+        endedAt: status === "running" ? undefined : Date.now()
+      };
+    }
+    return item;
+  });
+}
+
 export function handlePiEvent(
   event: any,
   setMessages: Dispatch<SetStateAction<DisplayMessage[]>>,
@@ -227,28 +333,20 @@ export function handlePiEvent(
 
   if (event.type === "tool_execution_start") {
     if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Using ${event.toolName ?? event.name ?? "a tool"} to gather more context.`));
-    setMessages((items) => [
-      ...items,
-      {
+    setMessages((items) => addToolMessage(items, {
         id: event.toolCallId ?? event.id ?? crypto.randomUUID(),
         kind: "tool",
         toolName: event.toolName ?? event.name ?? "tool",
         args: event.args,
         status: "running",
         startedAt: Date.now()
-      }
-    ]);
+      }));
     return;
   }
 
   if (event.type === "tool_execution_end") {
     if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Finished ${event.toolName ?? event.name ?? "tool"}; reviewing the result.`));
-    setMessages((items) => items.map((item) => {
-      if (item.kind !== "tool") return item;
-      const eventId = event.toolCallId ?? event.id;
-      if (eventId && item.id !== eventId) return item;
-      return { ...item, status: event.isError ? "error" : "done", endedAt: Date.now() };
-    }));
+    setMessages((items) => updateToolMessage(items, event));
     return;
   }
 
@@ -277,6 +375,11 @@ export function handlePiEvent(
 
   if (event.type === "agent_ready") {
     setFooterStatus(`connected to ${event.provider ?? "pi"} ${event.model ?? ""}`.trim());
+    return;
+  }
+
+  if (event.type === "memory_context") {
+    setFooterStatus(`memory: ${event.count ?? 0} items / ${event.estimatedTokens ?? 0}/${event.budgetTokens ?? 0} est. tokens`);
     return;
   }
 
@@ -309,12 +412,12 @@ export function handlePiEvent(
 function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMessage[] {
   return rawMessages.flatMap((message): DisplayMessage[] => {
     if (message.role === "toolResult") {
-      return [{
+      return addToolMessage([], {
         id: message.toolCallId ?? crypto.randomUUID(),
         kind: "tool" as const,
         toolName: message.toolName ?? "tool",
         status: message.isError ? "error" as const : "done" as const
-      }];
+      });
     }
     const role = message.role === "user" ? "user" : "agent";
     const content = message.text ?? message.content ?? "";
@@ -325,7 +428,7 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
           return [{ id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
         }
         if (part.type === "toolCall") {
-          return [{ id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" }];
+          return addToolMessage([], { id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" });
         }
         const partText = part.text ?? "";
         return partText ? [{ id: crypto.randomUUID(), kind: "agent", text: String(partText), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }] : [];
@@ -404,7 +507,7 @@ export function useAgent(enabled = true, showThinking = true) {
     return promise;
   }, []);
 
-  const sendPrompt = useCallback((text: string, attachments: Attachment[] = [], options?: PromptOptions) => {
+  const sendPrompt = useCallback((text: string, attachments: Attachment[] = [], options?: PromptOptions, meta?: PromptMeta) => {
     setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() }]);
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is still connecting. Wait for the connected status, then send again." }]);
@@ -420,7 +523,7 @@ export function useAgent(enabled = true, showThinking = true) {
     const optionContext = options
       ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor || options.autoReview || options.autoLaunchAdvisor ? "enabled; before final answer, run a concise advisor-style review for bugs, risks, and missed verification" : "disabled"}\n- subagents: ${options.autoLaunchSubagents ? "prepare a delegated plan and launch available Pi subagent workflows when supported" : "manual"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
       : "";
-    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext + optionContext, streamingBehavior: "steer" }));
+    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
   }, []);
 
   const abort = useCallback(() => {

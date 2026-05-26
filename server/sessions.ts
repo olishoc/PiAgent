@@ -9,6 +9,7 @@ export interface SessionInfo {
   lastModified: number;
   messageCount: number;
   path: string;
+  projectId?: string | null;
   pinned: boolean;
   archived: boolean;
 }
@@ -19,6 +20,7 @@ const SESSION_META_PATH = path.join(APP_CONFIG_DIR, "session-meta.json");
 interface SessionMeta {
   pinned?: boolean;
   archived?: boolean;
+  projectId?: string | null;
 }
 
 function readSessionMeta(): Record<string, SessionMeta> {
@@ -86,10 +88,10 @@ function parseFirstUserTitle(line: string): string | null {
   }
 }
 
-export function listSessions(): SessionInfo[] {
+export function listSessions(options: { projectId?: string | null; unassignedOnly?: boolean; includeArchived?: boolean } = {}): SessionInfo[] {
   fs.mkdirSync(SESSION_DIR, { recursive: true });
   const meta = readSessionMeta();
-  return fs.readdirSync(SESSION_DIR)
+  const sessions = fs.readdirSync(SESSION_DIR)
     .filter((file) => file.endsWith(".jsonl"))
     .map((file) => {
       const filePath = path.join(SESSION_DIR, file);
@@ -115,19 +117,29 @@ export function listSessions(): SessionInfo[] {
         lastModified: stat.mtimeMs,
         messageCount,
         path: filePath,
+        projectId: meta[id]?.projectId ?? null,
         pinned: Boolean(meta[id]?.pinned),
         archived: Boolean(meta[id]?.archived)
       };
     })
-    .filter((session) => !session.archived)
+    .filter((session) => options.includeArchived || !session.archived)
+    .filter((session) => {
+      if (options.unassignedOnly) return !session.projectId;
+      if (options.projectId !== undefined) return (session.projectId ?? null) === options.projectId;
+      return true;
+    })
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastModified - a.lastModified);
+  return sessions;
 }
 
 export const sessionsRouter = Router();
 
-sessionsRouter.get("/", (_req, res, next) => {
+sessionsRouter.get("/", (req, res, next) => {
   try {
-    res.json({ sessions: listSessions() });
+    const projectId = typeof req.query.projectId === "string" ? req.query.projectId : undefined;
+    const unassignedOnly = req.query.unassigned === "1" || req.query.unassigned === "true";
+    const includeArchived = req.query.includeArchived === "1" || req.query.includeArchived === "true";
+    res.json({ sessions: listSessions({ projectId, unassignedOnly, includeArchived }) });
   } catch (err) {
     next(err);
   }
@@ -138,7 +150,8 @@ sessionsRouter.patch("/:id", (req, res, next) => {
     const id = req.params.id;
     const patch = {
       pinned: typeof req.body?.pinned === "boolean" ? req.body.pinned : undefined,
-      archived: typeof req.body?.archived === "boolean" ? req.body.archived : undefined
+      archived: typeof req.body?.archived === "boolean" ? req.body.archived : undefined,
+      projectId: typeof req.body?.projectId === "string" ? req.body.projectId : req.body?.projectId === null ? null : undefined
     };
     const cleaned = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
     res.json({ ok: true, meta: updateSessionMeta(id, cleaned) });

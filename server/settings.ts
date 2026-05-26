@@ -27,6 +27,9 @@ export interface AppSettings {
   chromeEnabled: boolean;
   computerUseEnabled: boolean;
   githubEnabled: boolean;
+  memoryEnabled: boolean;
+  memoryAutoInject: boolean;
+  memoryBudgetTokens: number;
   theme: "dark" | "light" | "system";
   themePreset: ThemePreset;
   accentColor: string;
@@ -61,6 +64,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   chromeEnabled: false,
   computerUseEnabled: true,
   githubEnabled: true,
+  memoryEnabled: true,
+  memoryAutoInject: true,
+  memoryBudgetTokens: 700,
   theme: "dark",
   themePreset: "codex",
   accentColor: "#58a6ff",
@@ -97,6 +103,7 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   loaded.messageLineHeight = clampNumber(loaded.messageLineHeight, DEFAULT_SETTINGS.messageLineHeight, 1.25, 1.9);
   loaded.composerFontSize = clampNumber(loaded.composerFontSize, DEFAULT_SETTINGS.composerFontSize, 11, 18);
   loaded.messageSpacing = clampNumber(loaded.messageSpacing, DEFAULT_SETTINGS.messageSpacing, 8, 28);
+  loaded.memoryBudgetTokens = clampNumber(loaded.memoryBudgetTokens, DEFAULT_SETTINGS.memoryBudgetTokens, 100, 2000);
   loaded.fontFamily = typeof loaded.fontFamily === "string" && loaded.fontFamily.trim()
     ? loaded.fontFamily.trim()
     : DEFAULT_SETTINGS.fontFamily;

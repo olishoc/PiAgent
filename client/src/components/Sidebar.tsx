@@ -7,6 +7,7 @@ export interface Session {
   lastModified: number;
   messageCount: number;
   path: string;
+  projectId?: string | null;
   pinned?: boolean;
   archived?: boolean;
   status?: "running" | "done" | "queued";
@@ -23,6 +24,7 @@ interface SidebarProps {
   collapsed?: boolean;
   onSelect: (session: Session) => void;
   onSelectProject: (project: ProjectInfo) => void;
+  onSelectUnassigned: () => void;
   onProjects: () => void;
   onNew: () => void;
   onSettings: () => void;
@@ -57,6 +59,7 @@ export default function Sidebar({
   collapsed,
   onSelect,
   onSelectProject,
+  onSelectUnassigned,
   onProjects,
   onNew,
   onSettings,
@@ -133,6 +136,13 @@ export default function Sidebar({
         <button onClick={onProjects} title="Manage projects" aria-label="Manage projects"><Icon name="plus" size={12} /></button>
       </div>
       <div className="project-list">
+        <button
+          className={`project-row ${activeProjectId === "" ? "active" : ""}`}
+          onClick={onSelectUnassigned}
+          title="Chats not attached to a project"
+        >
+          <Icon name="archive" /> <span>Unassociated chats</span>
+        </button>
         {projects.slice(0, 5).map((project) => (
           <button
             key={project.id}
@@ -152,7 +162,7 @@ export default function Sidebar({
       <div className="task-list">
         {pinned.length ? <div className="sidebar-label inline">Pinned</div> : null}
         {pinned.map(renderSession)}
-        <div className="sidebar-label inline">Chats</div>
+        <div className="sidebar-label inline">{activeProjectId ? "Project chats" : "Unassociated chats"}</div>
         {recent.map(renderSession)}
       </div>
       <footer className="sidebar-footer">

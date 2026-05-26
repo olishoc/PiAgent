@@ -14,8 +14,9 @@ import ContextPanel from "./components/ContextPanel";
 import Icon from "./components/Icon";
 import ProjectsView from "./components/ProjectsView";
 
-async function fetchSessions(): Promise<Session[]> {
-  const response = await fetch(apiUrl("/api/sessions"));
+async function fetchSessions(projectId?: string | null, all = false): Promise<Session[]> {
+  const query = all ? "?all=1" : projectId ? `?projectId=${encodeURIComponent(projectId)}` : "?unassigned=1";
+  const response = await fetch(apiUrl(`/api/sessions${query}`));
   const data = await response.json();
   return data.sessions ?? [];
 }
@@ -86,6 +87,9 @@ export interface AppSettings {
   chromeEnabled: boolean;
   computerUseEnabled: boolean;
   githubEnabled: boolean;
+  memoryEnabled: boolean;
+  memoryAutoInject: boolean;
+  memoryBudgetTokens: number;
   theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
   accentColor: string;
@@ -216,6 +220,9 @@ export default function App() {
     chromeEnabled: false,
     computerUseEnabled: true,
     githubEnabled: true,
+    memoryEnabled: true,
+    memoryAutoInject: true,
+    memoryBudgetTokens: 700,
     theme: "dark",
     themePreset: "codex",
     accentColor: "#58a6ff",
@@ -277,22 +284,22 @@ export default function App() {
 
   useEffect(() => {
     if (!auth.loggedIn) return;
-    fetchSessions().then((items) => {
+    fetchSessions(activeProjectId || null).then((items) => {
       setSessions(items);
       if (!activeId && items[0]) setActiveId(items[0].id);
     }).catch(() => {});
-  }, [auth.loggedIn, activeId]);
+  }, [auth.loggedIn, activeId, activeProjectId]);
 
   useEffect(() => {
     if (!auth.loggedIn || agent.isStreaming) return;
-    fetchSessions().then(setSessions).catch(() => {});
-  }, [auth.loggedIn, agent.isStreaming]);
+    fetchSessions(activeProjectId || null).then(setSessions).catch(() => {});
+  }, [auth.loggedIn, agent.isStreaming, activeProjectId]);
 
   useEffect(() => {
-    if (!projects.length) return;
+    if (!projects.length || activeProjectId === "") return;
     const matching = projects.find((project) => project.rootPath === settings.workspacePath);
     setActiveProjectId((current) => matching?.id ?? (current || projects[0].id));
-  }, [projects, settings.workspacePath]);
+  }, [projects, settings.workspacePath, activeProjectId]);
 
   useEffect(() => {
     if (agent.connectionState !== "ready") return;
@@ -340,6 +347,37 @@ export default function App() {
     if (!activeProjectId && items[0]) setActiveProjectId(items[0].id);
   };
 
+  const refreshScopedSessions = async (projectId: string | null = activeProjectId || null) => {
+    const items = await fetchSessions(projectId);
+    setSessions(items);
+    setActiveId((current) => {
+      if (current && items.some((session) => session.id === current)) return current;
+      return items[0]?.id ?? "";
+    });
+    return items;
+  };
+
+  const createScopedSession = async (projectId: string | null = activeProjectId || null) => {
+    agent.replaceMessages([]);
+    const result = await agent.sendCommand({ type: "new_session" });
+    const state = await agent.sendCommand({ type: "get_state" });
+    const sessionId = state?.data?.sessionId;
+    if (typeof sessionId === "string") {
+      await fetch(apiUrl(`/api/sessions/${encodeURIComponent(sessionId)}`), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId })
+      }).catch(() => {});
+      setActiveId(sessionId);
+    }
+    const items = await fetchSessions(projectId);
+    setSessions(items);
+    if (!sessionId && items[0]) setActiveId(items[0].id);
+    if (!result?.success) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: result?.error ?? "Unable to create a new thread." }]);
+    }
+  };
+
   const createProject = async (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => {
     const response = await fetch(apiUrl("/api/projects"), {
       method: "POST",
@@ -351,6 +389,10 @@ export default function App() {
     setActiveProjectId(data.project.id);
     setSettings(data.settings ?? { ...settings, workspacePath: data.project.rootPath });
     await refreshProjects();
+    navigate("chat");
+    await agent.sendCommand({ type: "reload_agent" });
+    void agent.sendCommand({ type: "get_state" });
+    await createScopedSession(data.project.id);
   };
 
   const selectProject = async (project: ProjectInfo) => {
@@ -359,10 +401,24 @@ export default function App() {
     if (data.settings) setSettings(data.settings);
     setActiveProjectId(project.id);
     navigate("chat");
-    void agent.sendCommand({ type: "reload_agent" }).then(() => {
-      void agent.sendCommand({ type: "get_state" });
-    });
+    agent.replaceMessages([]);
+    await agent.sendCommand({ type: "reload_agent" });
+    void agent.sendCommand({ type: "get_state" });
+    const items = await fetchSessions(project.id);
+    setSessions(items);
+    setActiveId(items[0]?.id ?? "");
+    if (items[0]) {
+      void agent.sendCommand({ type: "switch_session", sessionPath: items[0].path });
+      void agent.sendCommand({ type: "get_messages" });
+    }
     await refreshProjects();
+  };
+
+  const selectUnassignedChats = async () => {
+    setActiveProjectId("");
+    navigate("chat");
+    agent.replaceMessages([]);
+    await refreshScopedSessions(null);
   };
 
   const patchSession = async (session: Session, patch: Partial<Session>) => {
@@ -371,7 +427,7 @@ export default function App() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch)
     });
-    const items = await fetchSessions();
+    const items = await fetchSessions(activeProjectId || null);
     setSessions(items);
     if (patch.archived && activeId === session.id) {
       setActiveId(items[0]?.id ?? "");
@@ -381,17 +437,7 @@ export default function App() {
 
   const newSession = async () => {
     navigate("chat");
-    agent.replaceMessages([]);
-    const result = await agent.sendCommand({ type: "new_session" });
-    const state = await agent.sendCommand({ type: "get_state" });
-    const sessionId = state?.data?.sessionId;
-    if (typeof sessionId === "string") setActiveId(sessionId);
-    const items = await fetchSessions();
-    setSessions(items);
-    if (!sessionId && items[0]) setActiveId(items[0].id);
-    if (!result?.success) {
-      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: result?.error ?? "Unable to create a new thread." }]);
-    }
+    await createScopedSession(activeProjectId || null);
   };
 
   const navigate = (next: typeof view) => {
@@ -468,11 +514,11 @@ export default function App() {
   };
 
   const sendPrompt = (text: string, attachments?: Parameters<typeof agent.sendPrompt>[1], options?: Parameters<typeof agent.sendPrompt>[2]) => {
-    agent.sendPrompt(text, attachments, options);
+    agent.sendPrompt(text, attachments, options, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
     const current = sessions.find((session) => session.id === activeId);
     if (!current || current.messageCount < 2 || current.name === "New thread") {
       void agent.sendCommand({ type: "set_session_name", name: generatedTitle(text) })
-        .then(() => fetchSessions().then(setSessions).catch(() => {}));
+        .then(() => fetchSessions(activeProjectId || null).then(setSessions).catch(() => {}));
     }
   };
 
@@ -561,6 +607,7 @@ export default function App() {
         onNew={newSession}
         onSelect={selectSession}
         onSelectProject={(project) => void selectProject(project)}
+        onSelectUnassigned={() => void selectUnassignedChats()}
         onProjects={() => navigate("projects")}
         onSettings={() => navigate("settings")}
         onChat={() => navigate("chat")}
@@ -614,7 +661,7 @@ export default function App() {
             onSettingsChange={updateSettings}
             onRunCommand={(command) => {
               navigate("chat");
-              agent.sendPrompt(`/${command}`);
+              agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
             }}
           />
         ) : (
