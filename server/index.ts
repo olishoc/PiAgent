@@ -14,6 +14,7 @@ import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, sanitizeSettingsPatch,
 import { listProjects, projectsRouter } from "./projects.js";
 import { extensionsRouter, listExtensionCatalog } from "./extensions.js";
 import { buildMemoryContext, MEMORY_DIR, memoryRouter, observeAgentEvent, observeMemoryTurn } from "./memory.js";
+import { advisorExtensionArgs, advisorRouter, advisorStatus, ensureAdvisorConfig, syncAdvisorConfig } from "./advisor.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -37,7 +38,9 @@ const BACKEND_FEATURES = {
   globalMemory: true,
   memoryProfile: true,
   memoryConsolidation: true,
-  proceduralMemory: true
+  proceduralMemory: true,
+  realAdvisor: true,
+  piAdvisorExtension: true
 };
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
@@ -61,12 +64,23 @@ app.use("/api/sessions", sessionsRouter);
 app.use("/api/projects", projectsRouter);
 app.use("/api/extensions", extensionsRouter);
 app.use("/api/memory", memoryRouter);
+app.use("/api/advisor", advisorRouter);
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });
 app.patch("/api/settings", (req, res, next) => {
   try {
-    res.json({ settings: writeSettings(sanitizeSettingsPatch(req.body ?? {})) });
+    const settings = writeSettings(sanitizeSettingsPatch(req.body ?? {}));
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorEnabled")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorProvider")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorModel")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorReasoning")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorMaxUsesPerRun")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorMaxTokens")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorMaxContextMessages")) {
+      syncAdvisorConfig(settings);
+    }
+    res.json({ settings });
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : "Invalid settings patch", settings: readSettings() });
   }
@@ -118,6 +132,7 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       projectCount: listProjects().length,
       memoryDir: MEMORY_DIR,
       extensionCount: listExtensionCatalog().length,
+      advisor: advisorStatus(settings),
       provider: settings.provider,
       model: settings.modelLabel || "gpt-5.5"
     });
@@ -362,8 +377,9 @@ wss.on("connection", async (ws) => {
     };
     const startSession = () => {
       settings = readSettings();
+      ensureAdvisorConfig(settings);
       const nextSession = new PiSession(SESSION_DIR, freshToken.access, {
-        extraArgs: piArgsForAccess(settings),
+        extraArgs: [...advisorExtensionArgs(), ...piArgsForAccess(settings)],
         provider: settings.provider || "openai-codex",
         model: settings.modelLabel || "gpt-5.5",
         thinkingLevel: settings.thinkingLevel || "medium",

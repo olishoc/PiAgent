@@ -66,6 +66,24 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
     );
   }
 
+  if (message.kind === "advisor") {
+    const usage = message.usage
+      ? ` / ${message.usage.inputTokens ?? 0}->${message.usage.outputTokens ?? 0} tokens`
+      : "";
+    return (
+      <article className={`message advisor-message ${message.status ?? "done"} ${expanded ? "expanded" : ""}`}>
+        <div className="advisor-rail"><Icon name="shield" size={15} /></div>
+        <div className="advisor-body">
+          <button className="advisor-head" onClick={() => setExpanded((current) => !current)}>
+            <span>advisor{message.stage ? ` / ${message.stage}` : ""}{message.callNumber ? ` #${message.callNumber}` : ""}</span>
+            <em>{message.model ? `${message.model}${usage}` : message.phase ?? "pi-advisor"}</em>
+          </button>
+          <div className="advisor-text">{renderCodeAware(expanded ? message.detail ?? message.text : message.text)}</div>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article className="message agent-message">
       <div className="agent-label"><Icon name="bot" size={14} /> agent <span>{timeLabel(message.createdAt)}</span></div>

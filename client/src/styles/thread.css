@@ -203,6 +203,100 @@
   line-height: 1.45;
 }
 
+.advisor-message {
+  display: flex;
+  gap: 10px;
+  max-width: 820px;
+  padding: 10px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--accent-blue) 32%, var(--border));
+  border-left: 2px solid var(--accent-blue);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-tool) 88%, var(--accent-blue));
+  box-shadow: 0 12px 34px var(--shadow);
+}
+
+.advisor-message.running {
+  border-left-color: var(--accent-amber);
+}
+
+.advisor-message.error {
+  border-color: color-mix(in srgb, var(--accent-red) 35%, var(--border));
+  border-left-color: var(--accent-red);
+}
+
+.advisor-rail {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--accent-blue);
+}
+
+.advisor-message.running .advisor-rail {
+  color: var(--accent-amber);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.advisor-message.error .advisor-rail {
+  color: var(--accent-red);
+}
+
+.advisor-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.advisor-head {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  text-align: left;
+  text-transform: lowercase;
+}
+
+.advisor-head span {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.advisor-head em {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.advisor-text {
+  color: var(--text-primary);
+  font-size: calc(var(--message-font-size) - 0.5px);
+  line-height: 1.48;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.advisor-text pre {
+  overflow-x: auto;
+  padding: 10px 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-code);
+  white-space: pre;
+}
+
 .message-label,
 .agent-label {
   display: flex;

@@ -88,6 +88,14 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
         await connectGithub();
         return;
       }
+      if (entry.id === "advisor") {
+        const next = !settings.advisorEnabled;
+        onSettingsChange({ advisorEnabled: next });
+        const response = await fetch(apiUrl("/api/advisor/ensure"), { method: "POST" }).catch(() => null);
+        const data = response?.ok ? await response.json().catch(() => null) : null;
+        setStatus(data?.installed ? `Pi Advisor ${next ? "enabled" : "disabled"}.` : "Pi Advisor package missing from this install.");
+        return;
+      }
       if (entry.connectAction === "openai-oauth") {
         window.location.href = apiUrl("/api/auth/login?redirect=1");
         return;
@@ -140,10 +148,10 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
         </div>
         <div className="extension-hero">
           <div>
-            <strong>Advisor</strong>
-            <span>Review risks, missing tests, and UX issues before the final response.</span>
+            <strong>Pi Advisor</strong>
+            <span>Real pi-advisor tool calls with a separate model, stage labels, usage, and chat rendering.</span>
           </div>
-          <button onClick={() => onSettingsChange({ advisorEnabled: !settings.advisorEnabled })}>
+          <button onClick={() => void actionFor({ id: "advisor", title: "Pi Advisor", category: "Featured", description: "", status: settings.advisorEnabled ? "enabled" : "available", authType: "api-key", source: "pi-extension", settingKey: "advisorEnabled", permissions: [], risk: "medium", recommended: true })}>
             <Icon name={settings.advisorEnabled ? "check" : "plus"} /> {settings.advisorEnabled ? "Active" : "Try in chat"}
           </button>
         </div>

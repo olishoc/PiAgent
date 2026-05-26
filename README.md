@@ -71,10 +71,15 @@ Tokens are stored in `~/.config/pi-app/oauth.json`.
 ## Using Pi extensions
 Install any Pi extension normally:
 ```bash
-pi install npm:@juicesharp/rpiv-advisor
+pi install npm:pi-advisor
 ```
 
 Extensions load automatically when Pi spawns.
+
+PiAgent bundles `pi-advisor` for the desktop build and writes
+`~/.config/pi-app/advisor.json` from the Advisor settings. When Advisor is
+enabled, Pi starts with the real advisor extension and advisor tool results
+render as their own chat blocks, separate from model thinking.
 
 ## Global memory
 PiAgent includes a local-first global memory layer under `~/.config/pi-app/memory/`.

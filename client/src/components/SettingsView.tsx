@@ -43,6 +43,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [gitEmail, setGitEmail] = useState("");
   const [githubStatus, setGithubStatus] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState<any>(null);
+  const [advisorStatus, setAdvisorStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
 
   const refreshGithubStatus = async () => {
@@ -51,8 +52,16 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
     setGithubStatus(data);
   };
 
+  const refreshAdvisorStatus = async () => {
+    const response = await fetch(apiUrl("/api/advisor/status")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    setAdvisorStatus(data);
+    if (data) setActionStatus(data.installed ? "Pi Advisor extension ready." : "Pi Advisor package is missing from this install.");
+  };
+
   useEffect(() => {
     void refreshGithubStatus();
+    void refreshAdvisorStatus();
   }, []);
 
   const diagnose = async () => {
@@ -249,6 +258,23 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>
               </select>
+              <span>Advisor modele</span>
+              <input value={`${settings.advisorProvider}/${settings.advisorModel}`} onChange={(e) => {
+                const [provider, ...modelParts] = e.target.value.split("/");
+                if (provider && modelParts.length) onChange({ advisorProvider: provider, advisorModel: modelParts.join("/") });
+              }} />
+              <span>Advisor reasoning</span>
+              <select value={settings.advisorReasoning} onChange={(e) => onChange({ advisorReasoning: e.target.value as AppSettings["advisorReasoning"] })}>
+                <option value="minimal">Minimal</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+              </select>
+              <span>Advisor max/run</span>
+              <input type="number" min="1" max="12" value={settings.advisorMaxUsesPerRun} onChange={(e) => onChange({ advisorMaxUsesPerRun: Number(e.target.value) })} />
+              <span>Advisor status</span>
+              <button onClick={() => void refreshAdvisorStatus()}><Icon name="shield" /> Verifier pi-advisor</button>
               <span>Web</span>
               <select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
@@ -420,6 +446,8 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <h2>Extensions et contexte</h2>
             <div className="settings-card compact">
               <span>Advisor</span><span>Active depuis le composeur pour demander une passe de revision.</span>
+              <span>Pi Advisor reel</span><span>{advisorStatus?.installed ? `${advisorStatus.config?.provider}/${advisorStatus.config?.model} dans ${advisorStatus.configPath}` : "Package pi-advisor manquant. Relance npm install ou l'updater."}</span>
+              <span>Configurer Advisor</span><button onClick={() => void refreshAdvisorStatus()}><Icon name="shield" /> Lire pi-advisor</button>
               <span>Web</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>

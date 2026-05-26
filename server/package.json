@@ -7,9 +7,13 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "latest",
     "@earendil-works/pi-coding-agent": "latest",
+    "@earendil-works/pi-tui": "latest",
     "cors": "^2.8.5",
     "express": "^4.18.0",
+    "pi-advisor": "^0.2.1",
+    "typebox": "^1.1.38",
     "ws": "^8.16.0"
   },
   "devDependencies": {

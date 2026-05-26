@@ -82,6 +82,12 @@ export interface AppSettings {
   speedMode: "fast" | "balanced" | "deep";
   autoReview: boolean;
   advisorEnabled: boolean;
+  advisorProvider: string;
+  advisorModel: string;
+  advisorReasoning: "minimal" | "low" | "medium" | "high" | "xhigh";
+  advisorMaxUsesPerRun: number;
+  advisorMaxTokens: number;
+  advisorMaxContextMessages: number;
   webEnabled: boolean;
   contextEnabled: boolean;
   chromeEnabled: boolean;
@@ -219,7 +225,13 @@ export default function App() {
     thinkingLevel: "medium",
     speedMode: "balanced",
     autoReview: true,
-    advisorEnabled: false,
+    advisorEnabled: true,
+    advisorProvider: "openai-codex",
+    advisorModel: "gpt-5.5",
+    advisorReasoning: "high",
+    advisorMaxUsesPerRun: 3,
+    advisorMaxTokens: 8192,
+    advisorMaxContextMessages: 18,
     webEnabled: false,
     contextEnabled: true,
     chromeEnabled: false,
@@ -380,6 +392,28 @@ export default function App() {
     if (cleaned.thinkingLevel) void agent.sendCommand({ type: "set_thinking_level", level: cleaned.thinkingLevel });
     if (cleaned.provider || cleaned.modelLabel) {
       void agent.sendCommand({ type: "set_model", provider: next.provider, modelId: next.modelLabel });
+    }
+    if (cleaned.advisorEnabled !== undefined
+      || cleaned.advisorProvider
+      || cleaned.advisorModel
+      || cleaned.advisorReasoning
+      || cleaned.advisorMaxUsesPerRun !== undefined
+      || cleaned.advisorMaxTokens !== undefined
+      || cleaned.advisorMaxContextMessages !== undefined) {
+      void fetch(apiUrl("/api/advisor/config"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: next.advisorEnabled,
+          provider: next.advisorProvider,
+          model: next.advisorModel,
+          reasoning: next.advisorReasoning,
+          maxUsesPerRun: next.advisorMaxUsesPerRun,
+          maxTokens: next.advisorMaxTokens,
+          maxContextMessages: next.advisorMaxContextMessages
+        })
+      }).catch(() => {});
+      if (!agent.isStreaming) void agent.sendCommand({ type: "reload_agent" });
     }
     return optimistic;
   };
@@ -549,13 +583,20 @@ export default function App() {
       compactContext();
       return;
     }
+    if (command === "/advisor" || command.startsWith("/advisor ")) {
+      navigate("chat");
+      if (/^\/advisor\s+on\b/i.test(command)) updateSettings({ advisorEnabled: true });
+      if (/^\/advisor\s+off\b/i.test(command)) updateSettings({ advisorEnabled: false });
+      agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
+      return;
+    }
     if (command === "/help") {
       agent.replaceMessages([
         ...agent.messages,
         {
           id: crypto.randomUUID(),
           kind: "status",
-          text: "Commands: /new, /attach, /compact, /permissions, /projects, /sessions, /settings. Toggle web/advisor/context from the composer."
+          text: "Commands: /new, /attach, /compact, /advisor ask, /permissions, /projects, /sessions, /settings. Toggle web/advisor/context from the composer."
         }
       ]);
     }

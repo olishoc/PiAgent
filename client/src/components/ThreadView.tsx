@@ -25,6 +25,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
     return count;
   }, 0), [messages]);
   const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
+  const advisorCount = useMemo(() => messages.filter((message) => message.kind === "advisor").length, [messages]);
 
   useEffect(() => {
     if (!stickToBottomRef.current) return;
@@ -43,7 +44,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
       <header className="thread-header">
         <div>
           <strong>{sessionName || "New PiAgent thread"}</strong>
-          <span>{connectionState ?? "idle"} / {toolCount} tools / {thinkingCount} thoughts / context {contextUsage?.percent ?? 0}%</span>
+          <span>{connectionState ?? "idle"} / {toolCount} tools / {thinkingCount} thoughts / {advisorCount} advisor / context {contextUsage?.percent ?? 0}%</span>
         </div>
         <div className="thread-actions">
           {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}

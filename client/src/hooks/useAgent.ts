@@ -27,13 +27,18 @@ export interface ToolGroupMessage {
 
 export interface TextMessage {
   id: string;
-  kind: "user" | "agent" | "status" | "thinking";
+  kind: "user" | "agent" | "status" | "thinking" | "advisor";
   text: string;
   detail?: string;
   attachments?: Attachment[];
   phase?: string;
   active?: boolean;
   createdAt?: number;
+  status?: ToolStatus;
+  stage?: string;
+  model?: string;
+  usage?: { inputTokens?: number; outputTokens?: number };
+  callNumber?: number;
 }
 
 export type DisplayMessage = ToolMessage | ToolGroupMessage | TextMessage;
@@ -184,6 +189,88 @@ function replaceThinkingDetail(messages: DisplayMessage[], detail: string, activ
   return next;
 }
 
+function extractTextContent(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => {
+      if (typeof part === "string") return part;
+      if (part && typeof part === "object") {
+        const block = part as Record<string, unknown>;
+        if (typeof block.text === "string") return block.text;
+        if (typeof block.thinking === "string") return block.thinking;
+      }
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+}
+
+function stripAnsi(text: string): string {
+  return text.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "");
+}
+
+function advisorResultText(result: any): string {
+  return stripAnsi(extractTextContent(result?.content) || extractTextContent(result) || "Advisor returned no visible advice.");
+}
+
+function advisorDetails(event: any) {
+  const details = event.result?.details ?? event.details ?? {};
+  return {
+    stage: details.stage ?? event.args?.stage,
+    model: details.usage?.model ?? details.model,
+    usage: details.usage,
+    callNumber: details.callNumber,
+    error: details.error
+  };
+}
+
+function upsertAdvisorMessage(messages: DisplayMessage[], event: any, status: ToolStatus, text?: string): DisplayMessage[] {
+  const id = event.toolCallId ?? event.id ?? crypto.randomUUID();
+  const details = advisorDetails(event);
+  const next = [...messages];
+  const existingIndex = next.findIndex((item) => item.kind === "advisor" && item.id === id);
+  const message: TextMessage = {
+    id,
+    kind: "advisor",
+    text: text ?? (status === "running" ? "Consulting the Pi Advisor extension..." : "Advisor finished."),
+    detail: text,
+    status,
+    phase: status === "running" ? "advisor thinking" : details.error ? "advisor unavailable" : "advisor guidance",
+    active: status === "running",
+    stage: details.stage,
+    model: details.model,
+    usage: details.usage,
+    callNumber: details.callNumber,
+    createdAt: Date.now()
+  };
+  if (existingIndex >= 0) {
+    next[existingIndex] = { ...(next[existingIndex] as TextMessage), ...message };
+    return next;
+  }
+  return [...next, message];
+}
+
+function advisorMessageFromToolResult(message: any): TextMessage {
+  const details = message.result?.details ?? message.details ?? {};
+  const text = advisorResultText(message.result ?? message);
+  return {
+    id: message.toolCallId ?? message.id ?? crypto.randomUUID(),
+    kind: "advisor",
+    text,
+    detail: text,
+    status: message.isError || details.error ? "error" : "done",
+    phase: details.error ? "advisor unavailable" : "advisor guidance",
+    stage: details.stage,
+    model: details.usage?.model ?? details.model,
+    usage: details.usage,
+    callNumber: details.callNumber,
+    active: false,
+    createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now()
+  };
+}
+
 function toolGroupFor(toolName: string) {
   const name = toolName.toLowerCase();
   if (/(bash|shell|command|terminal|exec|run_|npm|pnpm|yarn|cargo|git|test)/.test(name)) {
@@ -332,6 +419,10 @@ export function handlePiEvent(
   }
 
   if (event.type === "tool_execution_start") {
+    if (event.toolName === "advisor" || event.name === "advisor") {
+      setMessages((items) => upsertAdvisorMessage(items, event, "running"));
+      return;
+    }
     if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Using ${event.toolName ?? event.name ?? "a tool"} to gather more context.`));
     setMessages((items) => addToolMessage(items, {
         id: event.toolCallId ?? event.id ?? crypto.randomUUID(),
@@ -345,6 +436,11 @@ export function handlePiEvent(
   }
 
   if (event.type === "tool_execution_end") {
+    if (event.toolName === "advisor" || event.name === "advisor") {
+      const text = advisorResultText(event.result);
+      setMessages((items) => upsertAdvisorMessage(items, event, event.isError || event.result?.details?.error ? "error" : "done", text));
+      return;
+    }
     if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Finished ${event.toolName ?? event.name ?? "tool"}; reviewing the result.`));
     setMessages((items) => updateToolMessage(items, event));
     return;
@@ -384,6 +480,21 @@ export function handlePiEvent(
     return;
   }
 
+  if (event.type === "extension_ui_request" && event.method === "notify" && /advisor/i.test(String(event.message ?? ""))) {
+    const message = stripAnsi(String(event.message ?? "Advisor notification"));
+    setMessages((items) => [...items, {
+      id: event.id ?? crypto.randomUUID(),
+      kind: "advisor",
+      text: message,
+      detail: message,
+      status: event.notifyType === "error" ? "error" : "done",
+      phase: event.notifyType === "error" ? "advisor unavailable" : "advisor status",
+      active: false,
+      createdAt: Date.now()
+    }]);
+    return;
+  }
+
   if (event.type === "response" && Array.isArray(event.data?.messages)) {
     setMessages(normalizeMessages(event.data.messages, showThinking));
     return;
@@ -413,6 +524,7 @@ export function handlePiEvent(
 function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMessage[] {
   return rawMessages.reduce<DisplayMessage[]>((acc, message) => {
     if (message.role === "toolResult") {
+      if (message.toolName === "advisor") return [...acc, advisorMessageFromToolResult(message)];
       return addToolMessage(acc, {
         id: message.toolCallId ?? crypto.randomUUID(),
         kind: "tool" as const,
@@ -514,6 +626,7 @@ export function useAgent(enabled = true, showThinking = true) {
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is still connecting. Wait for the connected status, then send again." }]);
       return;
     }
+    const isSlashCommand = text.trimStart().startsWith("/");
     const attachmentContext = attachments.length
       ? "\n\nAttached files:\n" + attachments.map((file) => {
         const location = file.path ? `\nPath: ${file.path}` : "";
@@ -521,10 +634,10 @@ export function useAgent(enabled = true, showThinking = true) {
         return `- ${file.name}${file.size ? `, ${file.size} bytes` : ""}${location}${preview}`;
       }).join("\n")
       : "";
-    const optionContext = options
-      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor || options.autoReview || options.autoLaunchAdvisor ? "enabled; before final answer, run a concise advisor-style review for bugs, risks, and missed verification" : "disabled"}\n- subagents: ${options.autoLaunchSubagents ? "prepare a delegated plan and launch available Pi subagent workflows when supported" : "manual"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
+    const optionContext = options && !isSlashCommand
+      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- subagents: ${options.autoLaunchSubagents ? "prepare a delegated plan and launch available Pi subagent workflows when supported" : "manual"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
       : "";
-    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
+    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
   }, []);
 
   const abort = useCallback(() => {

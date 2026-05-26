@@ -23,6 +23,9 @@ const slashCommands = [
   { command: "/compact", label: "Ask Pi to compact the active context" },
   { command: "/permissions", label: "Open permissions and access mode" },
   { command: "/attach", label: "Attach files to the next message" },
+  { command: "/advisor ask", label: "Consult the real pi-advisor extension now" },
+  { command: "/advisor on", label: "Enable the real pi-advisor extension" },
+  { command: "/advisor off", label: "Disable the real pi-advisor extension" },
   { command: "/projects", label: "Open project workspaces and Git state" },
   { command: "/sessions", label: "Open session search" },
   { command: "/settings", label: "Open settings" }
@@ -94,7 +97,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
 
   const promptOptions = (): PromptOptions => ({
     ...tools,
-    advisor: tools.advisor || Boolean(settings?.autoReview),
+    advisor: tools.advisor,
     speedMode: settings?.speedMode ?? "balanced",
     accessMode: settings?.accessMode ?? "full",
     approvalPolicy: settings?.approvalPolicy ?? "on-request",
@@ -244,7 +247,8 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               <button onClick={() => { void pickFiles(); setAddOpen(false); }}><Icon name="paperclip" size={13} /> Add files</button>
               <button onClick={() => { void pickFolders(); setAddOpen(false); }}><Icon name="folder" size={13} /> Add folders</button>
               <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web research</button>
-              <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Advisor review</button>
+              <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
+              <button onClick={() => { runCommand("/advisor ask"); setAddOpen(false); }}><Icon name="shield" size={13} /> Ask advisor now</button>
               <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "folder"} size={13} /> Workspace context</button>
               {extensionCommands.length ? <strong className="menu-heading">Extensions</strong> : null}
               {extensionCommands.slice(0, 8).map((command) => (
@@ -289,7 +293,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               title={`Toggle ${tool}`}
             >
               <Icon name={tool === "web" ? "search" : tool === "advisor" ? "spark" : "folder"} size={13} />
-              {tool}
+              {tool === "advisor" ? "advisor" : tool}
             </button>
           ))}
         </div>

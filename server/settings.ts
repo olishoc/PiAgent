@@ -23,6 +23,12 @@ export interface AppSettings {
   speedMode: SpeedMode;
   autoReview: boolean;
   advisorEnabled: boolean;
+  advisorProvider: string;
+  advisorModel: string;
+  advisorReasoning: ThinkingLevel;
+  advisorMaxUsesPerRun: number;
+  advisorMaxTokens: number;
+  advisorMaxContextMessages: number;
   webEnabled: boolean;
   contextEnabled: boolean;
   chromeEnabled: boolean;
@@ -65,7 +71,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   thinkingLevel: "medium",
   speedMode: "balanced",
   autoReview: true,
-  advisorEnabled: false,
+  advisorEnabled: true,
+  advisorProvider: "openai-codex",
+  advisorModel: "gpt-5.5",
+  advisorReasoning: "high",
+  advisorMaxUsesPerRun: 3,
+  advisorMaxTokens: 8192,
+  advisorMaxContextMessages: 18,
   webEnabled: false,
   contextEnabled: true,
   chromeEnabled: false,
@@ -127,13 +139,18 @@ const NUMBER_KEYS = new Set<keyof AppSettings>([
   "messageLineHeight",
   "composerFontSize",
   "messageSpacing",
-  "memoryBudgetTokens"
+  "memoryBudgetTokens",
+  "advisorMaxUsesPerRun",
+  "advisorMaxTokens",
+  "advisorMaxContextMessages"
 ]);
 const STRING_KEYS = new Set<keyof AppSettings>([
   "displayName",
   "workspacePath",
   "provider",
   "modelLabel",
+  "advisorProvider",
+  "advisorModel",
   "accentColor",
   "fontFamily"
 ]);
@@ -141,6 +158,7 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   accessMode: ACCESS_MODES,
   approvalPolicy: APPROVAL_POLICIES,
   thinkingLevel: THINKING_LEVELS,
+  advisorReasoning: THINKING_LEVELS,
   speedMode: SPEED_MODES,
   memoryMode: MEMORY_MODES,
   theme: THEMES,
@@ -163,8 +181,11 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   const loaded = { ...DEFAULT_SETTINGS, ...raw };
   if (loaded.modelLabel === "openai/default") loaded.modelLabel = "gpt-5.5";
   if (!loaded.provider) loaded.provider = "openai-codex";
+  if (!loaded.advisorProvider) loaded.advisorProvider = loaded.provider || "openai-codex";
+  if (!loaded.advisorModel) loaded.advisorModel = loaded.modelLabel || "gpt-5.5";
   if (!THEME_PRESETS.includes(loaded.themePreset as ThemePreset)) loaded.themePreset = "codex";
   if (!THINKING_LEVELS.includes(loaded.thinkingLevel as ThinkingLevel)) loaded.thinkingLevel = "medium";
+  if (!THINKING_LEVELS.includes(loaded.advisorReasoning as ThinkingLevel) || loaded.advisorReasoning === "off") loaded.advisorReasoning = "high";
   if (!TEXT_DENSITIES.includes(loaded.textDensity as TextDensity)) loaded.textDensity = "codex";
   if (!MEMORY_MODES.includes(loaded.memoryMode as MemoryMode)) loaded.memoryMode = loaded.memoryEnabled ? "assistive" : "off";
   loaded.messageFontSize = clampNumber(loaded.messageFontSize, DEFAULT_SETTINGS.messageFontSize, 11, 18);
@@ -172,6 +193,9 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   loaded.composerFontSize = clampNumber(loaded.composerFontSize, DEFAULT_SETTINGS.composerFontSize, 11, 18);
   loaded.messageSpacing = clampNumber(loaded.messageSpacing, DEFAULT_SETTINGS.messageSpacing, 8, 28);
   loaded.memoryBudgetTokens = clampNumber(loaded.memoryBudgetTokens, DEFAULT_SETTINGS.memoryBudgetTokens, 100, 4000);
+  loaded.advisorMaxUsesPerRun = clampNumber(loaded.advisorMaxUsesPerRun, DEFAULT_SETTINGS.advisorMaxUsesPerRun, 1, 12);
+  loaded.advisorMaxTokens = clampNumber(loaded.advisorMaxTokens, DEFAULT_SETTINGS.advisorMaxTokens, 100, 65_536);
+  loaded.advisorMaxContextMessages = clampNumber(loaded.advisorMaxContextMessages, DEFAULT_SETTINGS.advisorMaxContextMessages, 4, 80);
   loaded.fontFamily = typeof loaded.fontFamily === "string" && loaded.fontFamily.trim()
     ? loaded.fontFamily.trim()
     : DEFAULT_SETTINGS.fontFamily;

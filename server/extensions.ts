@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { readSettings } from "./settings.js";
+import { advisorStatus } from "./advisor.js";
 
 export type ExtensionCategory = "Featured" | "Coding" | "Productivity" | "Research" | "Design" | "Finance" | "Operations";
 export type ExtensionStatus = "enabled" | "available" | "setup-required" | "guidance-only";
@@ -39,16 +40,18 @@ const entries: Omit<ExtensionCatalogEntry, "status">[] = [
   },
   {
     id: "advisor",
-    title: "Advisor",
+    title: "Pi Advisor",
     category: "Featured",
-    description: "Structured plan, risk, and completion review checkpoints for serious work.",
-    authType: "skill",
-    source: "built-in",
+    description: "Real pi-advisor extension: a separate advisor tool call with stage-aware guidance and its own chat rendering.",
+    authType: "api-key",
+    source: "pi-extension",
     settingKey: "advisorEnabled",
     connectAction: "toggle-setting",
-    permissions: ["read project context"],
-    risk: "low",
-    recommended: true
+    permissions: ["read curated transcript", "call configured advisor model"],
+    risk: "medium",
+    recommended: true,
+    sourceUrl: "https://pi.dev/packages/pi-advisor",
+    setupCommand: "pi install npm:pi-advisor"
   },
   {
     id: "chrome",
@@ -454,6 +457,7 @@ const entries: Omit<ExtensionCatalogEntry, "status">[] = [
 
 function entryStatus(entry: Omit<ExtensionCatalogEntry, "status">): ExtensionStatus {
   const settings = readSettings() as unknown as Record<string, unknown>;
+  if (entry.id === "advisor" && !advisorStatus().installed) return "setup-required";
   if (entry.settingKey && settings[entry.settingKey]) return "enabled";
   if (entry.connectAction === "toggle-setting" || entry.connectAction === "github-login") return "available";
   if (entry.source === "built-in") return "available";

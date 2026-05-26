@@ -39,6 +39,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const [memorySkills, setMemorySkills] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; updatedAt: number }>>([]);
   const [memoryStats, setMemoryStats] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState("");
+  const [advisorStatus, setAdvisorStatus] = useState<any>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -60,6 +61,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       setFiles(projectFiles ?? data.files ?? []);
     }).catch(() => {});
     fetch(apiUrl(gitUrl)).then((r) => r.json()).then((data) => setGit(data)).catch(() => {});
+    fetch(apiUrl("/api/advisor/status")).then((r) => r.json()).then((data) => setAdvisorStatus(data)).catch(() => {});
   }, [open, settings.workspacePath, activeProject?.id]);
 
   useEffect(() => {
@@ -291,6 +293,8 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <h2><Icon name="plug" /> Capabilities</h2>
           <div className="context-kv"><span>Web</span><strong>{settings.webEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Advisor</span><strong>{settings.advisorEnabled ? "on" : "off"}</strong></div>
+          <div className="context-kv"><span>Advisor model</span><strong>{advisorStatus?.config ? `${advisorStatus.config.provider}/${advisorStatus.config.model}` : "not loaded"}</strong></div>
+          <div className="context-kv"><span>Advisor extension</span><strong>{advisorStatus?.installed ? "installed" : "missing"}</strong></div>
           <div className="context-kv"><span>Long run</span><strong>{settings.longRunningMode ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Subagents</span><strong>{settings.autoLaunchSubagents ? "auto" : "manual"}</strong></div>
           <div className="context-kv"><span>Chrome</span><strong>{settings.chromeEnabled ? "on" : "off"}</strong></div>
