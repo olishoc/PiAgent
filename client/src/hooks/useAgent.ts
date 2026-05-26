@@ -135,6 +135,40 @@ function ensureAgentMessage(messages: DisplayMessage[], id?: string) {
   return next;
 }
 
+function lastCheckpointItem(messages: DisplayMessage[]) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i];
+    if (item.kind !== "status") return item;
+  }
+  return undefined;
+}
+
+function addCheckpointThinking(messages: DisplayMessage[], text: string, active = true) {
+  const last = lastCheckpointItem(messages);
+  if (last?.kind === "thinking" && last.phase === "checkpoint" && last.text === text) return messages;
+  return [...messages, {
+    id: crypto.randomUUID(),
+    kind: "thinking" as const,
+    text,
+    detail: text,
+    phase: "checkpoint",
+    active,
+    createdAt: Date.now()
+  }];
+}
+
+function shouldAddTextCheckpoint(messages: DisplayMessage[]) {
+  const last = lastCheckpointItem(messages);
+  return last?.kind === "tool_group" || last?.kind === "tool" || last?.kind === "advisor";
+}
+
+function beginAgentCheckpoint(messages: DisplayMessage[], id: string | undefined, text: string, showThinking: boolean) {
+  const withCheckpoint = showThinking && shouldAddTextCheckpoint(messages)
+    ? addCheckpointThinking(messages, text, false)
+    : messages;
+  return ensureAgentMessage(withCheckpoint, id);
+}
+
 function updateThinkingSnapshot(messages: DisplayMessage[], text: string, active = true) {
   const next = [...messages];
   for (let i = next.length - 1; i >= 0; i -= 1) {
@@ -271,31 +305,25 @@ function advisorMessageFromToolResult(message: any): TextMessage {
   };
 }
 
-function toolGroupFor(toolName: string) {
-  const name = toolName.toLowerCase();
-  if (/(bash|shell|command|terminal|exec|run_|npm|pnpm|yarn|cargo|git|test)/.test(name)) {
-    return { key: "commands", label: "commands" };
-  }
-  if (/(read|list|grep|search|find|glob|rg|scan|cat|open_file|file)/.test(name)) {
-    return { key: "file_reads", label: "file reads" };
-  }
-  return null;
-}
-
 function groupStatus(tools: ToolMessage[]): ToolStatus {
   if (tools.some((tool) => tool.status === "error")) return "error";
   if (tools.some((tool) => tool.status === "running")) return "running";
   return "done";
 }
 
+function toolMatchesEvent(tool: ToolMessage, event: any, eventId?: string) {
+  if (eventId) return tool.id === eventId;
+  const eventName = event.toolName ?? event.name;
+  return tool.status === "running" && (!eventName || tool.toolName === eventName);
+}
+
 function addToolMessage(messages: DisplayMessage[], tool: ToolMessage): DisplayMessage[] {
-  const group = toolGroupFor(tool.toolName);
-  if (!group) return [...messages, tool];
+  const group = { key: "tool_batch", label: "commands" };
   const groupedTool = { ...tool, groupKey: group.key };
   const next = [...messages];
   for (let i = next.length - 1; i >= 0; i -= 1) {
     const item = next[i];
-    if (item.kind === "user" || item.kind === "agent") break;
+    if (item.kind === "user" || item.kind === "agent" || item.kind === "advisor") break;
     if (item.kind === "tool_group" && item.groupKey === group.key) {
       const tools = [...item.tools, groupedTool];
       next[i] = {
@@ -335,16 +363,19 @@ function addToolMessage(messages: DisplayMessage[], tool: ToolMessage): DisplayM
 
 function updateToolMessage(messages: DisplayMessage[], event: any): DisplayMessage[] {
   const eventId = event.toolCallId ?? event.id;
+  let matchedEvent = false;
   return messages.map((item) => {
     if (item.kind === "tool") {
-      if (eventId && item.id !== eventId) return item;
+      if (matchedEvent || !toolMatchesEvent(item, event, eventId)) return item;
+      matchedEvent = true;
       return { ...item, status: event.isError ? "error" as const : "done" as const, endedAt: Date.now() };
     }
     if (item.kind === "tool_group") {
       let changed = false;
       const tools = item.tools.map((tool) => {
-        if (eventId && tool.id !== eventId) return tool;
+        if (matchedEvent || changed || !toolMatchesEvent(tool, event, eventId)) return tool;
         changed = true;
+        matchedEvent = true;
         return { ...tool, status: event.isError ? "error" as const : "done" as const, endedAt: Date.now() };
       });
       if (!changed) return item;
@@ -370,18 +401,18 @@ export function handlePiEvent(
 ) {
   if (event.type === "agent_start") {
     setIsStreaming(true);
-    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Reading the latest message and choosing the next step."));
+    if (showThinking) setMessages((items) => addCheckpointThinking(items, "Starting the run and preparing the first action."));
     return;
   }
 
   const assistantEvent = event.assistantMessageEvent;
   if (event.type === "message_start" && event.message?.role === "assistant") {
-    setMessages((items) => ensureAgentMessage(showThinking ? updateThinkingSnapshot(items, "Drafting the response.") : items, event.message?.responseId));
+    setMessages((items) => beginAgentCheckpoint(items, event.message?.responseId, "Checkpoint reached; drafting the next visible update.", showThinking));
     return;
   }
 
   if (event.type === "message_update" && assistantEvent?.type === "text_start") {
-    setMessages((items) => ensureAgentMessage(showThinking ? updateThinkingSnapshot(items, "Writing the answer.") : items, assistantEvent?.partial?.responseId));
+    setMessages((items) => beginAgentCheckpoint(items, assistantEvent?.partial?.responseId, "Checkpoint reached; writing the next visible update.", showThinking));
     return;
   }
 
@@ -408,7 +439,6 @@ export function handlePiEvent(
 
   if (event.type === "message_end" && event.message?.role === "assistant") {
     setContextUsage((current) => usageFromMessage(event.message, current));
-    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Finished the response.", false));
     return;
   }
 
@@ -423,7 +453,6 @@ export function handlePiEvent(
       setMessages((items) => upsertAdvisorMessage(items, event, "running"));
       return;
     }
-    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Using ${event.toolName ?? event.name ?? "a tool"} to gather more context.`));
     setMessages((items) => addToolMessage(items, {
         id: event.toolCallId ?? event.id ?? crypto.randomUUID(),
         kind: "tool",
@@ -441,7 +470,6 @@ export function handlePiEvent(
       setMessages((items) => upsertAdvisorMessage(items, event, event.isError || event.result?.details?.error ? "error" : "done", text));
       return;
     }
-    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Finished ${event.toolName ?? event.name ?? "tool"}; reviewing the result.`));
     setMessages((items) => updateToolMessage(items, event));
     return;
   }
@@ -460,7 +488,7 @@ export function handlePiEvent(
 
   if (event.type === "compaction_start") {
     setFooterStatus("compacting context...");
-    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Compressing older context so the thread can continue."));
+    if (showThinking) setMessages((items) => addCheckpointThinking(items, "Compressing older context so the thread can continue."));
     return;
   }
 
