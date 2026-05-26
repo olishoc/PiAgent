@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import Composer from "./components/Composer";
 import LoginScreen from "./components/LoginScreen";
@@ -237,9 +237,23 @@ export default function App() {
     autoLaunchAdvisor: true,
     autoLaunchSubagents: false
   });
+  const settingsRef = useRef(settings);
+  const settingsPatchQueueRef = useRef(Promise.resolve(settings));
   const agent = useAgent(auth.loggedIn, settings.thinkingLevel !== "off");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
+
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
+  const applySettings = (nextSettings?: Partial<AppSettings> | null) => {
+    if (!nextSettings || typeof nextSettings !== "object") return settingsRef.current;
+    const merged = { ...settingsRef.current, ...nextSettings };
+    settingsRef.current = merged;
+    setSettings(merged);
+    return merged;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -258,13 +272,13 @@ export default function App() {
       }
       fetch(apiUrl("/api/settings")).then((r) => r.json()).then((data) => {
         const loaded = data.settings;
-        setSettings(loaded);
+        applySettings(loaded);
         if (loaded && !loaded.onboardingComplete) {
           void fetch(apiUrl("/api/settings"), {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ onboardingComplete: true })
-          }).then((r) => r.json()).then((next) => setSettings(next.settings ?? loaded)).catch(() => {});
+          }).then((r) => r.json()).then((next) => applySettings(next.settings ?? loaded)).catch(() => {});
         }
       }).catch((error) => setBackendError(String(error)));
       fetch(apiUrl("/api/models")).then((r) => r.json()).then((data) => setModels(normalizeProviders(data.providers ?? []))).catch(() => {});
@@ -327,18 +341,37 @@ export default function App() {
   if (!auth.loggedIn) return <LoginScreen onLogin={auth.login} loading={auth.loading} authUrl={auth.authUrl} error={auth.error} message={auth.loginMessage} />;
 
   const updateSettings = async (patch: Partial<AppSettings>) => {
-    const response = await fetch(apiUrl("/api/settings"), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch)
-    });
-    const data = await response.json();
-    setSettings(data.settings);
-    if (patch.thinkingLevel) void agent.sendCommand({ type: "set_thinking_level", level: patch.thinkingLevel });
-    if (patch.provider || patch.modelLabel) {
-      const next = data.settings ?? { ...settings, ...patch };
+    const cleaned = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<AppSettings>;
+    if (Object.keys(cleaned).length > 8) {
+      setUpdateNotice("Settings update blocked because it tried to overwrite too many preferences at once.");
+      void fetch(apiUrl("/api/settings")).then((response) => response.json()).then((data) => applySettings(data.settings)).catch(() => {});
+      return settingsRef.current;
+    }
+    const optimistic = applySettings(cleaned);
+    settingsPatchQueueRef.current = settingsPatchQueueRef.current
+      .catch(() => settingsRef.current)
+      .then(async () => {
+        const response = await fetch(apiUrl("/api/settings"), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cleaned)
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.settings || typeof data.settings !== "object") {
+          throw new Error(data.error ?? "Settings update failed.");
+        }
+        return applySettings(data.settings);
+      })
+      .catch((error) => {
+        setUpdateNotice(error instanceof Error ? error.message : String(error));
+        return settingsRef.current;
+      });
+    const next = await settingsPatchQueueRef.current;
+    if (cleaned.thinkingLevel) void agent.sendCommand({ type: "set_thinking_level", level: cleaned.thinkingLevel });
+    if (cleaned.provider || cleaned.modelLabel) {
       void agent.sendCommand({ type: "set_model", provider: next.provider, modelId: next.modelLabel });
     }
+    return optimistic;
   };
 
   const refreshProjects = async () => {
@@ -394,7 +427,7 @@ export default function App() {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error ?? "Project creation failed.");
     setActiveProjectId(data.project.id);
-    setSettings(data.settings ?? { ...settings, workspacePath: data.project.rootPath });
+    applySettings(data.settings ?? { workspacePath: data.project.rootPath });
     await refreshProjects();
     navigate("chat");
     await agent.sendCommand({ type: "reload_agent" });
@@ -405,7 +438,7 @@ export default function App() {
   const selectProject = async (project: ProjectInfo) => {
     const response = await fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/open`), { method: "POST" });
     const data = await response.json();
-    if (data.settings) setSettings(data.settings);
+    if (data.settings) applySettings(data.settings);
     setActiveProjectId(project.id);
     navigate("chat");
     agent.replaceMessages([]);

@@ -10,7 +10,7 @@ import { authRouter, maybeRefresh } from "./auth.js";
 import { PiSession } from "./piProcess.js";
 import { APP_CONFIG_DIR, PI_AUTH_PATH, TOKEN_PATH, readTokens } from "./tokenStore.js";
 import { SESSION_DIR, listSessions, sessionsRouter } from "./sessions.js";
-import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, writeSettings } from "./settings.js";
+import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, sanitizeSettingsPatch, writeSettings } from "./settings.js";
 import { listProjects, projectsRouter } from "./projects.js";
 import { extensionsRouter, listExtensionCatalog } from "./extensions.js";
 import { buildMemoryContext, MEMORY_DIR, memoryRouter } from "./memory.js";
@@ -60,8 +60,12 @@ app.use("/api/memory", memoryRouter);
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });
-app.patch("/api/settings", (req, res) => {
-  res.json({ settings: writeSettings(req.body ?? {}) });
+app.patch("/api/settings", (req, res, next) => {
+  try {
+    res.json({ settings: writeSettings(sanitizeSettingsPatch(req.body ?? {})) });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : "Invalid settings patch", settings: readSettings() });
+  }
 });
 app.get("/api/health", (_req, res) => {
   res.json({

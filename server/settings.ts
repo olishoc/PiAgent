@@ -46,6 +46,7 @@ export interface AppSettings {
 }
 
 const SETTINGS_PATH = path.join(APP_CONFIG_DIR, "settings.json");
+const SETTINGS_BACKUP_PATH = path.join(APP_CONFIG_DIR, "settings.backup.json");
 
 export const DEFAULT_SETTINGS: AppSettings = {
   onboardingComplete: false,
@@ -85,6 +86,55 @@ export const DEFAULT_SETTINGS: AppSettings = {
 const THEME_PRESETS: ThemePreset[] = ["codex", "graphite", "midnight", "ember", "absolute", "paper", "dawn", "contrast"];
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const TEXT_DENSITIES: TextDensity[] = ["compact", "codex", "comfortable", "custom"];
+const ACCESS_MODES: AccessMode[] = ["read-only", "limited", "full"];
+const APPROVAL_POLICIES: ApprovalPolicy[] = ["on-request", "on-failure", "never"];
+const SPEED_MODES: SpeedMode[] = ["fast", "balanced", "deep"];
+const THEMES: Array<AppSettings["theme"]> = ["dark", "light", "system"];
+const DENSITIES: Array<AppSettings["density"]> = ["comfortable", "compact"];
+const BOOLEAN_KEYS = new Set<keyof AppSettings>([
+  "onboardingComplete",
+  "autoReview",
+  "advisorEnabled",
+  "webEnabled",
+  "contextEnabled",
+  "chromeEnabled",
+  "computerUseEnabled",
+  "githubEnabled",
+  "memoryEnabled",
+  "memoryAutoInject",
+  "longRunningMode",
+  "autoLaunchAdvisor",
+  "autoLaunchSubagents"
+]);
+const NUMBER_KEYS = new Set<keyof AppSettings>([
+  "messageFontSize",
+  "messageLineHeight",
+  "composerFontSize",
+  "messageSpacing",
+  "memoryBudgetTokens"
+]);
+const STRING_KEYS = new Set<keyof AppSettings>([
+  "displayName",
+  "workspacePath",
+  "provider",
+  "modelLabel",
+  "accentColor",
+  "fontFamily"
+]);
+const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
+  accessMode: ACCESS_MODES,
+  approvalPolicy: APPROVAL_POLICIES,
+  thinkingLevel: THINKING_LEVELS,
+  speedMode: SPEED_MODES,
+  theme: THEMES,
+  themePreset: THEME_PRESETS,
+  density: DENSITIES,
+  textDensity: TEXT_DENSITIES
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
 
 function clampNumber(value: unknown, fallback: number, min: number, max: number) {
   const numeric = Number(value);
@@ -115,6 +165,11 @@ export function readSettings(): AppSettings {
     if (!fs.existsSync(SETTINGS_PATH)) return DEFAULT_SETTINGS;
     return normalizeSettings(JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8").replace(/^\uFEFF/, "")));
   } catch {
+    try {
+      if (fs.existsSync(SETTINGS_BACKUP_PATH)) {
+        return normalizeSettings(JSON.parse(fs.readFileSync(SETTINGS_BACKUP_PATH, "utf8").replace(/^\uFEFF/, "")));
+      }
+    } catch {}
     return DEFAULT_SETTINGS;
   }
 }
@@ -122,9 +177,43 @@ export function readSettings(): AppSettings {
 export function writeSettings(settings: Partial<AppSettings>): AppSettings {
   fs.mkdirSync(APP_CONFIG_DIR, { recursive: true });
   const next = normalizeSettings({ ...readSettings(), ...settings });
-  fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
+  if (fs.existsSync(SETTINGS_PATH)) fs.copyFileSync(SETTINGS_PATH, SETTINGS_BACKUP_PATH);
+  const tmpPath = `${SETTINGS_PATH}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(next, null, 2));
+  fs.renameSync(tmpPath, SETTINGS_PATH);
   fs.chmodSync(SETTINGS_PATH, 0o600);
+  if (fs.existsSync(SETTINGS_BACKUP_PATH)) fs.chmodSync(SETTINGS_BACKUP_PATH, 0o600);
   return next;
+}
+
+export function sanitizeSettingsPatch(input: unknown): Partial<AppSettings> {
+  if (!isPlainObject(input)) return {};
+  const knownKeys = Object.keys(DEFAULT_SETTINGS) as Array<keyof AppSettings>;
+  const incomingKnownKeys = knownKeys.filter((key) => Object.prototype.hasOwnProperty.call(input, key));
+  if (incomingKnownKeys.length > 8 && input.replaceAllSettings !== true) {
+    throw new Error("Refusing broad settings overwrite. Send a small PATCH with only the changed fields.");
+  }
+  const patch: Partial<AppSettings> = {};
+  for (const key of incomingKnownKeys) {
+    const value = input[key];
+    if (value === undefined || value === null) continue;
+    if (BOOLEAN_KEYS.has(key)) {
+      if (typeof value === "boolean") (patch as Record<string, unknown>)[key] = value;
+      continue;
+    }
+    if (NUMBER_KEYS.has(key)) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) (patch as Record<string, unknown>)[key] = numeric;
+      continue;
+    }
+    if (STRING_KEYS.has(key)) {
+      if (typeof value === "string" && value.trim()) (patch as Record<string, unknown>)[key] = value.trim();
+      continue;
+    }
+    const allowed = ENUM_VALUES[key];
+    if (allowed?.includes(String(value))) (patch as Record<string, unknown>)[key] = value;
+  }
+  return patch;
 }
 
 export function piArgsForAccess(settings: AppSettings): string[] {
