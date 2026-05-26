@@ -939,7 +939,8 @@ button:active {
   padding: 12px;
 }
 
-.workflow-list article {
+.workflow-list article,
+.subagent-task-list article {
   display: grid;
   gap: 5px;
   padding: 10px;
@@ -949,6 +950,21 @@ button:active {
 }
 
 .workflow-list em {
+  font-style: normal;
+}
+
+.subagent-task-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.subagent-task-list span,
+.subagent-task-list em,
+.subagent-task-list p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
   font-style: normal;
 }
 

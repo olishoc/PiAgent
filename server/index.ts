@@ -15,6 +15,7 @@ import { listProjects, projectsRouter } from "./projects.js";
 import { extensionsRouter, listExtensionCatalog } from "./extensions.js";
 import { buildMemoryContext, MEMORY_DIR, memoryRouter, observeAgentEvent, observeMemoryTurn } from "./memory.js";
 import { advisorExtensionArgs, advisorRouter, advisorStatus, ensureAdvisorConfig, syncAdvisorConfig } from "./advisor.js";
+import { buildSubagentPromptContext, ensureSubagentConfig, observeSubagentEvent, subagentExtensionArgs, subagentStatus, subagentsRouter, syncSubagentConfig } from "./subagents.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -40,7 +41,10 @@ const BACKEND_FEATURES = {
   memoryConsolidation: true,
   proceduralMemory: true,
   realAdvisor: true,
-  piAdvisorExtension: true
+  piAdvisorExtension: true,
+  piSubagentsExtension: true,
+  automaticDelegation: true,
+  projectSubagentState: true
 };
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
@@ -65,6 +69,7 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/extensions", extensionsRouter);
 app.use("/api/memory", memoryRouter);
 app.use("/api/advisor", advisorRouter);
+app.use("/api/subagents", subagentsRouter);
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });
@@ -79,6 +84,19 @@ app.patch("/api/settings", (req, res, next) => {
       || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorMaxTokens")
       || Object.prototype.hasOwnProperty.call(req.body ?? {}, "advisorMaxContextMessages")) {
       syncAdvisorConfig(settings);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentsEnabled")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "autoLaunchSubagents")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentRoutingMode")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentMaxParallel")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentMaxDepth")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentAsyncByDefault")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentUseWorktrees")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentReviewLoop")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentModel")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentThinking")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentIntercomMode")) {
+      syncSubagentConfig(settings);
     }
     res.json({ settings });
   } catch (err) {
@@ -105,16 +123,6 @@ app.get("/api/models", (_req, res) => {
     ]
   });
 });
-app.get("/api/subagents", (_req, res) => {
-  res.json({
-    subagents: [
-      { id: "advisor", name: "Advisor", enabledBy: "advisorEnabled", description: "Runs an explicit review pass before final answers when enabled." },
-      { id: "web", name: "Web research", enabledBy: "webEnabled", description: "Asks Pi to use installed web/search extensions when available." },
-      { id: "chrome", name: "Chrome", enabledBy: "chromeEnabled", description: "Coordinates browser work through installed Pi extensions or local instructions." },
-      { id: "github", name: "GitHub", enabledBy: "githubEnabled", description: "Surfaces Git state and project publishing context." }
-    ]
-  });
-});
 app.get("/api/diagnostics", async (_req, res, next) => {
   try {
     await maybeRefresh();
@@ -133,6 +141,7 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       memoryDir: MEMORY_DIR,
       extensionCount: listExtensionCatalog().length,
       advisor: advisorStatus(settings),
+      subagents: subagentStatus(settings),
       provider: settings.provider,
       model: settings.modelLabel || "gpt-5.5"
     });
@@ -372,14 +381,21 @@ wss.on("connection", async (ws) => {
             });
           }
         }
+        const subagentTrace = observeSubagentEvent({
+          event,
+          projectId: activeProjectId,
+          sessionId: activeSessionId
+        });
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+        if (subagentTrace && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(subagentTrace));
       };
     };
     const startSession = () => {
       settings = readSettings();
       ensureAdvisorConfig(settings);
+      ensureSubagentConfig(settings);
       const nextSession = new PiSession(SESSION_DIR, freshToken.access, {
-        extraArgs: [...advisorExtensionArgs(), ...piArgsForAccess(settings)],
+        extraArgs: [...advisorExtensionArgs(), ...subagentExtensionArgs(settings), ...piArgsForAccess(settings)],
         provider: settings.provider || "openai-codex",
         model: settings.modelLabel || "gpt-5.5",
         thinkingLevel: settings.thinkingLevel || "medium",
@@ -453,6 +469,28 @@ wss.on("connection", async (ws) => {
                   truncated: memory.truncated
                 }));
               }
+            }
+          }
+          const subagentContext = buildSubagentPromptContext({
+            message: cmd.message,
+            projectId: activeProjectId,
+            sessionId: activeSessionId,
+            settings
+          });
+          if (subagentContext?.text) {
+            outbound = {
+              ...outbound,
+              message: `${outbound.message}\n\n${subagentContext.text}`
+            };
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: "subagent_plan",
+                projectId: activeProjectId,
+                taskCount: subagentContext.tasks.length,
+                tasks: subagentContext.tasks,
+                installed: subagentContext.package.installed,
+                engine: subagentContext.package.packageName
+              }));
             }
           }
         }

@@ -22,6 +22,14 @@ interface GitHubStatus {
   gcmAccounts?: string[];
 }
 
+interface ProjectSubagentState {
+  enabled?: boolean;
+  routingMode?: string;
+  maxParallel?: number;
+  activeRunIds?: string[];
+  tasks?: Array<{ id: string; title: string; profileId: string; status: string; mode: string; updatedAt: number; lastEvent?: string }>;
+}
+
 interface ProjectsViewProps {
   projects: ProjectInfo[];
   activeProjectId: string;
@@ -53,24 +61,31 @@ export default function ProjectsView({ projects, activeProjectId, settings, onBa
   const [tree, setTree] = useState<ProjectTreeEntry[]>([]);
   const [git, setGit] = useState<GitStatus | null>(null);
   const [github, setGithub] = useState<GitHubStatus | null>(null);
+  const [subagents, setSubagents] = useState<ProjectSubagentState | null>(null);
+  const [subagentStatus, setSubagentStatus] = useState<any>(null);
   const [remoteDraft, setRemoteDraft] = useState("");
   const [workflowName, setWorkflowName] = useState("");
+  const [delegatePrompt, setDelegatePrompt] = useState("Plan the next milestone and identify safe parallel work.");
   const [status, setStatus] = useState("");
   const activeProject = useMemo(() => projects.find((project) => project.id === activeProjectId) ?? projects[0], [activeProjectId, projects]);
 
   const refreshProjectData = async (project = activeProject) => {
     if (!project) return;
-    const [treeResponse, gitResponse, githubResponse] = await Promise.all([
+    const [treeResponse, gitResponse, githubResponse, subagentResponse] = await Promise.all([
       fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/tree?depth=4&limit=500`)).catch(() => null),
       fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/git/status`)).catch(() => null),
-      fetch(apiUrl("/api/github/status")).catch(() => null)
+      fetch(apiUrl("/api/github/status")).catch(() => null),
+      fetch(apiUrl(`/api/subagents/projects/${encodeURIComponent(project.id)}`)).catch(() => null)
     ]);
     const treeData = treeResponse?.ok ? await treeResponse.json().catch(() => null) : null;
     const gitData = gitResponse?.ok ? await gitResponse.json().catch(() => null) : null;
     const githubData = githubResponse?.ok ? await githubResponse.json().catch(() => null) : null;
+    const subagentData = subagentResponse?.ok ? await subagentResponse.json().catch(() => null) : null;
     setTree(treeData?.entries ?? []);
     setGit(gitData);
     setGithub(githubData);
+    setSubagents(subagentData?.state ?? null);
+    setSubagentStatus(subagentData?.status ?? null);
     setRemoteDraft(project.repoUrl ?? gitData?.remotes?.match(/origin\s+(\S+)/)?.[1] ?? "");
   };
 
@@ -155,6 +170,20 @@ export default function ProjectsView({ projects, activeProjectId, settings, onBa
     setStatus(data.ok ? "Workflow added." : data.error ?? "Workflow creation failed.");
     setWorkflowName("");
     await onRefresh();
+  };
+
+  const generateDelegationPlan = async () => {
+    if (!activeProject) return;
+    setStatus("Preparing subagent delegation plan...");
+    const response = await fetch(apiUrl(`/api/subagents/projects/${encodeURIComponent(activeProject.id)}/plan`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: delegatePrompt })
+    });
+    const data = await response.json().catch(() => ({}));
+    setSubagents(data.state ?? subagents);
+    setSubagentStatus(data.status ?? subagentStatus);
+    setStatus(data.ok ? `Prepared ${data.plan?.length ?? 0} delegated task(s). Send a chat prompt to launch them through Pi.` : data.error ?? "Delegation plan failed.");
   };
 
   const openFile = (entry: ProjectTreeEntry) => {
@@ -269,6 +298,31 @@ export default function ProjectsView({ projects, activeProjectId, settings, onBa
                       <em>{workflow.steps.join(" -> ")}</em>
                     </article>
                   ))}
+                </div>
+              </section>
+
+              <section className="project-panel">
+                <div className="panel-title">
+                  <h2><Icon name="plug" /> Subagents</h2>
+                  <button onClick={() => void generateDelegationPlan()}><Icon name="bot" /> Plan</button>
+                </div>
+                <div className="git-line">
+                  <strong>{subagentStatus?.installed ? "ready" : "missing"}</strong>
+                  <span>{subagentStatus?.installed ? `${subagentStatus.engine}@${subagentStatus.version ?? "?"} / ${subagents?.routingMode ?? settings.subagentRoutingMode}` : "pi-subagents is not installed in this runtime."}</span>
+                </div>
+                <div className="remote-row">
+                  <input value={delegatePrompt} onChange={(event) => setDelegatePrompt(event.target.value)} placeholder="Describe the next milestone to delegate" />
+                  <button onClick={() => void generateDelegationPlan()}><Icon name="spark" /> Prepare</button>
+                </div>
+                <div className="subagent-task-list">
+                  {(subagents?.tasks ?? []).slice(0, 8).map((task) => (
+                    <article key={task.id}>
+                      <strong>{task.title}</strong>
+                      <span>{task.profileId} / {task.mode}</span>
+                      <em>{task.status}{task.lastEvent ? ` / ${task.lastEvent}` : ""}</em>
+                    </article>
+                  ))}
+                  {!(subagents?.tasks ?? []).length ? <p>No delegated project tasks yet.</p> : null}
                 </div>
               </section>
             </>

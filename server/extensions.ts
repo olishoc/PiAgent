@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { readSettings } from "./settings.js";
 import { advisorStatus } from "./advisor.js";
+import { subagentStatus } from "./subagents.js";
 
 export type ExtensionCategory = "Featured" | "Coding" | "Productivity" | "Research" | "Design" | "Finance" | "Operations";
 export type ExtensionStatus = "enabled" | "available" | "setup-required" | "guidance-only";
@@ -52,6 +53,21 @@ const entries: Omit<ExtensionCatalogEntry, "status">[] = [
     recommended: true,
     sourceUrl: "https://pi.dev/packages/pi-advisor",
     setupCommand: "pi install npm:pi-advisor"
+  },
+  {
+    id: "subagents",
+    title: "Pi Subagents",
+    category: "Featured",
+    description: "Real pi-subagents extension: scout, researcher, planner, worker, reviewers, chains, parallel runs, background jobs, and project delegation.",
+    authType: "api-key",
+    source: "pi-extension",
+    settingKey: "subagentsEnabled",
+    connectAction: "toggle-setting",
+    permissions: ["spawn child Pi sessions", "read project context", "optional file edits by worker"],
+    risk: "high",
+    recommended: true,
+    sourceUrl: "https://pi.dev/packages/pi-subagents",
+    setupCommand: "pi install npm:pi-subagents"
   },
   {
     id: "chrome",
@@ -458,6 +474,7 @@ const entries: Omit<ExtensionCatalogEntry, "status">[] = [
 function entryStatus(entry: Omit<ExtensionCatalogEntry, "status">): ExtensionStatus {
   const settings = readSettings() as unknown as Record<string, unknown>;
   if (entry.id === "advisor" && !advisorStatus().installed) return "setup-required";
+  if (entry.id === "subagents" && !subagentStatus().installed) return "setup-required";
   if (entry.settingKey && settings[entry.settingKey]) return "enabled";
   if (entry.connectAction === "toggle-setting" || entry.connectAction === "github-login") return "available";
   if (entry.source === "built-in") return "available";

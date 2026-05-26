@@ -114,6 +114,16 @@ export interface AppSettings {
   longRunningMode: boolean;
   autoLaunchAdvisor: boolean;
   autoLaunchSubagents: boolean;
+  subagentsEnabled: boolean;
+  subagentRoutingMode: "manual" | "assistive" | "automatic";
+  subagentMaxParallel: number;
+  subagentMaxDepth: number;
+  subagentAsyncByDefault: boolean;
+  subagentUseWorktrees: boolean;
+  subagentReviewLoop: boolean;
+  subagentModel: string;
+  subagentThinking: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  subagentIntercomMode: "off" | "fork-only" | "always";
 }
 
 export interface ProjectWorkflow {
@@ -257,7 +267,17 @@ export default function App() {
     messageSpacing: 14,
     longRunningMode: true,
     autoLaunchAdvisor: true,
-    autoLaunchSubagents: false
+    autoLaunchSubagents: true,
+    subagentsEnabled: true,
+    subagentRoutingMode: "automatic",
+    subagentMaxParallel: 3,
+    subagentMaxDepth: 1,
+    subagentAsyncByDefault: true,
+    subagentUseWorktrees: false,
+    subagentReviewLoop: true,
+    subagentModel: "inherit",
+    subagentThinking: "high",
+    subagentIntercomMode: "fork-only"
   });
   const settingsRef = useRef(settings);
   const settingsPatchQueueRef = useRef(Promise.resolve(settings));
@@ -411,6 +431,36 @@ export default function App() {
           maxUsesPerRun: next.advisorMaxUsesPerRun,
           maxTokens: next.advisorMaxTokens,
           maxContextMessages: next.advisorMaxContextMessages
+        })
+      }).catch(() => {});
+      if (!agent.isStreaming) void agent.sendCommand({ type: "reload_agent" });
+    }
+    if (cleaned.subagentsEnabled !== undefined
+      || cleaned.autoLaunchSubagents !== undefined
+      || cleaned.subagentRoutingMode
+      || cleaned.subagentMaxParallel !== undefined
+      || cleaned.subagentMaxDepth !== undefined
+      || cleaned.subagentAsyncByDefault !== undefined
+      || cleaned.subagentUseWorktrees !== undefined
+      || cleaned.subagentReviewLoop !== undefined
+      || cleaned.subagentModel
+      || cleaned.subagentThinking
+      || cleaned.subagentIntercomMode) {
+      void fetch(apiUrl("/api/subagents/config"), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: next.subagentsEnabled,
+          autoLaunch: next.autoLaunchSubagents,
+          routingMode: next.subagentRoutingMode,
+          maxParallel: next.subagentMaxParallel,
+          maxDepth: next.subagentMaxDepth,
+          asyncByDefault: next.subagentAsyncByDefault,
+          useWorktrees: next.subagentUseWorktrees,
+          reviewLoop: next.subagentReviewLoop,
+          model: next.subagentModel,
+          thinking: next.subagentThinking,
+          intercomMode: next.subagentIntercomMode
         })
       }).catch(() => {});
       if (!agent.isStreaming) void agent.sendCommand({ type: "reload_agent" });
@@ -579,8 +629,18 @@ export default function App() {
       navigate("projects");
       return;
     }
+    if (command === "/subagents") {
+      navigate("settings");
+      updateSettings({ subagentsEnabled: true, autoLaunchSubagents: true, subagentRoutingMode: "automatic" });
+      return;
+    }
     if (command === "/compact") {
       compactContext();
+      return;
+    }
+    if (command === "/subagents-doctor" || command === "/parallel-review" || command === "/review-loop" || command.startsWith("/run ") || command.startsWith("/chain ") || command.startsWith("/parallel ")) {
+      navigate("chat");
+      agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
       return;
     }
     if (command === "/advisor" || command.startsWith("/advisor ")) {
@@ -596,7 +656,7 @@ export default function App() {
         {
           id: crypto.randomUUID(),
           kind: "status",
-          text: "Commands: /new, /attach, /compact, /advisor ask, /permissions, /projects, /sessions, /settings. Toggle web/advisor/context from the composer."
+          text: "Commands: /new, /attach, /compact, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /permissions, /projects, /sessions, /settings."
         }
       ]);
     }

@@ -26,6 +26,10 @@ const slashCommands = [
   { command: "/advisor ask", label: "Consult the real pi-advisor extension now" },
   { command: "/advisor on", label: "Enable the real pi-advisor extension" },
   { command: "/advisor off", label: "Disable the real pi-advisor extension" },
+  { command: "/subagents", label: "Open automatic subagent delegation settings" },
+  { command: "/subagents-doctor", label: "Ask pi-subagents to diagnose the runtime" },
+  { command: "/parallel-review", label: "Run fresh-context parallel reviewers" },
+  { command: "/review-loop", label: "Run worker/reviewer/fix loop until capped or clean" },
   { command: "/projects", label: "Open project workspaces and Git state" },
   { command: "/sessions", label: "Open session search" },
   { command: "/settings", label: "Open settings" }
@@ -104,7 +108,10 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     autoReview: Boolean(settings?.autoReview),
     longRunningMode: Boolean(settings?.longRunningMode),
     autoLaunchAdvisor: Boolean(settings?.autoLaunchAdvisor),
-    autoLaunchSubagents: Boolean(settings?.autoLaunchSubagents)
+    autoLaunchSubagents: Boolean(settings?.autoLaunchSubagents),
+    subagentsEnabled: Boolean(settings?.subagentsEnabled),
+    subagentRoutingMode: settings?.subagentRoutingMode ?? "automatic",
+    subagentMaxParallel: settings?.subagentMaxParallel ?? 3
   });
 
   const pickFiles = async () => {
@@ -249,6 +256,9 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web research</button>
               <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
               <button onClick={() => { runCommand("/advisor ask"); setAddOpen(false); }}><Icon name="shield" size={13} /> Ask advisor now</button>
+              <button onClick={() => { onSettingsChange({ subagentsEnabled: !settings?.subagentsEnabled, autoLaunchSubagents: !settings?.subagentsEnabled }); setAddOpen(false); }}><Icon name={settings?.subagentsEnabled ? "check" : "plug"} size={13} /> Pi subagents</button>
+              <button onClick={() => { onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic", subagentsEnabled: true }); setAddOpen(false); }}><Icon name={settings?.autoLaunchSubagents ? "check" : "bot"} size={13} /> Auto delegation</button>
+              <button onClick={() => { runCommand("/subagents-doctor"); setAddOpen(false); }}><Icon name="terminal" size={13} /> Subagents doctor</button>
               <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "folder"} size={13} /> Workspace context</button>
               {extensionCommands.length ? <strong className="menu-heading">Extensions</strong> : null}
               {extensionCommands.slice(0, 8).map((command) => (
@@ -296,6 +306,14 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               {tool === "advisor" ? "advisor" : tool}
             </button>
           ))}
+          <button
+            className={settings?.autoLaunchSubagents ? "enabled" : ""}
+            onClick={() => onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentsEnabled: true, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic" })}
+            title="Toggle automatic pi-subagents delegation"
+          >
+            <Icon name="plug" size={13} />
+            subagents
+          </button>
         </div>
         <div className="composer-meta">
           <button className={`speed-pill ${settings?.speedMode === "fast" ? "enabled" : ""}`} onClick={() => onSettingsChange({ speedMode: settings?.speedMode === "fast" ? "balanced" : "fast", thinkingLevel: settings?.speedMode === "fast" ? "medium" : "minimal" })}>

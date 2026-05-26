@@ -212,7 +212,7 @@
   border-left: 2px solid var(--accent-blue);
   border-radius: 8px;
   background: color-mix(in srgb, var(--bg-tool) 88%, var(--accent-blue));
-  box-shadow: 0 12px 34px var(--shadow);
+  box-shadow: 0 12px 34px var(--shadow-color);
 }
 
 .advisor-message.running {
@@ -241,6 +241,47 @@
 }
 
 .advisor-message.error .advisor-rail {
+  color: var(--accent-red);
+}
+
+.subagent-message {
+  display: flex;
+  gap: 10px;
+  max-width: 820px;
+  padding: 10px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--accent-green) 30%, var(--border));
+  border-left: 2px solid var(--accent-green);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-tool) 90%, var(--accent-green));
+  box-shadow: 0 12px 34px var(--shadow-color);
+}
+
+.subagent-message.running {
+  border-left-color: var(--accent-amber);
+}
+
+.subagent-message.error {
+  border-color: color-mix(in srgb, var(--accent-red) 35%, var(--border));
+  border-left-color: var(--accent-red);
+}
+
+.subagent-rail {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 26px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--bg-input);
+  color: var(--accent-green);
+}
+
+.subagent-message.running .subagent-rail {
+  color: var(--accent-amber);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.subagent-message.error .subagent-rail {
   color: var(--accent-red);
 }
 
@@ -642,6 +683,36 @@
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.7;
+}
+
+.subagent-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: -16px;
+  margin-bottom: 28px;
+}
+
+.subagent-profile-grid article {
+  display: grid;
+  gap: 5px;
+  padding: 11px;
+  border: 0.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.subagent-profile-grid strong {
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.subagent-profile-grid span,
+.subagent-profile-grid p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 .theme-preview span {

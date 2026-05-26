@@ -27,7 +27,7 @@ export interface ToolGroupMessage {
 
 export interface TextMessage {
   id: string;
-  kind: "user" | "agent" | "status" | "thinking" | "advisor";
+  kind: "user" | "agent" | "status" | "thinking" | "advisor" | "subagent";
   text: string;
   detail?: string;
   attachments?: Attachment[];
@@ -64,6 +64,9 @@ export interface PromptOptions {
   longRunningMode?: boolean;
   autoLaunchAdvisor?: boolean;
   autoLaunchSubagents?: boolean;
+  subagentsEnabled?: boolean;
+  subagentRoutingMode?: "manual" | "assistive" | "automatic";
+  subagentMaxParallel?: number;
 }
 
 export interface PromptMeta {
@@ -159,7 +162,7 @@ function addCheckpointThinking(messages: DisplayMessage[], text: string, active 
 
 function shouldAddTextCheckpoint(messages: DisplayMessage[]) {
   const last = lastCheckpointItem(messages);
-  return last?.kind === "tool_group" || last?.kind === "tool" || last?.kind === "advisor";
+  return last?.kind === "tool_group" || last?.kind === "tool" || last?.kind === "advisor" || last?.kind === "subagent";
 }
 
 function beginAgentCheckpoint(messages: DisplayMessage[], id: string | undefined, text: string, showThinking: boolean) {
@@ -305,6 +308,65 @@ function advisorMessageFromToolResult(message: any): TextMessage {
   };
 }
 
+function subagentDetails(event: any) {
+  const args = event.args ?? {};
+  const resultDetails = event.result?.details ?? event.details ?? {};
+  return {
+    agent: args.agent ?? event.agent ?? resultDetails.agent,
+    mode: args.tasks ? "parallel" : args.chain ? "chain" : resultDetails.mode ?? event.mode ?? "single",
+    runId: event.runId ?? resultDetails.runId ?? resultDetails.id ?? event.id,
+    taskCount: Array.isArray(args.tasks) ? args.tasks.length : Array.isArray(args.chain) ? args.chain.length : undefined,
+    error: resultDetails.error ?? event.error
+  };
+}
+
+function subagentResultText(result: any): string {
+  return stripAnsi(extractTextContent(result?.content) || extractTextContent(result) || "Subagent run returned no visible output.");
+}
+
+function upsertSubagentMessage(messages: DisplayMessage[], event: any, status: ToolStatus, text?: string): DisplayMessage[] {
+  const details = subagentDetails(event);
+  const id = details.runId ?? event.toolCallId ?? event.id ?? crypto.randomUUID();
+  const next = [...messages];
+  const existingIndex = next.findIndex((item) => item.kind === "subagent" && item.id === id);
+  const mode = details.mode ? ` / ${details.mode}` : "";
+  const count = details.taskCount ? ` / ${details.taskCount} tasks` : "";
+  const message: TextMessage = {
+    id,
+    kind: "subagent",
+    text: text ?? (status === "running" ? "Delegating work to Pi subagents..." : "Subagent workflow finished."),
+    detail: text,
+    status,
+    phase: status === "running" ? "delegating" : details.error ? "subagent error" : "subagent result",
+    active: status === "running",
+    stage: `${details.agent ?? "subagent"}${mode}${count}`,
+    model: details.runId,
+    createdAt: Date.now()
+  };
+  if (existingIndex >= 0) {
+    next[existingIndex] = { ...(next[existingIndex] as TextMessage), ...message };
+    return next;
+  }
+  return [...next, message];
+}
+
+function subagentMessageFromToolResult(message: any): TextMessage {
+  const details = subagentDetails(message);
+  const text = subagentResultText(message.result ?? message);
+  return {
+    id: message.toolCallId ?? details.runId ?? message.id ?? crypto.randomUUID(),
+    kind: "subagent",
+    text,
+    detail: text,
+    status: message.isError || details.error ? "error" : "done",
+    phase: details.error ? "subagent error" : "subagent result",
+    stage: `${details.agent ?? "subagent"} / ${details.mode ?? "single"}`,
+    model: details.runId,
+    active: false,
+    createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now()
+  };
+}
+
 function groupStatus(tools: ToolMessage[]): ToolStatus {
   if (tools.some((tool) => tool.status === "error")) return "error";
   if (tools.some((tool) => tool.status === "running")) return "running";
@@ -323,7 +385,7 @@ function addToolMessage(messages: DisplayMessage[], tool: ToolMessage): DisplayM
   const next = [...messages];
   for (let i = next.length - 1; i >= 0; i -= 1) {
     const item = next[i];
-    if (item.kind === "user" || item.kind === "agent" || item.kind === "advisor") break;
+    if (item.kind === "user" || item.kind === "agent" || item.kind === "advisor" || item.kind === "subagent") break;
     if (item.kind === "tool_group" && item.groupKey === group.key) {
       const tools = [...item.tools, groupedTool];
       next[i] = {
@@ -453,6 +515,10 @@ export function handlePiEvent(
       setMessages((items) => upsertAdvisorMessage(items, event, "running"));
       return;
     }
+    if (event.toolName === "subagent" || event.name === "subagent") {
+      setMessages((items) => upsertSubagentMessage(items, event, "running"));
+      return;
+    }
     setMessages((items) => addToolMessage(items, {
         id: event.toolCallId ?? event.id ?? crypto.randomUUID(),
         kind: "tool",
@@ -468,6 +534,11 @@ export function handlePiEvent(
     if (event.toolName === "advisor" || event.name === "advisor") {
       const text = advisorResultText(event.result);
       setMessages((items) => upsertAdvisorMessage(items, event, event.isError || event.result?.details?.error ? "error" : "done", text));
+      return;
+    }
+    if (event.toolName === "subagent" || event.name === "subagent") {
+      const text = subagentResultText(event.result);
+      setMessages((items) => upsertSubagentMessage(items, event, event.isError || event.result?.details?.error ? "error" : "done", text));
       return;
     }
     setMessages((items) => updateToolMessage(items, event));
@@ -508,6 +579,32 @@ export function handlePiEvent(
     return;
   }
 
+  if (event.type === "subagent_plan") {
+    const text = event.installed
+      ? `Prepared ${event.taskCount ?? event.tasks?.length ?? 0} delegated task(s) through ${event.engine ?? "pi-subagents"}.`
+      : "Automatic delegation is planned, but the pi-subagents package is not available in this runtime.";
+    const detail = Array.isArray(event.tasks)
+      ? event.tasks.map((task: any, index: number) => `${index + 1}. ${task.title ?? task.profileId}: ${task.profileId} / ${task.mode}`).join("\n")
+      : text;
+    setMessages((items) => [...items, {
+      id: crypto.randomUUID(),
+      kind: "subagent",
+      text,
+      detail,
+      status: event.installed ? "running" : "error",
+      phase: "delegation plan",
+      active: Boolean(event.installed),
+      stage: event.engine ?? "pi-subagents",
+      createdAt: Date.now()
+    }]);
+    return;
+  }
+
+  if (event.type === "subagent_trace") {
+    setMessages((items) => upsertSubagentMessage(items, event, event.status === "error" ? "error" : event.status === "done" ? "done" : "running", `${event.agent ?? "Subagent"} ${event.eventName ?? "updated"}`));
+    return;
+  }
+
   if (event.type === "extension_ui_request" && event.method === "notify" && /advisor/i.test(String(event.message ?? ""))) {
     const message = stripAnsi(String(event.message ?? "Advisor notification"));
     setMessages((items) => [...items, {
@@ -517,6 +614,21 @@ export function handlePiEvent(
       detail: message,
       status: event.notifyType === "error" ? "error" : "done",
       phase: event.notifyType === "error" ? "advisor unavailable" : "advisor status",
+      active: false,
+      createdAt: Date.now()
+    }]);
+    return;
+  }
+
+  if (event.type === "extension_ui_request" && event.method === "notify" && /subagent/i.test(String(event.message ?? ""))) {
+    const message = stripAnsi(String(event.message ?? "Subagent notification"));
+    setMessages((items) => [...items, {
+      id: event.id ?? crypto.randomUUID(),
+      kind: "subagent",
+      text: message,
+      detail: message,
+      status: event.notifyType === "error" ? "error" : "done",
+      phase: event.notifyType === "error" ? "subagent error" : "subagent status",
       active: false,
       createdAt: Date.now()
     }]);
@@ -553,6 +665,7 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
   return rawMessages.reduce<DisplayMessage[]>((acc, message) => {
     if (message.role === "toolResult") {
       if (message.toolName === "advisor") return [...acc, advisorMessageFromToolResult(message)];
+      if (message.toolName === "subagent") return [...acc, subagentMessageFromToolResult(message)];
       return addToolMessage(acc, {
         id: message.toolCallId ?? crypto.randomUUID(),
         kind: "tool" as const,
@@ -569,6 +682,9 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
           return [...innerAcc, { id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
         }
         if (part.type === "toolCall") {
+          if (part.name === "subagent") {
+            return upsertSubagentMessage(innerAcc, { id: part.id, name: "subagent", args: part.arguments }, "done", "Subagent call recorded in this session.");
+          }
           return addToolMessage(innerAcc, { id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" });
         }
         const partText = part.text ?? "";
@@ -663,7 +779,7 @@ export function useAgent(enabled = true, showThinking = true) {
       }).join("\n")
       : "";
     const optionContext = options && !isSlashCommand
-      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- subagents: ${options.autoLaunchSubagents ? "prepare a delegated plan and launch available Pi subagent workflows when supported" : "manual"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
+      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- subagents: ${options.subagentsEnabled === false ? "disabled" : options.autoLaunchSubagents ? `automatic via real pi-subagents, routing=${options.subagentRoutingMode ?? "automatic"}, maxParallel=${options.subagentMaxParallel ?? 3}` : "manual; use pi-subagents only when explicitly asked"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
       : "";
     wsRef.current.send(JSON.stringify({ type: "prompt", message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
   }, []);

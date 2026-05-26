@@ -84,6 +84,21 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
     );
   }
 
+  if (message.kind === "subagent") {
+    return (
+      <article className={`message subagent-message ${message.status ?? "done"} ${expanded ? "expanded" : ""}`}>
+        <div className="subagent-rail"><Icon name="plug" size={15} /></div>
+        <div className="advisor-body">
+          <button className="advisor-head" onClick={() => setExpanded((current) => !current)}>
+            <span>subagents{message.stage ? ` / ${message.stage}` : ""}</span>
+            <em>{message.model ? `${message.phase ?? "run"} ${message.model}` : message.phase ?? "pi-subagents"}</em>
+          </button>
+          <div className="advisor-text">{renderCodeAware(expanded ? message.detail ?? message.text : message.text)}</div>
+        </div>
+      </article>
+    );
+  }
+
   return (
     <article className="message agent-message">
       <div className="agent-label"><Icon name="bot" size={14} /> agent <span>{timeLabel(message.createdAt)}</span></div>

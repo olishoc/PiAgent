@@ -10,6 +10,8 @@ export type SpeedMode = "fast" | "balanced" | "deep";
 export type ThemePreset = "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
 export type TextDensity = "compact" | "codex" | "comfortable" | "custom";
 export type MemoryMode = "off" | "manual" | "assistive" | "deep";
+export type SubagentRoutingMode = "manual" | "assistive" | "automatic";
+export type SubagentIntercomMode = "off" | "fork-only" | "always";
 
 export interface AppSettings {
   onboardingComplete: boolean;
@@ -55,6 +57,16 @@ export interface AppSettings {
   longRunningMode: boolean;
   autoLaunchAdvisor: boolean;
   autoLaunchSubagents: boolean;
+  subagentsEnabled: boolean;
+  subagentRoutingMode: SubagentRoutingMode;
+  subagentMaxParallel: number;
+  subagentMaxDepth: number;
+  subagentAsyncByDefault: boolean;
+  subagentUseWorktrees: boolean;
+  subagentReviewLoop: boolean;
+  subagentModel: string;
+  subagentThinking: ThinkingLevel;
+  subagentIntercomMode: SubagentIntercomMode;
 }
 
 const SETTINGS_PATH = path.join(APP_CONFIG_DIR, "settings.json");
@@ -103,7 +115,17 @@ export const DEFAULT_SETTINGS: AppSettings = {
   messageSpacing: 14,
   longRunningMode: true,
   autoLaunchAdvisor: true,
-  autoLaunchSubagents: false
+  autoLaunchSubagents: true,
+  subagentsEnabled: true,
+  subagentRoutingMode: "automatic",
+  subagentMaxParallel: 3,
+  subagentMaxDepth: 1,
+  subagentAsyncByDefault: true,
+  subagentUseWorktrees: false,
+  subagentReviewLoop: true,
+  subagentModel: "inherit",
+  subagentThinking: "high",
+  subagentIntercomMode: "fork-only"
 };
 
 const THEME_PRESETS: ThemePreset[] = ["codex", "graphite", "midnight", "ember", "absolute", "paper", "dawn", "contrast"];
@@ -113,6 +135,8 @@ const ACCESS_MODES: AccessMode[] = ["read-only", "limited", "full"];
 const APPROVAL_POLICIES: ApprovalPolicy[] = ["on-request", "on-failure", "never"];
 const SPEED_MODES: SpeedMode[] = ["fast", "balanced", "deep"];
 const MEMORY_MODES: MemoryMode[] = ["off", "manual", "assistive", "deep"];
+const SUBAGENT_ROUTING_MODES: SubagentRoutingMode[] = ["manual", "assistive", "automatic"];
+const SUBAGENT_INTERCOM_MODES: SubagentIntercomMode[] = ["off", "fork-only", "always"];
 const THEMES: Array<AppSettings["theme"]> = ["dark", "light", "system"];
 const DENSITIES: Array<AppSettings["density"]> = ["comfortable", "compact"];
 const BOOLEAN_KEYS = new Set<keyof AppSettings>([
@@ -132,7 +156,11 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "memoryEventLogEnabled",
   "longRunningMode",
   "autoLaunchAdvisor",
-  "autoLaunchSubagents"
+  "autoLaunchSubagents",
+  "subagentsEnabled",
+  "subagentAsyncByDefault",
+  "subagentUseWorktrees",
+  "subagentReviewLoop"
 ]);
 const NUMBER_KEYS = new Set<keyof AppSettings>([
   "messageFontSize",
@@ -142,7 +170,9 @@ const NUMBER_KEYS = new Set<keyof AppSettings>([
   "memoryBudgetTokens",
   "advisorMaxUsesPerRun",
   "advisorMaxTokens",
-  "advisorMaxContextMessages"
+  "advisorMaxContextMessages",
+  "subagentMaxParallel",
+  "subagentMaxDepth"
 ]);
 const STRING_KEYS = new Set<keyof AppSettings>([
   "displayName",
@@ -151,6 +181,7 @@ const STRING_KEYS = new Set<keyof AppSettings>([
   "modelLabel",
   "advisorProvider",
   "advisorModel",
+  "subagentModel",
   "accentColor",
   "fontFamily"
 ]);
@@ -161,6 +192,9 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   advisorReasoning: THINKING_LEVELS,
   speedMode: SPEED_MODES,
   memoryMode: MEMORY_MODES,
+  subagentRoutingMode: SUBAGENT_ROUTING_MODES,
+  subagentIntercomMode: SUBAGENT_INTERCOM_MODES,
+  subagentThinking: THINKING_LEVELS,
   theme: THEMES,
   themePreset: THEME_PRESETS,
   density: DENSITIES,
@@ -196,6 +230,13 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   loaded.advisorMaxUsesPerRun = clampNumber(loaded.advisorMaxUsesPerRun, DEFAULT_SETTINGS.advisorMaxUsesPerRun, 1, 12);
   loaded.advisorMaxTokens = clampNumber(loaded.advisorMaxTokens, DEFAULT_SETTINGS.advisorMaxTokens, 100, 65_536);
   loaded.advisorMaxContextMessages = clampNumber(loaded.advisorMaxContextMessages, DEFAULT_SETTINGS.advisorMaxContextMessages, 4, 80);
+  if (!SUBAGENT_ROUTING_MODES.includes(loaded.subagentRoutingMode as SubagentRoutingMode)) loaded.subagentRoutingMode = loaded.autoLaunchSubagents ? "automatic" : "manual";
+  if (!SUBAGENT_INTERCOM_MODES.includes(loaded.subagentIntercomMode as SubagentIntercomMode)) loaded.subagentIntercomMode = "fork-only";
+  if (!THINKING_LEVELS.includes(loaded.subagentThinking as ThinkingLevel) || loaded.subagentThinking === "off") loaded.subagentThinking = "high";
+  loaded.autoLaunchSubagents = Boolean(loaded.subagentsEnabled && loaded.subagentRoutingMode !== "manual");
+  loaded.subagentMaxParallel = clampNumber(loaded.subagentMaxParallel, DEFAULT_SETTINGS.subagentMaxParallel, 1, 8);
+  loaded.subagentMaxDepth = clampNumber(loaded.subagentMaxDepth, DEFAULT_SETTINGS.subagentMaxDepth, 0, 3);
+  if (!loaded.subagentModel) loaded.subagentModel = "inherit";
   loaded.fontFamily = typeof loaded.fontFamily === "string" && loaded.fontFamily.trim()
     ? loaded.fontFamily.trim()
     : DEFAULT_SETTINGS.fontFamily;

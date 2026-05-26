@@ -30,7 +30,11 @@ const removableExts = new Set([".d.ts", ".ts", ".map", ".md", ".markdown"]);
 function pruneRuntimeTree(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = resolve(dir, entry.name);
-    const keepTypeScriptPackage = fullPath.includes(`${resolve(runtimeDir, "node_modules", "pi-advisor")}`);
+    const keepTypeScriptPackages = [
+      resolve(runtimeDir, "node_modules", "pi-advisor"),
+      resolve(runtimeDir, "node_modules", "pi-subagents"),
+    ];
+    const keepTypeScriptPackage = keepTypeScriptPackages.some((packagePath) => fullPath.includes(packagePath));
     if (entry.isDirectory()) {
       if (removableDirs.has(entry.name)) {
         rmSync(fullPath, { recursive: true, force: true });

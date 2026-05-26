@@ -44,6 +44,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [githubStatus, setGithubStatus] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState<any>(null);
   const [advisorStatus, setAdvisorStatus] = useState<any>(null);
+  const [subagentStatus, setSubagentStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
 
   const refreshGithubStatus = async () => {
@@ -59,9 +60,17 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
     if (data) setActionStatus(data.installed ? "Pi Advisor extension ready." : "Pi Advisor package is missing from this install.");
   };
 
+  const refreshSubagentStatus = async () => {
+    const response = await fetch(apiUrl("/api/subagents/status")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    setSubagentStatus(data);
+    if (data) setActionStatus(data.installed ? `Pi subagents ready: ${data.engine} ${data.version ?? ""}` : "pi-subagents package is missing from this install.");
+  };
+
   useEffect(() => {
     void refreshGithubStatus();
     void refreshAdvisorStatus();
+    void refreshSubagentStatus();
   }, []);
 
   const diagnose = async () => {
@@ -251,8 +260,58 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
 
         {active === "Sous-agents" ? (
           <section className="settings-section">
-            <h2>Sous-agents et outils actifs</h2>
+            <h2>Sous-agents reels et outils actifs</h2>
             <div className="settings-card compact">
+              <span>Moteur pi-subagents</span>
+              <span>{subagentStatus?.installed ? `${subagentStatus.engine}@${subagentStatus.version ?? "?"} dans ${subagentStatus.extensionPath}` : "Package manquant. L'installateur doit inclure pi-subagents."}</span>
+              <span>Sous-agents</span>
+              <select value={settings.subagentsEnabled ? "on" : "off"} onChange={(e) => onChange({ subagentsEnabled: e.target.value === "on", autoLaunchSubagents: e.target.value === "on" })}>
+                <option value="on">Actifs</option>
+                <option value="off">Desactives</option>
+              </select>
+              <span>Delegation automatique</span>
+              <select value={settings.subagentRoutingMode} onChange={(e) => onChange({ subagentRoutingMode: e.target.value as AppSettings["subagentRoutingMode"], autoLaunchSubagents: e.target.value !== "manual", subagentsEnabled: true })}>
+                <option value="manual">Manuel</option>
+                <option value="assistive">Assistif</option>
+                <option value="automatic">Automatique</option>
+              </select>
+              <span>Max parallele</span>
+              <input type="number" min="1" max="8" value={settings.subagentMaxParallel} onChange={(e) => onChange({ subagentMaxParallel: Number(e.target.value) })} />
+              <span>Async par defaut</span>
+              <select value={settings.subagentAsyncByDefault ? "on" : "off"} onChange={(e) => onChange({ subagentAsyncByDefault: e.target.value === "on" })}>
+                <option value="on">Runs longs en arriere-plan</option>
+                <option value="off">Foreground</option>
+              </select>
+              <span>Profondeur max</span>
+              <input type="number" min="0" max="3" value={settings.subagentMaxDepth} onChange={(e) => onChange({ subagentMaxDepth: Number(e.target.value) })} />
+              <span>Modele des enfants</span>
+              <input value={settings.subagentModel} onChange={(e) => onChange({ subagentModel: e.target.value || "inherit" })} />
+              <span>Thinking enfants</span>
+              <select value={settings.subagentThinking} onChange={(e) => onChange({ subagentThinking: e.target.value as AppSettings["subagentThinking"] })}>
+                <option value="minimal">Minimal</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="xhigh">XHigh</option>
+              </select>
+              <span>Review loop</span>
+              <select value={settings.subagentReviewLoop ? "on" : "off"} onChange={(e) => onChange({ subagentReviewLoop: e.target.value === "on" })}>
+                <option value="on">Worker puis reviewers</option>
+                <option value="off">Ne pas forcer</option>
+              </select>
+              <span>Worktrees</span>
+              <select value={settings.subagentUseWorktrees ? "on" : "off"} onChange={(e) => onChange({ subagentUseWorktrees: e.target.value === "on" })}>
+                <option value="off">Single writer par defaut</option>
+                <option value="on">Isoler les runs paralleles si Git est clean</option>
+              </select>
+              <span>Intercom</span>
+              <select value={settings.subagentIntercomMode} onChange={(e) => onChange({ subagentIntercomMode: e.target.value as AppSettings["subagentIntercomMode"] })}>
+                <option value="off">Off</option>
+                <option value="fork-only">Fork only</option>
+                <option value="always">Always</option>
+              </select>
+              <span>Status sous-agents</span>
+              <button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Verifier pi-subagents</button>
               <span>Advisor</span>
               <select value={settings.advisorEnabled ? "on" : "off"} onChange={(e) => onChange({ advisorEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
@@ -296,6 +355,17 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="off">Desactive</option>
               </select>
             </div>
+            {subagentStatus?.profiles ? (
+              <div className="subagent-profile-grid">
+                {subagentStatus.profiles.map((profile: any) => (
+                  <article key={profile.id}>
+                    <strong>{profile.name}</strong>
+                    <span>{profile.role}</span>
+                    <p>{profile.description}</p>
+                  </article>
+                ))}
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -314,8 +384,8 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="off">Desactive</option>
               </select>
               <span>Sous-agents automatiques</span>
-              <select value={settings.autoLaunchSubagents ? "on" : "off"} onChange={(e) => onChange({ autoLaunchSubagents: e.target.value === "on" })}>
-                <option value="on">Preparer les workflows</option>
+              <select value={settings.autoLaunchSubagents ? "on" : "off"} onChange={(e) => onChange({ autoLaunchSubagents: e.target.value === "on", subagentsEnabled: e.target.value === "on", subagentRoutingMode: e.target.value === "on" ? "automatic" : "manual" })}>
+                <option value="on">Deleguer automatiquement</option>
                 <option value="off">Manuel</option>
               </select>
               <span>Workspace courant</span>
@@ -448,6 +518,8 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Advisor</span><span>Active depuis le composeur pour demander une passe de revision.</span>
               <span>Pi Advisor reel</span><span>{advisorStatus?.installed ? `${advisorStatus.config?.provider}/${advisorStatus.config?.model} dans ${advisorStatus.configPath}` : "Package pi-advisor manquant. Relance npm install ou l'updater."}</span>
               <span>Configurer Advisor</span><button onClick={() => void refreshAdvisorStatus()}><Icon name="shield" /> Lire pi-advisor</button>
+              <span>Pi Subagents reel</span><span>{subagentStatus?.installed ? `${subagentStatus.engine}@${subagentStatus.version ?? "?"} dans ${subagentStatus.configPath}` : "Package pi-subagents manquant."}</span>
+              <span>Configurer Subagents</span><button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Lire pi-subagents</button>
               <span>Web</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>

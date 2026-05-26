@@ -40,6 +40,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const [memoryStats, setMemoryStats] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState("");
   const [advisorStatus, setAdvisorStatus] = useState<any>(null);
+  const [subagentStatus, setSubagentStatus] = useState<any>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -62,6 +63,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
     }).catch(() => {});
     fetch(apiUrl(gitUrl)).then((r) => r.json()).then((data) => setGit(data)).catch(() => {});
     fetch(apiUrl("/api/advisor/status")).then((r) => r.json()).then((data) => setAdvisorStatus(data)).catch(() => {});
+    fetch(apiUrl("/api/subagents/status")).then((r) => r.json()).then((data) => setSubagentStatus(data)).catch(() => {});
   }, [open, settings.workspacePath, activeProject?.id]);
 
   useEffect(() => {
@@ -297,6 +299,8 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <div className="context-kv"><span>Advisor extension</span><strong>{advisorStatus?.installed ? "installed" : "missing"}</strong></div>
           <div className="context-kv"><span>Long run</span><strong>{settings.longRunningMode ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Subagents</span><strong>{settings.autoLaunchSubagents ? "auto" : "manual"}</strong></div>
+          <div className="context-kv"><span>Subagent engine</span><strong>{subagentStatus?.installed ? `${subagentStatus.engine}@${subagentStatus.version ?? "?"}` : "missing"}</strong></div>
+          <div className="context-kv"><span>Routing</span><strong>{settings.subagentRoutingMode}</strong></div>
           <div className="context-kv"><span>Chrome</span><strong>{settings.chromeEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Computer</span><strong>{settings.computerUseEnabled ? "full" : "limited"}</strong></div>
           <div className="context-kv"><span>Speed</span><strong>{settings.speedMode}</strong></div>

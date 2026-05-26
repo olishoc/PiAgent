@@ -96,6 +96,14 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
         setStatus(data?.installed ? `Pi Advisor ${next ? "enabled" : "disabled"}.` : "Pi Advisor package missing from this install.");
         return;
       }
+      if (entry.id === "subagents") {
+        const next = !settings.subagentsEnabled;
+        onSettingsChange({ subagentsEnabled: next, autoLaunchSubagents: next, subagentRoutingMode: next ? "automatic" : "manual" });
+        const response = await fetch(apiUrl("/api/subagents/ensure"), { method: "POST" }).catch(() => null);
+        const data = response?.ok ? await response.json().catch(() => null) : null;
+        setStatus(data?.installed ? `Pi Subagents ${next ? "enabled" : "disabled"}.` : "pi-subagents package missing from this install.");
+        return;
+      }
       if (entry.connectAction === "openai-oauth") {
         window.location.href = apiUrl("/api/auth/login?redirect=1");
         return;
