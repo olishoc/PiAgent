@@ -1,4 +1,5 @@
 import Icon from "./Icon";
+import type { ProjectInfo } from "../App";
 
 export interface Session {
   id: string;
@@ -17,8 +18,12 @@ interface SidebarProps {
   accountId?: string;
   displayName?: string;
   activeView: string;
+  projects: ProjectInfo[];
+  activeProjectId: string;
   collapsed?: boolean;
   onSelect: (session: Session) => void;
+  onSelectProject: (project: ProjectInfo) => void;
+  onProjects: () => void;
   onNew: () => void;
   onSettings: () => void;
   onChat: () => void;
@@ -47,8 +52,12 @@ export default function Sidebar({
   accountId,
   displayName,
   activeView,
+  projects,
+  activeProjectId,
   collapsed,
   onSelect,
+  onSelectProject,
+  onProjects,
   onNew,
   onSettings,
   onChat,
@@ -119,8 +128,27 @@ export default function Sidebar({
         <button className={activeView === "extensions" ? "active" : ""} onClick={onExtensions}><Icon name="plug" /> <span>Extensions</span></button>
         <button className={activeView === "automations" ? "active" : ""} onClick={onAutomations}><Icon name="clock" /> <span>Automations</span></button>
       </div>
-      <div className="sidebar-label">Project</div>
-      <button className="project-row" onClick={onChat}><Icon name="folder" /> <span>Pi Agent UI</span></button>
+      <div className="sidebar-label project-label">
+        <span>Projects</span>
+        <button onClick={onProjects} title="Manage projects" aria-label="Manage projects"><Icon name="plus" size={12} /></button>
+      </div>
+      <div className="project-list">
+        {projects.slice(0, 5).map((project) => (
+          <button
+            key={project.id}
+            className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
+            onClick={() => onSelectProject(project)}
+            title={project.rootPath}
+          >
+            <Icon name="folder" /> <span>{project.name}</span>
+          </button>
+        ))}
+        {!projects.length ? (
+          <button className={`project-row ${activeView === "projects" ? "active" : ""}`} onClick={onProjects}>
+            <Icon name="folder" /> <span>Create project</span>
+          </button>
+        ) : null}
+      </div>
       <div className="task-list">
         {pinned.length ? <div className="sidebar-label inline">Pinned</div> : null}
         {pinned.map(renderSession)}

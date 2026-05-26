@@ -4,13 +4,14 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "node:http";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import { authRouter, maybeRefresh } from "./auth.js";
 import { PiSession } from "./piProcess.js";
 import { APP_CONFIG_DIR, PI_AUTH_PATH, TOKEN_PATH, readTokens } from "./tokenStore.js";
 import { SESSION_DIR, listSessions, sessionsRouter } from "./sessions.js";
 import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, writeSettings } from "./settings.js";
+import { listProjects, projectsRouter } from "./projects.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -23,7 +24,10 @@ const BACKEND_FEATURES = {
   subagents: true,
   trueThinking: true,
   persistentTools: true,
-  installSidecarCleanup: true
+  installSidecarCleanup: true,
+  projects: true,
+  githubConnect: true,
+  typographyControls: true
 };
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
@@ -44,6 +48,7 @@ app.use(cors({
 app.use(express.json());
 app.use("/api/auth", authRouter);
 app.use("/api/sessions", sessionsRouter);
+app.use("/api/projects", projectsRouter);
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });
@@ -94,6 +99,7 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       hasOAuthToken: fs.existsSync(TOKEN_PATH),
       hasPiAuth: fs.existsSync(PI_AUTH_PATH),
       sessionCount: listSessions().length,
+      projectCount: listProjects().length,
       provider: settings.provider,
       model: settings.modelLabel || "gpt-5.5"
     });
@@ -134,6 +140,66 @@ app.post("/api/git/config", async (req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
   }
+});
+function execFileText(command: string, args: string[], cwd = process.cwd()) {
+  return new Promise<string>((resolve, reject) => {
+    execFile(command, args, { cwd, windowsHide: true }, (error, stdout, stderr) => {
+      if (error) reject(new Error(stderr.trim() || error.message));
+      else resolve(stdout.trim());
+    });
+  });
+}
+
+app.get("/api/github/status", async (_req, res) => {
+  const status: Record<string, unknown> = {
+    ghInstalled: false,
+    ghAuthenticated: false,
+    gcmAvailable: false,
+    gcmAccounts: [],
+    connected: false
+  };
+  try {
+    await execFileText("gh", ["--version"]);
+    status.ghInstalled = true;
+    await execFileText("gh", ["auth", "status"]);
+    status.ghAuthenticated = true;
+  } catch {}
+  try {
+    await execFileText("git", ["credential-manager", "--version"]);
+    status.gcmAvailable = true;
+    const accounts = await execFileText("git", ["credential-manager", "github", "list"]).catch(() => "");
+    status.gcmAccounts = accounts.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  } catch {}
+  status.connected = Boolean(status.ghAuthenticated) || (Array.isArray(status.gcmAccounts) && status.gcmAccounts.length > 0);
+  res.json(status);
+});
+
+app.post("/api/github/connect", (_req, res) => {
+  execFile("gh", ["--version"], { windowsHide: true }, (ghError) => {
+    if (!ghError) {
+      const child = spawn("gh", ["auth", "login", "--web", "--git-protocol", "https"], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false
+      });
+      child.unref();
+      res.json({ ok: true, method: "gh", message: "GitHub CLI login started in a browser." });
+      return;
+    }
+    execFile("git", ["credential-manager", "--version"], { windowsHide: true }, (gcmError) => {
+      if (gcmError) {
+        res.status(404).json({ ok: false, error: "Install GitHub CLI or Git Credential Manager to connect GitHub." });
+        return;
+      }
+      const child = spawn("git", ["credential-manager", "github", "login"], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false
+      });
+      child.unref();
+      res.json({ ok: true, method: "gcm", message: "Git Credential Manager GitHub login started." });
+    });
+  });
 });
 app.get("/api/workspace/files", (req, res, next) => {
   try {
@@ -254,23 +320,49 @@ wss.on("connection", async (ws) => {
       return;
     }
 
-    const settings = readSettings();
-    const session = new PiSession(SESSION_DIR, freshToken.access, {
-      extraArgs: piArgsForAccess(settings),
-      provider: settings.provider || "openai-codex",
-      model: settings.modelLabel || "gpt-5.5",
-      thinkingLevel: settings.thinkingLevel || "medium"
-    });
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "agent_ready", provider: settings.provider || "openai-codex", model: settings.modelLabel || "gpt-5.5", thinkingLevel: settings.thinkingLevel || "medium" }));
-    }
-    session.onEvent = (event) => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+    let settings = readSettings();
+    const wireSession = (session: PiSession) => {
+      session.onEvent = (event) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(event));
+      };
     };
+    const startSession = () => {
+      settings = readSettings();
+      const nextSession = new PiSession(SESSION_DIR, freshToken.access, {
+        extraArgs: piArgsForAccess(settings),
+        provider: settings.provider || "openai-codex",
+        model: settings.modelLabel || "gpt-5.5",
+        thinkingLevel: settings.thinkingLevel || "medium",
+        workspacePath: settings.workspacePath
+      });
+      wireSession(nextSession);
+      return nextSession;
+    };
+    const sendReady = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "agent_ready",
+          provider: settings.provider || "openai-codex",
+          model: settings.modelLabel || "gpt-5.5",
+          thinkingLevel: settings.thinkingLevel || "medium",
+          workspacePath: settings.workspacePath
+        }));
+      }
+    };
+    let session = startSession();
+    sendReady();
 
     ws.on("message", async (raw) => {
       try {
         const cmd = JSON.parse(raw.toString());
+        if (cmd.type === "reload_agent" || cmd.type === "set_workspace") {
+          session.onEvent = () => {};
+          session.kill();
+          session = startSession();
+          sendReady();
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: true }));
+          return;
+        }
         const result = await session.send(cmd);
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", ...result }));
       } catch (err) {

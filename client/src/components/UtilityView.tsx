@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { AppSettings } from "../App";
 import { Session } from "./Sidebar";
 import Icon from "./Icon";
+import { apiUrl } from "../lib/api";
 
 interface UtilityViewProps {
   view: "search" | "extensions" | "automations";
@@ -20,6 +21,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
   const [query, setQuery] = useState("");
   const [extensionTab, setExtensionTab] = useState<"plugins" | "skills">("plugins");
   const [extensionFilter, setExtensionFilter] = useState<"all" | "built-in">("all");
+  const [status, setStatus] = useState("");
   const filteredSessions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return sessions;
@@ -49,6 +51,12 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
   }
 
   if (view === "extensions") {
+    const connectGithub = async () => {
+      setStatus("Starting GitHub sign-in...");
+      const response = await fetch(apiUrl("/api/github/connect"), { method: "POST" });
+      const data = await response.json().catch(() => ({}));
+      setStatus(data.message ?? data.error ?? "GitHub sign-in request sent.");
+    };
     const featured = [
       { id: "webEnabled", title: "Web research", description: "Search and cite current information when Pi has a web/search extension installed.", icon: "search" as const, enabled: settings.webEnabled, kind: "plugin" },
       { id: "advisorEnabled", title: "Advisor", description: "Injects a concrete review pass into prompts so Pi checks risks before finalizing.", icon: "spark" as const, enabled: settings.advisorEnabled, kind: "skill" },
@@ -98,6 +106,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
             <Icon name={settings.advisorEnabled ? "check" : "plus"} /> {settings.advisorEnabled ? "Active" : "Try in chat"}
           </button>
         </div>
+        {status ? <p className="settings-status">{status}</p> : null}
         <h2>Featured</h2>
         <div className="extension-grid">
           {visibleFeatured.map((item) => (
@@ -118,6 +127,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
           )) : (
             <button onClick={onNew}><Icon name="plus" /><strong>Install an extension</strong><span>Open a new chat ready to install or configure Pi extensions.</span></button>
           )}
+          <button onClick={() => void connectGithub()}><Icon name="link" /><strong>Connect GitHub</strong><span>Starts GitHub CLI or Git Credential Manager sign-in for repo workflows.</span></button>
         </div>
       </section>
     );

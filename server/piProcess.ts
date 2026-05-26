@@ -21,6 +21,7 @@ interface PiSessionOptions {
   model?: string;
   provider?: string;
   thinkingLevel?: string;
+  workspacePath?: string;
 }
 
 export class PiSession {
@@ -32,6 +33,9 @@ export class PiSession {
 
   constructor(sessionDir: string, accessToken: string, options: PiSessionOptions = {}) {
     const pi = piCommand();
+    const cwd = options.workspacePath && fs.existsSync(options.workspacePath)
+      ? options.workspacePath
+      : process.cwd();
     const args = [
       ...pi.argsPrefix,
       "--mode",
@@ -50,8 +54,10 @@ export class PiSession {
       env: {
         ...process.env,
         OPENAI_ACCESS_TOKEN: accessToken,
-        PI_CODING_AGENT_DIR: APP_CONFIG_DIR
+        PI_CODING_AGENT_DIR: APP_CONFIG_DIR,
+        PIAGENT_WORKSPACE: cwd
       },
+      cwd,
       stdio: ["pipe", "pipe", "pipe"]
     });
 

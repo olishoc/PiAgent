@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppSettings } from "../App";
 import { apiUrl } from "../lib/api";
 import { checkAndInstallUpdate, UpdateStatus } from "../lib/updater";
@@ -10,6 +10,7 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
   { id: "Configuration", label: "Configuration", icon: "shield" },
   { id: "Modeles", label: "Modeles", icon: "bot" },
   { id: "Sous-agents", label: "Sous-agents", icon: "plug" },
+  { id: "Projets", label: "Projets", icon: "folder" },
   { id: "Raccourcis", label: "Raccourcis", icon: "terminal" },
   { id: "Extensions", label: "Extensions", icon: "plug" },
   { id: "Git", label: "Git", icon: "link" }
@@ -39,7 +40,18 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [gitName, setGitName] = useState("");
   const [gitEmail, setGitEmail] = useState("");
+  const [githubStatus, setGithubStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
+
+  const refreshGithubStatus = async () => {
+    const response = await fetch(apiUrl("/api/github/status")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    setGithubStatus(data);
+  };
+
+  useEffect(() => {
+    void refreshGithubStatus();
+  }, []);
 
   const diagnose = async () => {
     setActionStatus("Running diagnostics...");
@@ -57,6 +69,14 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
     } catch (error) {
       setActionStatus(error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const connectGithub = async () => {
+    setActionStatus("Starting GitHub sign-in...");
+    const response = await fetch(apiUrl("/api/github/connect"), { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    setActionStatus(data.message ?? data.error ?? "GitHub sign-in request sent.");
+    window.setTimeout(() => void refreshGithubStatus(), 2000);
   };
 
   return (
@@ -142,6 +162,27 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="comfortable">Comfortable</option>
                 <option value="compact">Compact</option>
               </select>
+              <span>Texte du chat</span>
+              <select value={settings.textDensity} onChange={(e) => onChange({ textDensity: e.target.value as AppSettings["textDensity"] })}>
+                <option value="compact">Compact</option>
+                <option value="codex">Codex</option>
+                <option value="comfortable">Comfortable</option>
+                <option value="custom">Personnalise</option>
+              </select>
+              <span>Police</span>
+              <select value={settings.fontFamily} onChange={(e) => onChange({ fontFamily: e.target.value })}>
+                <option value={"\"SF Mono\", \"Fira Code\", \"Cascadia Code\", \"Consolas\", monospace"}>SF Mono stack</option>
+                <option value={"\"Cascadia Code\", \"Consolas\", monospace"}>Cascadia Code</option>
+                <option value={"\"Fira Code\", \"Cascadia Code\", monospace"}>Fira Code</option>
+                <option value={"\"Consolas\", monospace"}>Consolas</option>
+                <option value={"Inter, Arial, sans-serif"}>Inter style</option>
+              </select>
+              <span>Taille messages</span>
+              <input type="number" min="11" max="18" step="0.5" value={settings.messageFontSize} onChange={(e) => onChange({ textDensity: "custom", messageFontSize: Number(e.target.value) })} />
+              <span>Interligne</span>
+              <input type="number" min="1.25" max="1.9" step="0.05" value={settings.messageLineHeight} onChange={(e) => onChange({ textDensity: "custom", messageLineHeight: Number(e.target.value) })} />
+              <span>Espacement phrases</span>
+              <input type="number" min="8" max="28" step="1" value={settings.messageSpacing} onChange={(e) => onChange({ textDensity: "custom", messageSpacing: Number(e.target.value) })} />
             </div>
           </section>
         ) : null}
@@ -207,6 +248,33 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>
               </select>
+            </div>
+          </section>
+        ) : null}
+
+        {active === "Projets" ? (
+          <section className="settings-section">
+            <h2>Travail long et projets</h2>
+            <div className="settings-card compact">
+              <span>Mode longue duree</span>
+              <select value={settings.longRunningMode ? "on" : "off"} onChange={(e) => onChange({ longRunningMode: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Advisor automatique</span>
+              <select value={settings.autoLaunchAdvisor ? "on" : "off"} onChange={(e) => onChange({ autoLaunchAdvisor: e.target.value === "on", autoReview: e.target.value === "on" })}>
+                <option value="on">Active</option>
+                <option value="off">Desactive</option>
+              </select>
+              <span>Sous-agents automatiques</span>
+              <select value={settings.autoLaunchSubagents ? "on" : "off"} onChange={(e) => onChange({ autoLaunchSubagents: e.target.value === "on" })}>
+                <option value="on">Preparer les workflows</option>
+                <option value="off">Manuel</option>
+              </select>
+              <span>Workspace courant</span>
+              <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
+              <span>Workflow</span>
+              <span>Les projets enregistrent un arbre de fichiers, l'etat Git, les workflows Plan/Build/Review, et l'espace actif que Pi utilise.</span>
             </div>
           </section>
         ) : null}
@@ -309,6 +377,10 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>
               </select>
+              <span>Authentification GitHub</span>
+              <button onClick={() => void connectGithub()}><Icon name="link" /> {githubStatus?.connected ? "Reconnecter" : "Connecter GitHub"}</button>
+              <span>Etat GitHub</span>
+              <span>{githubStatus?.connected ? `Connecte ${githubStatus.gcmAccounts?.join(", ") || ""}` : githubStatus?.gcmAvailable ? "Git Credential Manager pret" : "GitHub CLI ou GCM requis"}</span>
               <span>Verifier</span><button onClick={() => void diagnose()}><Icon name="terminal" /> Lire diagnostics Git/agent</button>
             </div>
           </section>

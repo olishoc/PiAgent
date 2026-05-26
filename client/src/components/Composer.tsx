@@ -23,6 +23,7 @@ const slashCommands = [
   { command: "/compact", label: "Ask Pi to compact the active context" },
   { command: "/permissions", label: "Open permissions and access mode" },
   { command: "/attach", label: "Attach files to the next message" },
+  { command: "/projects", label: "Open project workspaces and Git state" },
   { command: "/sessions", label: "Open session search" },
   { command: "/settings", label: "Open settings" }
 ];
@@ -97,7 +98,10 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     speedMode: settings?.speedMode ?? "balanced",
     accessMode: settings?.accessMode ?? "full",
     approvalPolicy: settings?.approvalPolicy ?? "on-request",
-    autoReview: Boolean(settings?.autoReview)
+    autoReview: Boolean(settings?.autoReview),
+    longRunningMode: Boolean(settings?.longRunningMode),
+    autoLaunchAdvisor: Boolean(settings?.autoLaunchAdvisor),
+    autoLaunchSubagents: Boolean(settings?.autoLaunchSubagents)
   });
 
   const pickFiles = async () => {

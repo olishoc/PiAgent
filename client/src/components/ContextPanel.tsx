@@ -1,4 +1,4 @@
-import { AppSettings } from "../App";
+import { AppSettings, ProjectInfo } from "../App";
 import { ContextUsage, DisplayMessage } from "../hooks/useAgent";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 interface ContextPanelProps {
   open: boolean;
   settings: AppSettings;
+  activeProject?: ProjectInfo;
   sessions: Session[];
   messages: DisplayMessage[];
   connectionState: string;
@@ -24,7 +25,7 @@ function formatTokens(value?: number) {
   return String(value);
 }
 
-export default function ContextPanel({ open, settings, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
+export default function ContextPanel({ open, settings, activeProject, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
   const [tab, setTab] = useState<"context" | "files" | "apps">("context");
   const [files, setFiles] = useState<Array<{ name: string; path: string; size: number; modified: number; ext: string }>>([]);
   const [preview, setPreview] = useState<{ name: string; path: string; size: number; text?: string } | null>(null);
@@ -32,9 +33,25 @@ export default function ContextPanel({ open, settings, sessions, messages, conne
 
   useEffect(() => {
     if (!open) return;
-    fetch(apiUrl("/api/workspace/files")).then((r) => r.json()).then((data) => setFiles(data.files ?? [])).catch(() => {});
-    fetch(apiUrl("/api/git/status")).then((r) => r.json()).then((data) => setGit(data)).catch(() => {});
-  }, [open, settings.workspacePath]);
+    const projectId = activeProject?.id;
+    const fileUrl = projectId
+      ? `/api/projects/${encodeURIComponent(projectId)}/tree?depth=4&limit=120`
+      : "/api/workspace/files";
+    const gitUrl = projectId
+      ? `/api/projects/${encodeURIComponent(projectId)}/git/status`
+      : "/api/git/status";
+    fetch(apiUrl(fileUrl)).then((r) => r.json()).then((data) => {
+      const projectFiles = data.entries?.filter((entry: any) => entry.type === "file").map((entry: any) => ({
+        name: entry.name,
+        path: entry.path,
+        size: entry.size ?? 0,
+        modified: entry.modified ?? 0,
+        ext: ""
+      }));
+      setFiles(projectFiles ?? data.files ?? []);
+    }).catch(() => {});
+    fetch(apiUrl(gitUrl)).then((r) => r.json()).then((data) => setGit(data)).catch(() => {});
+  }, [open, settings.workspacePath, activeProject?.id]);
 
   if (!open) return null;
   const lastTools = messages.filter((message) => message.kind === "tool").slice(-5).reverse();
@@ -83,6 +100,8 @@ export default function ContextPanel({ open, settings, sessions, messages, conne
       </section>
       <section>
         <h2><Icon name="folder" /> Workspace</h2>
+        <div className="context-kv"><span>Project</span><strong>{activeProject?.name ?? "workspace"}</strong></div>
+        <p>{activeProject?.rootPath ?? settings.workspacePath}</p>
         <button onClick={onOpenSessions}><Icon name="archive" /> {sessions.length} saved threads</button>
         <button onClick={() => void openConfig()}><Icon name="folder" /> Open config folder</button>
         <button onClick={onOpenSettings}><Icon name="gear" /> Settings</button>
@@ -100,7 +119,7 @@ export default function ContextPanel({ open, settings, sessions, messages, conne
       {tab === "files" ? <>
         <section>
           <h2><Icon name="folder" /> Recent workspace files</h2>
-          <p>{settings.workspacePath}</p>
+          <p>{activeProject?.rootPath ?? settings.workspacePath}</p>
           <div className="file-list">
             {files.slice(0, 50).map((file) => (
               <button key={file.path} onClick={() => void previewFile(file.path)} title={file.path}>
@@ -134,6 +153,8 @@ export default function ContextPanel({ open, settings, sessions, messages, conne
           <h2><Icon name="plug" /> Capabilities</h2>
           <div className="context-kv"><span>Web</span><strong>{settings.webEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Advisor</span><strong>{settings.advisorEnabled ? "on" : "off"}</strong></div>
+          <div className="context-kv"><span>Long run</span><strong>{settings.longRunningMode ? "on" : "off"}</strong></div>
+          <div className="context-kv"><span>Subagents</span><strong>{settings.autoLaunchSubagents ? "auto" : "manual"}</strong></div>
           <div className="context-kv"><span>Chrome</span><strong>{settings.chromeEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Computer</span><strong>{settings.computerUseEnabled ? "full" : "limited"}</strong></div>
           <div className="context-kv"><span>Speed</span><strong>{settings.speedMode}</strong></div>

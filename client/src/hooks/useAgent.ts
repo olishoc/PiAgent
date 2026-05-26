@@ -44,6 +44,9 @@ export interface PromptOptions {
   accessMode?: "read-only" | "limited" | "full";
   approvalPolicy?: "on-request" | "on-failure" | "never";
   autoReview?: boolean;
+  longRunningMode?: boolean;
+  autoLaunchAdvisor?: boolean;
+  autoLaunchSubagents?: boolean;
 }
 
 export interface ContextUsage {
@@ -92,6 +95,7 @@ function appendAgentDelta(messages: DisplayMessage[], delta: string) {
   const next = [...messages];
   for (let i = next.length - 1; i >= 0; i -= 1) {
     const current = next[i];
+    if (current.kind === "user") break;
     if (current.kind === "agent") {
       next[i] = { ...current, text: current.text + delta };
       return next;
@@ -168,38 +172,39 @@ export function handlePiEvent(
   setMessages: Dispatch<SetStateAction<DisplayMessage[]>>,
   setIsStreaming: Dispatch<SetStateAction<boolean>>,
   setFooterStatus: Dispatch<SetStateAction<string>>,
-  setContextUsage: Dispatch<SetStateAction<ContextUsage | null>>
+  setContextUsage: Dispatch<SetStateAction<ContextUsage | null>>,
+  showThinking = true
 ) {
   if (event.type === "agent_start") {
     setIsStreaming(true);
-    setMessages((items) => updateThinkingSnapshot(items, "Reading the latest message and choosing the next step."));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Reading the latest message and choosing the next step."));
     return;
   }
 
   const assistantEvent = event.assistantMessageEvent;
   if (event.type === "message_start" && event.message?.role === "assistant") {
-    setMessages((items) => ensureAgentMessage(updateThinkingSnapshot(items, "Drafting the response."), event.message?.responseId));
+    setMessages((items) => ensureAgentMessage(showThinking ? updateThinkingSnapshot(items, "Drafting the response.") : items, event.message?.responseId));
     return;
   }
 
   if (event.type === "message_update" && assistantEvent?.type === "text_start") {
-    setMessages((items) => ensureAgentMessage(updateThinkingSnapshot(items, "Writing the answer."), assistantEvent?.partial?.responseId));
+    setMessages((items) => ensureAgentMessage(showThinking ? updateThinkingSnapshot(items, "Writing the answer.") : items, assistantEvent?.partial?.responseId));
     return;
   }
 
   if (event.type === "message_update" && assistantEvent?.type === "thinking_start") {
-    setMessages((items) => updateThinkingSnapshot(items, "Starting reasoning block..."));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Starting reasoning block..."));
     return;
   }
 
   if (event.type === "message_update" && assistantEvent?.type === "thinking_delta" && typeof assistantEvent.delta === "string") {
-    setMessages((items) => appendThinkingDelta(items, assistantEvent.delta));
+    if (showThinking) setMessages((items) => appendThinkingDelta(items, assistantEvent.delta));
     return;
   }
 
   if (event.type === "message_update" && assistantEvent?.type === "thinking_end") {
     const fullThinking = typeof assistantEvent.thinking === "string" ? assistantEvent.thinking : undefined;
-    setMessages((items) => fullThinking ? replaceThinkingDetail(items, fullThinking, false) : updateThinkingSnapshot(items, "Finished reasoning block.", false));
+    if (showThinking) setMessages((items) => fullThinking ? replaceThinkingDetail(items, fullThinking, false) : updateThinkingSnapshot(items, "Finished reasoning block.", false));
     return;
   }
 
@@ -210,18 +215,18 @@ export function handlePiEvent(
 
   if (event.type === "message_end" && event.message?.role === "assistant") {
     setContextUsage((current) => usageFromMessage(event.message, current));
-    setMessages((items) => updateThinkingSnapshot(items, "Finished the response.", false));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Finished the response.", false));
     return;
   }
 
   const thinkingDelta = assistantEvent?.thinking_delta ?? assistantEvent?.thinking ?? event.thinking_delta ?? event.thinking;
   if (event.type === "message_update" && typeof thinkingDelta === "string") {
-    setMessages((items) => updateThinkingSnapshot(items, thinkingDelta));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, thinkingDelta));
     return;
   }
 
   if (event.type === "tool_execution_start") {
-    setMessages((items) => updateThinkingSnapshot(items, `Using ${event.toolName ?? event.name ?? "a tool"} to gather more context.`));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Using ${event.toolName ?? event.name ?? "a tool"} to gather more context.`));
     setMessages((items) => [
       ...items,
       {
@@ -237,7 +242,7 @@ export function handlePiEvent(
   }
 
   if (event.type === "tool_execution_end") {
-    setMessages((items) => updateThinkingSnapshot(items, `Finished ${event.toolName ?? event.name ?? "tool"}; reviewing the result.`));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, `Finished ${event.toolName ?? event.name ?? "tool"}; reviewing the result.`));
     setMessages((items) => items.map((item) => {
       if (item.kind !== "tool") return item;
       const eventId = event.toolCallId ?? event.id;
@@ -261,7 +266,7 @@ export function handlePiEvent(
 
   if (event.type === "compaction_start") {
     setFooterStatus("compacting context...");
-    setMessages((items) => updateThinkingSnapshot(items, "Compressing older context so the thread can continue."));
+    if (showThinking) setMessages((items) => updateThinkingSnapshot(items, "Compressing older context so the thread can continue."));
     return;
   }
 
@@ -276,7 +281,7 @@ export function handlePiEvent(
   }
 
   if (event.type === "response" && Array.isArray(event.data?.messages)) {
-    setMessages(normalizeMessages(event.data.messages));
+    setMessages(normalizeMessages(event.data.messages, showThinking));
     return;
   }
 
@@ -301,7 +306,7 @@ export function handlePiEvent(
   }
 }
 
-function normalizeMessages(rawMessages: any[]): DisplayMessage[] {
+function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMessage[] {
   return rawMessages.flatMap((message): DisplayMessage[] => {
     if (message.role === "toolResult") {
       return [{
@@ -316,6 +321,7 @@ function normalizeMessages(rawMessages: any[]): DisplayMessage[] {
     if (message.role === "assistant" && Array.isArray(content)) {
       return content.flatMap((part: any): DisplayMessage[] => {
         if (part.type === "thinking" && typeof part.thinking === "string") {
+          if (!showThinking) return [];
           return [{ id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
         }
         if (part.type === "toolCall") {
@@ -332,7 +338,7 @@ function normalizeMessages(rawMessages: any[]): DisplayMessage[] {
   });
 }
 
-export function useAgent(enabled = true) {
+export function useAgent(enabled = true, showThinking = true) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [footerStatus, setFooterStatus] = useState("");
@@ -340,6 +346,12 @@ export function useAgent(enabled = true) {
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, (value: any) => void>());
+  const showThinkingRef = useRef(showThinking);
+
+  useEffect(() => {
+    showThinkingRef.current = showThinking;
+    if (!showThinking) setMessages((items) => items.filter((item) => item.kind !== "thinking"));
+  }, [showThinking]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -357,7 +369,7 @@ export function useAgent(enabled = true) {
         pendingRef.current.get(event.id)?.(event);
         pendingRef.current.delete(event.id);
       }
-      handlePiEvent(event, setMessages, setIsStreaming, setFooterStatus, setContextUsage);
+      handlePiEvent(event, setMessages, setIsStreaming, setFooterStatus, setContextUsage, showThinkingRef.current);
     };
     ws.onerror = () => {
       setConnectionState("error");
@@ -406,7 +418,7 @@ export function useAgent(enabled = true) {
       }).join("\n")
       : "";
     const optionContext = options
-      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor || options.autoReview ? "enabled; before final answer, run a concise advisor-style review for bugs, risks, and missed verification" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
+      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor || options.autoReview || options.autoLaunchAdvisor ? "enabled; before final answer, run a concise advisor-style review for bugs, risks, and missed verification" : "disabled"}\n- subagents: ${options.autoLaunchSubagents ? "prepare a delegated plan and launch available Pi subagent workflows when supported" : "manual"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
       : "";
     wsRef.current.send(JSON.stringify({ type: "prompt", message: text + attachmentContext + optionContext, streamingBehavior: "steer" }));
   }, []);
