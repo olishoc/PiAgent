@@ -57,7 +57,6 @@ export interface PromptOptions {
   web: boolean;
   advisor: boolean;
   context: boolean;
-  speedMode?: "fast" | "balanced" | "deep";
   accessMode?: "read-only" | "limited" | "full";
   approvalPolicy?: "on-request" | "on-failure" | "never";
   autoReview?: boolean;
@@ -779,7 +778,7 @@ export function useAgent(enabled = true, showThinking = true) {
       }).join("\n")
       : "";
     const optionContext = options && !isSlashCommand
-      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- subagents: ${options.subagentsEnabled === false ? "disabled" : options.autoLaunchSubagents ? `automatic via real pi-subagents, routing=${options.subagentRoutingMode ?? "automatic"}, maxParallel=${options.subagentMaxParallel ?? 3}` : "manual; use pi-subagents only when explicitly asked"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}\n- speed: ${options.speedMode ?? "balanced"}`
+      ? `\n\nPiAgent UI options:\n- web: ${options.web ? "enabled; use installed web/search extensions when useful" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- subagents: ${options.subagentsEnabled === false ? "disabled" : options.autoLaunchSubagents ? `automatic via real pi-subagents, routing=${options.subagentRoutingMode ?? "automatic"}, maxParallel=${options.subagentMaxParallel ?? 3}` : "manual; use pi-subagents only when explicitly asked"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- clipboard: system clipboard tools are available for explicit copy/paste workflows and exact reuse of non-secret unchanged text\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}`
       : "";
     wsRef.current.send(JSON.stringify({ type: "prompt", message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
   }, []);

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ContextUsage, DisplayMessage } from "../hooks/useAgent";
 import Icon from "./Icon";
 import MessageBubble from "./MessageBubble";
@@ -19,6 +19,10 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   const endRef = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
+  const manualAwayRef = useRef(false);
+  const programmaticScrollRef = useRef(false);
+  const wasStreamingRef = useRef(false);
+  const [awayFromLatest, setAwayFromLatest] = useState(false);
   const toolCount = useMemo(() => messages.reduce((count, message) => {
     if (message.kind === "tool") return count + 1;
     if (message.kind === "tool_group") return count + message.tools.length;
@@ -27,17 +31,61 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
   const advisorCount = useMemo(() => messages.filter((message) => message.kind === "advisor").length, [messages]);
   const subagentCount = useMemo(() => messages.filter((message) => message.kind === "subagent").length, [messages]);
+  const runningToolCount = useMemo(() => messages.reduce((count, message) => {
+    if (message.kind === "tool" && message.status === "running") return count + 1;
+    if (message.kind === "tool_group") return count + message.tools.filter((tool) => tool.status === "running").length;
+    return count;
+  }, 0), [messages]);
+  const runState = connectionState === "error" || messages.some((message) => message.kind === "status" && /error|failed|stopped/i.test(message.text))
+    ? "error"
+    : isStreaming && runningToolCount > 0
+      ? "running tools"
+      : isStreaming && thinkingCount > 0
+        ? "thinking"
+        : isStreaming
+          ? "writing"
+          : messages.length
+            ? "complete"
+            : "idle";
+
+  const scrollToLatest = (behavior: ScrollBehavior = "auto") => {
+    programmaticScrollRef.current = true;
+    endRef.current?.scrollIntoView({ block: "end", behavior });
+    window.setTimeout(() => {
+      programmaticScrollRef.current = false;
+    }, behavior === "smooth" ? 520 : 160);
+  };
 
   useEffect(() => {
-    if (!stickToBottomRef.current) return;
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages, footerStatus]);
+    const runStarted = isStreaming && !wasStreamingRef.current;
+    wasStreamingRef.current = isStreaming;
+    if (runStarted) {
+      manualAwayRef.current = false;
+      stickToBottomRef.current = true;
+      setAwayFromLatest(false);
+      window.requestAnimationFrame(() => scrollToLatest("smooth"));
+      return;
+    }
+    if (!stickToBottomRef.current || manualAwayRef.current) return;
+    scrollToLatest("auto");
+  }, [messages, footerStatus, isStreaming]);
 
   const onScroll = () => {
     const feed = feedRef.current;
     if (!feed) return;
+    if (programmaticScrollRef.current) return;
     const distanceFromBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight;
-    stickToBottomRef.current = distanceFromBottom < 96;
+    const nearBottom = distanceFromBottom < 96;
+    stickToBottomRef.current = nearBottom;
+    manualAwayRef.current = !nearBottom;
+    setAwayFromLatest(!nearBottom);
+  };
+
+  const jumpToLatest = () => {
+    manualAwayRef.current = false;
+    stickToBottomRef.current = true;
+    setAwayFromLatest(false);
+    scrollToLatest("smooth");
   };
 
   return (
@@ -45,7 +93,15 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
       <header className="thread-header">
         <div>
           <strong>{sessionName || "New PiAgent thread"}</strong>
-          <span>{connectionState ?? "idle"} / {toolCount} tools / {thinkingCount} thoughts / {advisorCount} advisor / {subagentCount} subagents / context {contextUsage?.percent ?? 0}%</span>
+          <div className="thread-badges">
+            <span className={`state-badge ${runState.replace(/\s+/g, "-")}`}>{runState}</span>
+            <span>{connectionState ?? "idle"}</span>
+            <span>{toolCount} tools</span>
+            <span>{thinkingCount} thoughts</span>
+            <span>{advisorCount} advisor</span>
+            <span>{subagentCount} subagents</span>
+            <span>context {contextUsage?.percent ?? 0}%</span>
+          </div>
         </div>
         <div className="thread-actions">
           {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}
@@ -73,6 +129,11 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
         ))}
         <div ref={endRef} />
       </div>
+      {awayFromLatest ? (
+        <button className="jump-latest" onClick={jumpToLatest}>
+          <Icon name="arrowDown" size={13} /> latest
+        </button>
+      ) : null}
       <div className="thread-footer">
         {isStreaming ? <span className="live-dot" /> : null}
         {footerStatus}

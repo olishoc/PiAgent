@@ -16,6 +16,8 @@ import { extensionsRouter, listExtensionCatalog } from "./extensions.js";
 import { buildMemoryContext, MEMORY_DIR, memoryRouter, observeAgentEvent, observeMemoryTurn } from "./memory.js";
 import { advisorExtensionArgs, advisorRouter, advisorStatus, ensureAdvisorConfig, syncAdvisorConfig } from "./advisor.js";
 import { buildSubagentPromptContext, ensureSubagentConfig, observeSubagentEvent, subagentExtensionArgs, subagentStatus, subagentsRouter, syncSubagentConfig } from "./subagents.js";
+import { beautifulUiArgs, beautifulUiRouter, beautifulUiStatus, ensureBeautifulUiPackage } from "./beautifulUi.js";
+import { clipboardExtensionArgs, clipboardRouter, clipboardStatus } from "./clipboard.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -47,7 +49,9 @@ const BACKEND_FEATURES = {
   piAdvisorExtension: true,
   piSubagentsExtension: true,
   automaticDelegation: true,
-  projectSubagentState: true
+  projectSubagentState: true,
+  clipboardTools: true,
+  beautifulUiMode: true
 };
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
@@ -73,6 +77,8 @@ app.use("/api/extensions", extensionsRouter);
 app.use("/api/memory", memoryRouter);
 app.use("/api/advisor", advisorRouter);
 app.use("/api/subagents", subagentsRouter);
+app.use("/api/beautiful-ui", beautifulUiRouter);
+app.use("/api/clipboard", clipboardRouter);
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });
@@ -145,6 +151,8 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       extensionCount: listExtensionCatalog().length,
       advisor: advisorStatus(settings),
       subagents: subagentStatus(settings),
+      clipboard: clipboardStatus(),
+      beautifulUi: beautifulUiStatus(),
       provider: settings.provider,
       model: settings.modelLabel || "gpt-5.5"
     });
@@ -398,8 +406,9 @@ wss.on("connection", async (ws) => {
       settings = readSettings();
       ensureAdvisorConfig(settings);
       ensureSubagentConfig(settings);
+      ensureBeautifulUiPackage();
       const nextSession = new PiSession(SESSION_DIR, freshToken.access, {
-        extraArgs: [...advisorExtensionArgs(), ...subagentExtensionArgs(settings), ...piArgsForAccess(settings)],
+        extraArgs: [...advisorExtensionArgs(), ...subagentExtensionArgs(settings), ...clipboardExtensionArgs(), ...beautifulUiArgs(), ...piArgsForAccess(settings)],
         provider: settings.provider || "openai-codex",
         model: settings.modelLabel || "gpt-5.5",
         thinkingLevel: settings.thinkingLevel || "medium",

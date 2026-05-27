@@ -45,6 +45,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [memoryStatus, setMemoryStatus] = useState<any>(null);
   const [advisorStatus, setAdvisorStatus] = useState<any>(null);
   const [subagentStatus, setSubagentStatus] = useState<any>(null);
+  const [beautifulUiStatus, setBeautifulUiStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
 
   const refreshGithubStatus = async () => {
@@ -67,10 +68,17 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
     if (data) setActionStatus(data.installed ? `Pi subagents ready: ${data.engine} ${data.version ?? ""}` : "pi-subagents package is missing from this install.");
   };
 
+  const refreshBeautifulUiStatus = async () => {
+    const response = await fetch(apiUrl("/api/beautiful-ui/status")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    setBeautifulUiStatus(data);
+  };
+
   useEffect(() => {
     void refreshGithubStatus();
     void refreshAdvisorStatus();
     void refreshSubagentStatus();
+    void refreshBeautifulUiStatus();
   }, []);
 
   const diagnose = async () => {
@@ -228,7 +236,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
 
         {active === "Modeles" ? (
           <section className="settings-section">
-            <h2>Modele, vitesse et thinking</h2>
+            <h2>Modele et thinking</h2>
             <div className="settings-card compact">
               <span>Fournisseur</span>
               <select value={settings.provider} onChange={(e) => onChange({ provider: e.target.value as AppSettings["provider"] })}>
@@ -239,12 +247,6 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               </select>
               <span>Modele</span>
               <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
-              <span>Vitesse ChatGPT</span>
-              <select value={settings.speedMode} onChange={(e) => onChange({ speedMode: e.target.value as AppSettings["speedMode"] })}>
-                <option value="fast">Fast</option>
-                <option value="balanced">Balanced</option>
-                <option value="deep">Deep</option>
-              </select>
               <span>Thinking</span>
               <select value={settings.thinkingLevel} onChange={(e) => onChange({ thinkingLevel: e.target.value as AppSettings["thinkingLevel"] })}>
                 <option value="off">Off</option>
@@ -531,7 +533,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <div className="settings-card compact">
               <span>Envoyer</span><span>Enter</span>
               <span>Nouvelle ligne</span><span>Shift + Enter</span>
-              <span>Commandes</span><span>/help, /attach, /compact, /permissions, /sessions, /settings</span>
+              <span>Commandes</span><span>/help, /attach, /compact, /beautiful-ui, /permissions, /sessions, /settings</span>
               <span>Piece jointe</span><button onClick={() => setActionStatus("Utilise le bouton trombone dans le composeur, ou tape /attach.")}><Icon name="paperclip" /> Montrer comment joindre</button>
             </div>
           </section>
@@ -546,6 +548,8 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Configurer Advisor</span><button onClick={() => void refreshAdvisorStatus()}><Icon name="shield" /> Lire pi-advisor</button>
               <span>Pi Subagents reel</span><span>{subagentStatus?.installed ? `${subagentStatus.engine}@${subagentStatus.version ?? "?"} dans ${subagentStatus.configPath}` : "Package pi-subagents manquant."}</span>
               <span>Configurer Subagents</span><button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Lire pi-subagents</button>
+              <span>Beautiful UI Mode</span><span>{beautifulUiStatus?.ok ? `Skill charge via ${beautifulUiStatus.loadedBy} dans ${beautifulUiStatus.skillDir}` : "Skill non prepare."}</span>
+              <span>Verifier Beautiful UI</span><button onClick={() => void refreshBeautifulUiStatus()}><Icon name="layout" /> Lire beautiful-ui</button>
               <span>Web</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>

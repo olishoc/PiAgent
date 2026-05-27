@@ -81,6 +81,12 @@ PiAgent bundles `pi-advisor` for the desktop build and writes
 enabled, Pi starts with the real advisor extension and advisor tool results
 render as their own chat blocks, separate from model thinking.
 
+## Beautiful UI Mode
+Use `/beautiful-ui <task>` in the composer to run PiAgent's UI-building workflow.
+It scans the target project, writes a design brief, uses semantic tokens, runs
+browser visual QA when possible, critiques screenshots, patches, and reports
+verification evidence. See `docs/BEAUTIFUL_UI_MODE.md`.
+
 ## Global memory
 PiAgent includes a local-first global memory layer under `~/.config/pi-app/memory/`.
 It learns user preferences, workflows, project facts, skills, and tool usage without

@@ -79,7 +79,6 @@ export interface AppSettings {
   provider: string;
   modelLabel: string;
   thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-  speedMode: "fast" | "balanced" | "deep";
   autoReview: boolean;
   advisorEnabled: boolean;
   advisorProvider: string;
@@ -238,7 +237,6 @@ export default function App() {
     provider: "openai-codex",
     modelLabel: "gpt-5.5",
     thinkingLevel: "medium",
-    speedMode: "balanced",
     autoReview: true,
     advisorEnabled: true,
     advisorProvider: "openai-codex",
@@ -648,6 +646,12 @@ export default function App() {
       compactContext();
       return;
     }
+    if (command === "/beautiful-ui" || command.startsWith("/beautiful-ui ")) {
+      navigate("chat");
+      const args = command.replace(/^\/beautiful-ui\s*/i, "").trim();
+      agent.sendPrompt(`/skill:beautiful-ui${args ? ` ${args}` : ""}`, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
+      return;
+    }
     if (command === "/subagents-doctor" || command === "/parallel-review" || command === "/review-loop" || command.startsWith("/run ") || command.startsWith("/chain ") || command.startsWith("/parallel ")) {
       navigate("chat");
       agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
@@ -666,7 +670,7 @@ export default function App() {
         {
           id: crypto.randomUUID(),
           kind: "status",
-          text: "Commands: /new, /attach, /compact, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /permissions, /projects, /sessions, /settings."
+          text: "Commands: /new, /attach, /compact, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /beautiful-ui, /permissions, /projects, /sessions, /settings."
         }
       ]);
     }

@@ -98,6 +98,15 @@ select {
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  outline-offset: 2px;
+}
+
 button:active {
   transform: translateY(1px);
 }
@@ -331,6 +340,19 @@ button:active {
   font-style: normal;
 }
 
+.file-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.context-panel .file-preview-actions button {
+  width: auto;
+  min-height: 28px;
+  margin: 0;
+  padding-inline: 9px;
+}
+
 .file-preview pre,
 .git-status {
   overflow: auto;
@@ -526,9 +548,7 @@ button:active {
   padding: 24px;
   border: 0.5px solid var(--border);
   border-radius: 10px;
-  background:
-    radial-gradient(circle at 25% 20%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 38%),
-    var(--hero-bg);
+  background: var(--hero-bg);
 }
 
 .extension-hero div {

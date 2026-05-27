@@ -41,6 +41,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const [memorySkills, setMemorySkills] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; updatedAt: number }>>([]);
   const [memoryStats, setMemoryStats] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState("");
+  const [clipboardStatus, setClipboardStatus] = useState("");
   const [advisorStatus, setAdvisorStatus] = useState<any>(null);
   const [subagentStatus, setSubagentStatus] = useState<any>(null);
 
@@ -123,6 +124,16 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
     }).catch(() => null);
     const data = response?.ok ? await response.json().catch(() => null) : null;
     if (data?.ok) setPreview(data);
+  };
+
+  const copyText = async (text: string, label: string) => {
+    const response = await fetch(apiUrl("/api/clipboard/write"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    }).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    setClipboardStatus(data?.ok ? `Copied ${label}.` : data?.error ?? "Clipboard copy failed.");
   };
 
   const remember = async () => {
@@ -257,11 +268,16 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
         {preview ? (
           <section className="file-preview">
             <h2><Icon name="file" /> {preview.name}</h2>
-            <button onClick={() => fetch(apiUrl("/api/open-file"), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ path: preview.path })
-            })}><Icon name="link" /> Open file</button>
+            <div className="file-preview-actions">
+              <button onClick={() => fetch(apiUrl("/api/open-file"), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ path: preview.path })
+              })}><Icon name="link" /> Open</button>
+              <button onClick={() => void copyText(preview.path, "path")}><Icon name="clipboard" /> Copy path</button>
+              {preview.text ? <button onClick={() => void copyText(preview.text ?? "", "contents")}><Icon name="copy" /> Copy text</button> : null}
+            </div>
+            {clipboardStatus ? <p>{clipboardStatus}</p> : null}
             {preview.text ? <pre>{preview.text}</pre> : <p>Binary or large file. Open it with the system viewer.</p>}
           </section>
         ) : null}
@@ -358,7 +374,6 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <div className="context-kv"><span>Routing</span><strong>{settings.subagentRoutingMode}</strong></div>
           <div className="context-kv"><span>Chrome</span><strong>{settings.chromeEnabled ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Computer</span><strong>{settings.computerUseEnabled ? "full" : "limited"}</strong></div>
-          <div className="context-kv"><span>Speed</span><strong>{settings.speedMode}</strong></div>
           <p>Pi extensions load from Pi when the agent process starts. Use / commands from the composer to invoke installed templates and skills.</p>
         </section>
       </> : null}

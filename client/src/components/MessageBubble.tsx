@@ -6,7 +6,15 @@ import Icon from "./Icon";
 function renderCodeAware(text: string) {
   const chunks = text.split(/```/g);
   return chunks.map((chunk, index) => {
-    if (index % 2 === 1) return <pre key={index}><code>{chunk.replace(/^[a-zA-Z0-9_-]+\n/, "")}</code></pre>;
+    if (index % 2 === 1) {
+      const code = chunk.replace(/^[a-zA-Z0-9_-]+\n/, "");
+      return (
+        <div className="code-block-wrap" key={index}>
+          <button onClick={() => void navigator.clipboard?.writeText(code)} title="Copy code"><Icon name="copy" size={12} /></button>
+          <pre><code>{code}</code></pre>
+        </div>
+      );
+    }
     return <span key={index}>{chunk}</span>;
   });
 }
@@ -26,6 +34,14 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
       body: JSON.stringify({ path })
     }).catch(() => {});
   };
+  const copyAttachment = async (text?: string, label = "attachment") => {
+    if (!text) return;
+    await fetch(apiUrl("/api/clipboard/write"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    }).catch(() => navigator.clipboard?.writeText(text));
+  };
 
   if (message.kind === "user") {
     return (
@@ -36,10 +52,14 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
         {message.attachments?.length ? (
           <div className="message-attachments">
             {message.attachments.map((file) => (
-              <button key={file.id} onClick={() => void openAttachment(file.path)} title={file.path ?? file.name}>
-                <Icon name={file.kind === "image" ? "file" : "paperclip"} size={14} />
-                <span>{file.name}</span>
-              </button>
+              <div className="attachment-chip" key={file.id} title={file.path ?? file.name}>
+                <button onClick={() => void openAttachment(file.path)}>
+                  <Icon name={file.kind === "image" ? "file" : "paperclip"} size={14} />
+                  <span>{file.name}</span>
+                </button>
+                {file.path ? <button className="chip-action" onClick={() => void copyAttachment(file.path, "path")} title="Copy path"><Icon name="clipboard" size={12} /></button> : null}
+                {file.text ? <button className="chip-action" onClick={() => void copyAttachment(file.text, "contents")} title="Copy contents"><Icon name="copy" size={12} /></button> : null}
+              </div>
             ))}
           </div>
         ) : null}

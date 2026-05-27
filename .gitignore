@@ -12,3 +12,4 @@ src-tauri/r/
 dev.out.log
 dev.err.log
 *.log
+artifacts/

@@ -1,4 +1,5 @@
 .thread-shell {
+  position: relative;
   display: flex;
   min-height: 0;
   flex: 1;
@@ -33,6 +34,44 @@
   white-space: nowrap;
 }
 
+.thread-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.thread-badges span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 7px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--subtle-bg);
+  color: var(--text-tertiary);
+  font-size: 10.5px;
+}
+
+.thread-badges .state-badge {
+  color: var(--text-secondary);
+}
+
+.thread-badges .state-badge.thinking,
+.thread-badges .state-badge.writing {
+  border-color: color-mix(in srgb, var(--accent-amber) 35%, var(--border));
+  color: var(--accent-amber);
+}
+
+.thread-badges .state-badge.running-tools {
+  border-color: color-mix(in srgb, var(--accent-green) 35%, var(--border));
+  color: var(--accent-green);
+}
+
+.thread-badges .state-badge.error {
+  border-color: color-mix(in srgb, var(--accent-red) 35%, var(--border));
+  color: var(--accent-red);
+}
+
 .thread-actions {
   display: flex;
   flex: 0 0 auto;
@@ -63,6 +102,30 @@
   padding: 28px min(7vw, 82px) 18px;
 }
 
+.jump-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 116px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 0.5px solid var(--border-hover);
+  border-radius: 999px;
+  background: var(--bg-menu);
+  color: var(--text-secondary);
+  box-shadow: 0 12px 34px var(--shadow-color);
+  cursor: pointer;
+  transform: translateX(-50%);
+  animation: messageIn 140ms ease;
+}
+
+.jump-latest:hover {
+  color: var(--text-primary);
+}
+
 .empty-thread {
   display: grid;
   min-height: 70%;
@@ -80,8 +143,8 @@
   place-items: center;
   margin-bottom: 18px;
   border: 0.5px solid var(--border-hover);
-  border-radius: 50%;
-  background: radial-gradient(circle, var(--bg-elevated) 0%, var(--bg-tool) 70%);
+  border-radius: 14px;
+  background: var(--bg-tool);
   color: var(--text-primary);
   animation: breathe 2.4s ease-in-out infinite;
 }
@@ -375,22 +438,33 @@
   margin-top: 10px;
 }
 
+.attachment-chip {
+  display: inline-flex;
+  max-width: min(100%, 360px);
+  align-items: center;
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+}
+
 .message-attachments button {
   display: flex;
-  max-width: 260px;
   align-items: center;
   gap: 7px;
   height: 28px;
   padding: 0 9px;
-  border: 0.5px solid var(--border);
-  border-radius: 999px;
-  background: var(--bg-input);
+  border: 0;
+  background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
 }
 
-.message-attachments button:hover {
+.attachment-chip:hover {
   border-color: var(--border-hover);
+}
+
+.message-attachments button:hover {
   color: var(--text-primary);
 }
 
@@ -398,6 +472,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.message-attachments .chip-action {
+  width: 27px;
+  flex: 0 0 27px;
+  justify-content: center;
+  padding: 0;
+  border-left: 0.5px solid var(--border);
 }
 
 .agent-message {
@@ -412,6 +494,38 @@
   background: var(--bg-code);
   color: var(--text-primary);
   white-space: pre;
+}
+
+.code-block-wrap {
+  position: relative;
+  margin: 8px 0;
+}
+
+.code-block-wrap > button {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0.5px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.code-block-wrap:hover > button,
+.code-block-wrap > button:focus-visible {
+  opacity: 1;
+}
+
+.code-block-wrap > button:hover {
+  border-color: var(--border-hover);
+  color: var(--text-primary);
 }
 
 .tool-row {

@@ -30,6 +30,7 @@ const slashCommands = [
   { command: "/subagents-doctor", label: "Ask pi-subagents to diagnose the runtime" },
   { command: "/parallel-review", label: "Run fresh-context parallel reviewers" },
   { command: "/review-loop", label: "Run worker/reviewer/fix loop until capped or clean" },
+  { command: "/beautiful-ui", label: "Run the Beautiful UI Mode scan, brief, browser QA, and patch loop" },
   { command: "/projects", label: "Open project workspaces and Git state" },
   { command: "/sessions", label: "Open session search" },
   { command: "/settings", label: "Open settings" }
@@ -102,7 +103,6 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   const promptOptions = (): PromptOptions => ({
     ...tools,
     advisor: tools.advisor,
-    speedMode: settings?.speedMode ?? "balanced",
     accessMode: settings?.accessMode ?? "full",
     approvalPolicy: settings?.approvalPolicy ?? "on-request",
     autoReview: Boolean(settings?.autoReview),
@@ -171,6 +171,19 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     fileRef.current?.click();
   };
 
+  const pasteClipboard = async () => {
+    const response = await fetch(apiUrl("/api/clipboard/read?maxChars=120000")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (!data?.ok || !data.text) return;
+    setText((current) => current ? `${current}\n${data.text}` : data.text);
+    ref.current?.focus();
+  };
+
+  const insertCommandDraft = (command: string) => {
+    setText((current) => current.trim() ? current : `${command} `);
+    window.requestAnimationFrame(() => ref.current?.focus());
+  };
+
   const runCommand = (command: string) => {
     setShowCommands(false);
     if (command === "/attach") {
@@ -178,7 +191,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       setText("");
       return;
     }
-    if (!slashCommands.some((item) => item.command === command)) {
+    if (!slashCommands.some((item) => item.command === command || command.startsWith(`${item.command} `))) {
       onSend(command, attachments, promptOptions());
       setAttachments([]);
       setText("");
@@ -191,9 +204,9 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   const submit = () => {
     const trimmed = text.trim();
     if (!trimmed || disabled) return;
-    const exactCommand = slashCommands.find((item) => item.command === trimmed);
+    const exactCommand = slashCommands.find((item) => item.command === trimmed || trimmed.startsWith(`${item.command} `));
     if (exactCommand) {
-      runCommand(exactCommand.command);
+      runCommand(trimmed);
       return;
     }
     onSend(trimmed, attachments, promptOptions());
@@ -253,6 +266,8 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
             <div className="pill-menu add-menu">
               <button onClick={() => { void pickFiles(); setAddOpen(false); }}><Icon name="paperclip" size={13} /> Add files</button>
               <button onClick={() => { void pickFolders(); setAddOpen(false); }}><Icon name="folder" size={13} /> Add folders</button>
+              <button onClick={() => { void pasteClipboard(); setAddOpen(false); }}><Icon name="clipboard" size={13} /> Paste clipboard</button>
+              <button onClick={() => { insertCommandDraft("/beautiful-ui"); setAddOpen(false); }}><Icon name="layout" size={13} /> Beautiful UI mode</button>
               <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web research</button>
               <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
               <button onClick={() => { runCommand("/advisor ask"); setAddOpen(false); }}><Icon name="shield" size={13} /> Ask advisor now</button>
@@ -316,9 +331,6 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
           </button>
         </div>
         <div className="composer-meta">
-          <button className={`speed-pill ${settings?.speedMode === "fast" ? "enabled" : ""}`} onClick={() => onSettingsChange({ speedMode: settings?.speedMode === "fast" ? "balanced" : "fast", thinkingLevel: settings?.speedMode === "fast" ? "medium" : "minimal" })}>
-            {settings?.speedMode === "fast" ? "fast" : "balanced"}
-          </button>
           <div className="pill-menu-wrap" ref={modelRef}>
             <button className="model-pill" onClick={() => setModelOpen((current) => !current)}>
               {settings?.modelLabel ?? "gpt-5.5"} <Icon name="chevronDown" size={12} />

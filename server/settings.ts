@@ -6,7 +6,6 @@ export type AccessMode = "read-only" | "limited" | "full";
 export type ApprovalPolicy = "on-request" | "on-failure" | "never";
 export type ProviderId = string;
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
-export type SpeedMode = "fast" | "balanced" | "deep";
 export type ThemePreset = "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
 export type TextDensity = "compact" | "codex" | "comfortable" | "custom";
 export type MemoryMode = "off" | "manual" | "assistive" | "deep";
@@ -22,7 +21,6 @@ export interface AppSettings {
   provider: ProviderId;
   modelLabel: string;
   thinkingLevel: ThinkingLevel;
-  speedMode: SpeedMode;
   autoReview: boolean;
   advisorEnabled: boolean;
   advisorProvider: string;
@@ -86,7 +84,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   provider: "openai-codex",
   modelLabel: "gpt-5.5",
   thinkingLevel: "medium",
-  speedMode: "balanced",
   autoReview: true,
   advisorEnabled: true,
   advisorProvider: "openai-codex",
@@ -143,7 +140,6 @@ const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "hi
 const TEXT_DENSITIES: TextDensity[] = ["compact", "codex", "comfortable", "custom"];
 const ACCESS_MODES: AccessMode[] = ["read-only", "limited", "full"];
 const APPROVAL_POLICIES: ApprovalPolicy[] = ["on-request", "on-failure", "never"];
-const SPEED_MODES: SpeedMode[] = ["fast", "balanced", "deep"];
 const MEMORY_MODES: MemoryMode[] = ["off", "manual", "assistive", "deep"];
 const SUBAGENT_ROUTING_MODES: SubagentRoutingMode[] = ["manual", "assistive", "automatic"];
 const SUBAGENT_INTERCOM_MODES: SubagentIntercomMode[] = ["off", "fork-only", "always"];
@@ -205,7 +201,6 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   approvalPolicy: APPROVAL_POLICIES,
   thinkingLevel: THINKING_LEVELS,
   advisorReasoning: THINKING_LEVELS,
-  speedMode: SPEED_MODES,
   memoryMode: MEMORY_MODES,
   subagentRoutingMode: SUBAGENT_ROUTING_MODES,
   subagentIntercomMode: SUBAGENT_INTERCOM_MODES,
@@ -257,6 +252,7 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   loaded.fontFamily = typeof loaded.fontFamily === "string" && loaded.fontFamily.trim()
     ? loaded.fontFamily.trim()
     : DEFAULT_SETTINGS.fontFamily;
+  delete (loaded as Record<string, unknown>).speedMode;
   return loaded;
 }
 

@@ -149,8 +149,7 @@
 }
 
 .tool-pills button,
-.model-pill,
-.speed-pill {
+.model-pill {
   display: flex;
   height: 25px;
   align-items: center;
@@ -162,11 +161,6 @@
   color: var(--text-tertiary);
   cursor: pointer;
   font-size: 11px;
-}
-
-.speed-pill.enabled {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hover));
-  color: var(--text-primary);
 }
 
 .pill-menu-wrap {

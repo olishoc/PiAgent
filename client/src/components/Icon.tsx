@@ -1,5 +1,6 @@
 export type IconName =
   | "archive"
+  | "arrowDown"
   | "arrowLeft"
   | "arrowRight"
   | "arrowUp"
@@ -7,7 +8,9 @@ export type IconName =
   | "box"
   | "check"
   | "chevronDown"
+  | "clipboard"
   | "circle"
+  | "copy"
   | "clock"
   | "file"
   | "folder"
@@ -34,6 +37,7 @@ interface IconProps {
 
 const paths: Record<IconName, string> = {
   archive: "M4 7h16M6 7v12h12V7M9 11h6",
+  arrowDown: "M12 5v14M6 13l6 6 6-6",
   arrowLeft: "M15 6l-6 6 6 6",
   arrowRight: "M9 6l6 6-6 6",
   arrowUp: "M12 19V5M6 11l6-6 6 6",
@@ -41,7 +45,9 @@ const paths: Record<IconName, string> = {
   box: "M4 7l8-4 8 4-8 4-8-4M4 7v10l8 4 8-4V7M12 11v10",
   check: "M5 12l4 4L19 6",
   chevronDown: "M6 9l6 6 6-6",
+  clipboard: "M9 4h6l1 2h3v15H5V6h3l1-2M9 4v3h6V4M8 11h8M8 15h8",
   circle: "M12 21a9 9 0 100-18 9 9 0 000 18",
+  copy: "M8 8h11v11H8V8M5 16H4a1 1 0 01-1-1V4a1 1 0 011-1h11a1 1 0 011 1v1",
   clock: "M12 21a9 9 0 100-18 9 9 0 000 18M12 7v5l3 2",
   file: "M6 3h8l4 4v14H6V3M14 3v5h5M9 13h6M9 17h6",
   folder: "M3 7h7l2 2h9v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7",
