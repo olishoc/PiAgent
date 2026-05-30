@@ -343,7 +343,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <input type="number" min="1" max="12" value={settings.advisorMaxUsesPerRun} onChange={(e) => onChange({ advisorMaxUsesPerRun: Number(e.target.value) })} />
               <span>Advisor status</span>
               <button onClick={() => void refreshAdvisorStatus()}><Icon name="shield" /> Verifier pi-advisor</button>
-              <span>Web</span>
+              <span>Web guidance</span>
               <select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>
@@ -557,7 +557,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Configurer Subagents</span><button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Lire pi-subagents</button>
               <span>Beautiful UI Mode</span><span>{beautifulUiStatus?.ok ? `Skill charge via ${beautifulUiStatus.loadedBy} dans ${beautifulUiStatus.skillDir}` : "Skill non prepare."}</span>
               <span>Verifier Beautiful UI</span><button onClick={() => void refreshBeautifulUiStatus()}><Icon name="layout" /> Lire beautiful-ui</button>
-              <span>Web</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
+              <span>Web guidance</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactive</option>
               </select>

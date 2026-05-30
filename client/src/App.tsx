@@ -660,12 +660,19 @@ export default function App() {
     });
   };
 
-  const selectSession = (session: Session) => {
+  const selectSession = async (session: Session) => {
     setActiveId(session.id);
     navigate("chat");
     agent.replaceMessages([]);
-    agent.sendCommand({ type: "switch_session", sessionPath: session.path });
-    agent.sendCommand({ type: "get_messages" });
+    const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
+    if (switchResult?.success === false) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open this thread." }]);
+      return;
+    }
+    const messagesResult = await agent.sendCommand({ type: "get_messages" });
+    if (messagesResult?.success === false) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi opened this thread, but messages could not be loaded." }]);
+    }
   };
 
   const runComposerCommand = (command: string) => {
@@ -929,26 +936,28 @@ export default function App() {
                 onOpenContextPanel={() => setContextPanelOpen(true)}
               />
             </div>
-            <ContextPanel
-              open={contextPanelOpen}
-              settings={settings}
-              activeProject={activeProject}
-              activeSessionId={activeId}
-              sessions={sessions}
-              messages={visibleMessages}
-              connectionState={agent.connectionState}
-              contextUsage={agent.contextUsage}
-              onOpenSettings={() => {
-                setContextPanelOpen(false);
-                navigate("settings");
-              }}
-              onOpenSessions={() => {
-                setContextPanelOpen(false);
-                navigate("search");
-              }}
-              onCompact={compactContext}
-              onClose={() => setContextPanelOpen(false)}
-            />
+            {contextPanelOpen ? (
+              <ContextPanel
+                open={contextPanelOpen}
+                settings={settings}
+                activeProject={activeProject}
+                activeSessionId={activeId}
+                sessions={sessions}
+                messages={visibleMessages}
+                connectionState={agent.connectionState}
+                contextUsage={agent.contextUsage}
+                onOpenSettings={() => {
+                  setContextPanelOpen(false);
+                  navigate("settings");
+                }}
+                onOpenSessions={() => {
+                  setContextPanelOpen(false);
+                  navigate("search");
+                }}
+                onCompact={compactContext}
+                onClose={() => setContextPanelOpen(false)}
+              />
+            ) : null}
           </div>
         )}
       </main>

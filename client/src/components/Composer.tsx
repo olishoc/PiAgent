@@ -269,7 +269,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               <button onClick={() => { void pickFolders(); setAddOpen(false); }}><Icon name="folder" size={13} /> Add folders</button>
               <button onClick={() => { void pasteClipboard(); setAddOpen(false); }}><Icon name="clipboard" size={13} /> Paste clipboard</button>
               <button onClick={() => { insertCommandDraft("/beautiful-ui"); setAddOpen(false); }}><Icon name="layout" size={13} /> Beautiful UI mode</button>
-              <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web research</button>
+              <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web guidance</button>
               <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
               <button onClick={() => { runCommand("/advisor ask"); setAddOpen(false); }}><Icon name="shield" size={13} /> Ask advisor now</button>
               <button onClick={() => { onSettingsChange({ subagentsEnabled: !settings?.subagentsEnabled, autoLaunchSubagents: !settings?.subagentsEnabled }); setAddOpen(false); }}><Icon name={settings?.subagentsEnabled ? "check" : "plug"} size={13} /> Pi subagents</button>
