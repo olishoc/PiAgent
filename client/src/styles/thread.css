@@ -133,24 +133,61 @@
   min-height: 58%;
   place-items: center;
   align-content: center;
-  gap: 16px;
+  gap: 12px;
   color: var(--text-tertiary);
   font-size: 13px;
   text-align: center;
 }
 
+.empty-icon-stage {
+  position: relative;
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 30% 22%, color-mix(in srgb, #ffffff 16%, transparent), transparent 36%),
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--neon-rose) 18%, transparent), transparent 50%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 70%, transparent), color-mix(in srgb, var(--bg-input) 64%, transparent));
+  box-shadow:
+    0 26px 88px color-mix(in srgb, var(--shadow-color) 84%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent-red) 15%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 14%, transparent);
+  animation: softFloat 4.2s ease-in-out infinite;
+}
+
+.empty-icon-stage::before,
+.empty-icon-stage::after {
+  position: absolute;
+  inset: 8px;
+  border: 0.5px solid color-mix(in srgb, var(--accent-red) 30%, transparent);
+  border-radius: 30px;
+  content: "";
+  opacity: 0.68;
+  animation: iconOrbit 6s linear infinite;
+}
+
+.empty-icon-stage::after {
+  inset: 18px;
+  border-color: color-mix(in srgb, var(--neon-cyan) 22%, transparent);
+  animation-duration: 8s;
+  animation-direction: reverse;
+}
+
 .empty-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 17px;
-  animation: softFloat 4s ease-in-out infinite, iconGlow 5s ease-in-out infinite;
+  z-index: 1;
+  width: 56px;
+  height: 56px;
+  border-radius: 11px;
+  animation: iconGlow 5s ease-in-out infinite;
 }
 
 .empty-thread h1 {
   max-width: min(720px, 90%);
   margin: 0;
   color: var(--text-primary);
-  font-size: clamp(28px, 4.2vw, 48px);
+  font-size: clamp(22px, 3.2vw, 36px);
   font-weight: 360;
   letter-spacing: 0;
 }
@@ -173,7 +210,8 @@
   max-width: 680px;
   margin: 0;
   color: var(--text-secondary);
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .empty-suggestions {
@@ -883,6 +921,8 @@
   top: calc(100% + 6px);
   display: grid;
   width: min(320px, calc(100vw - 40px));
+  max-height: min(360px, 48vh);
+  overflow-y: auto;
   gap: 4px;
   padding: 8px;
   border: 0.5px solid color-mix(in srgb, var(--border-hover) 82%, transparent);
@@ -947,6 +987,164 @@
 }
 
 .settings-card.compact { grid-template-columns: minmax(170px, 220px) minmax(0, 1fr); }
+
+.split-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 8px;
+}
+
+.provider-pages {
+  display: grid;
+  gap: 12px;
+}
+
+.provider-page-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 72%, transparent), color-mix(in srgb, var(--bg-input) 58%, transparent));
+  backdrop-filter: var(--glass-blur);
+}
+
+.provider-page-tabs button,
+.provider-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 94%, #ffffff 2%), color-mix(in srgb, var(--bg-input) 82%, transparent));
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.provider-page-tabs button {
+  padding: 0 12px;
+}
+
+.provider-page-tabs button.active,
+.provider-page-tabs button:hover,
+.provider-actions button:hover {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border-hover));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--selected-bg) 78%, transparent), color-mix(in srgb, var(--neon-cyan) 6%, transparent));
+  color: var(--text-primary);
+}
+
+.provider-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 0.5px solid var(--border-hover);
+  border-radius: 24px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 86%, transparent), color-mix(in srgb, var(--bg-input) 68%, transparent)),
+    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--neon-cyan) 8%, transparent), transparent 38%),
+    radial-gradient(circle at 88% 10%, color-mix(in srgb, var(--neon-rose) 7%, transparent), transparent 34%);
+  box-shadow:
+    0 22px 72px color-mix(in srgb, var(--shadow-color) 72%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 11%, transparent);
+  backdrop-filter: var(--glass-blur);
+}
+
+.provider-card header,
+.provider-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.provider-card h2 {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.provider-card header span,
+.provider-card p,
+.provider-status-grid span,
+.secret-input {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.provider-card header strong {
+  padding: 5px 9px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.provider-card header strong.connected {
+  border-color: color-mix(in srgb, #3fb950 34%, var(--border));
+  color: color-mix(in srgb, #3fb950 78%, var(--text-primary));
+}
+
+.provider-status-grid {
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+  overflow: hidden;
+  border: 0.5px solid var(--border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--subtle-bg) 72%, transparent);
+}
+
+.provider-status-grid > * {
+  min-height: 36px;
+  padding: 10px 12px;
+  border-bottom: 0.5px solid var(--border);
+}
+
+.provider-status-grid em {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secret-input {
+  display: grid;
+  gap: 7px;
+}
+
+.secret-input input {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.provider-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.provider-actions button {
+  padding: 0 12px;
+}
+
+.provider-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
 
 .theme-preview {
   margin-bottom: 10px;
@@ -1018,6 +1216,8 @@
   .mode-grid,
   .settings-card,
   .settings-card.compact { grid-template-columns: 1fr; }
+  .split-setting,
+  .provider-status-grid { grid-template-columns: 1fr; }
   .thread-feed { padding-inline: 22px; }
 }
 
@@ -1032,9 +1232,15 @@
   }
 
   .empty-icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 14px;
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+  }
+
+  .empty-icon-stage {
+    width: 78px;
+    height: 78px;
+    border-radius: 27px;
   }
 
   .empty-thread h1 {
@@ -1049,3 +1255,4 @@
 @keyframes messageIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes dropdownFloat { from { opacity: 0; transform: translateY(-4px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes softFloat { 0%, 100% { transform: translateY(0) rotate(-2deg); } 50% { transform: translateY(-6px) rotate(2deg); } }
+@keyframes iconOrbit { to { transform: rotate(360deg); } }

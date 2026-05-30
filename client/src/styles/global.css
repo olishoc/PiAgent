@@ -337,6 +337,26 @@ button:active {
   flex: 1;
   min-width: 0;
   flex-direction: column;
+  transition: justify-content 220ms ease;
+}
+
+.chat-column.empty-start {
+  justify-content: center;
+}
+
+.chat-column.empty-start .thread-shell {
+  flex: 0 1 auto;
+  min-height: min(54vh, 520px);
+}
+
+.chat-column.empty-start .composer {
+  margin-top: 12px;
+  margin-bottom: clamp(28px, 10vh, 92px);
+  transform: translateY(-2px);
+}
+
+.chat-column.has-thread .composer {
+  transform: translateY(0);
 }
 
 .context-drawer-layer {
@@ -1042,18 +1062,50 @@ button:active {
   padding-bottom: 3px;
 }
 
-.project-strip button {
+.project-strip-item {
+  position: relative;
+  display: grid;
+  min-width: 220px;
+  border: 0.5px solid var(--border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-input) 86%, transparent), color-mix(in srgb, var(--surface) 72%, transparent));
+}
+
+.project-strip-item.active {
+  border-color: var(--border-hover);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--selected-bg) 82%, transparent), color-mix(in srgb, var(--surface) 72%, var(--neon-cyan) 5%));
+}
+
+.project-strip .project-open {
   display: grid;
   min-width: 220px;
   grid-template-columns: 18px minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-items: center;
+  border: 0;
+  background: transparent;
   text-align: left;
 }
 
-.project-strip button.active {
-  border-color: var(--border-hover);
-  background: var(--selected-bg);
+.project-strip-close {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  display: grid !important;
+  width: 26px;
+  min-height: 26px !important;
+  place-items: center;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  opacity: 0;
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.project-strip-item:hover .project-strip-close,
+.project-strip-item.active .project-strip-close {
+  opacity: 1;
 }
 
 .project-strip em {
@@ -1069,6 +1121,11 @@ button:active {
 .project-summary {
   justify-content: space-between;
   padding: 16px;
+}
+
+.project-summary-close {
+  flex: 0 0 auto;
+  border-radius: 999px !important;
 }
 
 .project-kpis span {

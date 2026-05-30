@@ -10,11 +10,12 @@ interface ThreadViewProps {
   footerStatus?: string;
   connectionState?: string;
   sessionName?: string;
+  displayName?: string;
   contextUsage?: ContextUsage | null;
   onAbort: () => void;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, onAbort }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, displayName, onAbort }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -107,8 +108,11 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
       <div className="thread-feed" ref={feedRef} onScroll={onScroll}>
         {messages.length === 0 ? (
           <div className="empty-thread">
-            <span className="empty-icon app-icon-mark" aria-hidden="true" />
-            <h1><span>What should we</span> <em>build?</em></h1>
+            <div className="empty-icon-stage" aria-hidden="true">
+              <span className="empty-icon app-icon-mark" />
+            </div>
+            <h1><span>Ready when you are</span></h1>
+            <p>{displayName?.trim() ? `Workspace ready for ${displayName.trim()}.` : "Workspace ready."}</p>
           </div>
         ) : null}
         {messages.map((message) => (

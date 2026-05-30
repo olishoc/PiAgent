@@ -158,9 +158,9 @@ export function writeProjects(projects: ProjectInfo[]) {
   writeJson(PROJECTS_PATH, projects);
 }
 
-export function listProjects() {
+export function listProjects(options: { includeArchived?: boolean } = {}) {
   return readProjects()
-    .filter((project) => !project.archived)
+    .filter((project) => options.includeArchived || !project.archived)
     .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastOpenedAt - a.lastOpenedAt);
 }
 
@@ -235,8 +235,9 @@ function scanTree(rootPath: string, requestedPath = "", maxDepth = 4, maxEntries
 
 export const projectsRouter = Router();
 
-projectsRouter.get("/", (_req, res) => {
-  res.json({ projects: listProjects() });
+projectsRouter.get("/", (req, res) => {
+  const includeArchived = req.query.includeArchived === "1" || req.query.includeArchived === "true";
+  res.json({ projects: listProjects({ includeArchived }) });
 });
 
 projectsRouter.post("/", async (req, res, next) => {
@@ -246,14 +247,15 @@ projectsRouter.post("/", async (req, res, next) => {
     const rootPath = !generatedRoot
       ? normalizeRoot(String(req.body.rootPath))
       : path.join(PROJECTS_DIR, slugName(name));
-    const existing = readProjects().find((project) => normalizeRoot(project.rootPath) === normalizeRoot(rootPath) && !project.archived);
+    const existing = readProjects().find((project) => normalizeRoot(project.rootPath) === normalizeRoot(rootPath));
     if (existing) {
       const nextProject = saveProject({
         ...existing,
         name: existing.name || name,
         lastOpenedAt: Date.now(),
         repoUrl: existing.repoUrl || String(req.body?.repoUrl ?? "").trim() || undefined,
-        defaultBranch: existing.defaultBranch || String(req.body?.defaultBranch ?? "main")
+        defaultBranch: existing.defaultBranch || String(req.body?.defaultBranch ?? "main"),
+        archived: false
       });
       writeSettings({ workspacePath: nextProject.rootPath });
       res.json({ ok: true, project: nextProject, git: await gitStatus(nextProject.rootPath), existing: true });
@@ -313,7 +315,7 @@ projectsRouter.post("/:id/open", (req, res, next) => {
   try {
     const project = getProject(req.params.id);
     if (!fs.existsSync(project.rootPath)) throw new Error("Project folder does not exist.");
-    const nextProject = saveProject({ ...project, lastOpenedAt: Date.now() });
+    const nextProject = saveProject({ ...project, archived: false, lastOpenedAt: Date.now() });
     const settings = writeSettings({ workspacePath: nextProject.rootPath });
     res.json({ ok: true, project: nextProject, settings });
   } catch (err) {

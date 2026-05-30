@@ -20,8 +20,8 @@ async function fetchSessions(projectId?: string | null, all = false): Promise<Se
   return data.sessions ?? [];
 }
 
-async function fetchProjects(): Promise<ProjectInfo[]> {
-  const response = await fetch(apiUrl("/api/projects"));
+async function fetchProjects(includeArchived = false): Promise<ProjectInfo[]> {
+  const response = await fetch(apiUrl(`/api/projects${includeArchived ? "?includeArchived=1" : ""}`));
   const data = await response.json();
   return data.projects ?? [];
 }
@@ -316,6 +316,7 @@ export default function App() {
   });
   const settingsRef = useRef(settings);
   const settingsPatchQueueRef = useRef(Promise.resolve(settings));
+  const loadedSessionRef = useRef("");
   const agent = useAgent(auth.loggedIn, settings.thinkingLevel !== "off");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
@@ -371,7 +372,7 @@ export default function App() {
       fetch(apiUrl("/api/models")).then((r) => r.json()).then((data) => setModels(normalizeProviders(data.providers ?? []))).catch(() => {});
       fetchProjects().then((items) => {
         setProjects(items);
-        setActiveProjectId((current) => current || items[0]?.id || "");
+        setActiveProjectId((current) => current && items.some((project) => project.id === current) ? current : "");
       }).catch(() => {});
       fetchSessions(undefined, true).then(setAllSessions).catch(() => {});
     })();
@@ -406,9 +407,13 @@ export default function App() {
   }, [auth.loggedIn, agent.isStreaming, activeProjectId]);
 
   useEffect(() => {
-    if (!projects.length || activeProjectId === "") return;
-    const matching = projects.find((project) => project.rootPath === settings.workspacePath);
-    setActiveProjectId((current) => matching?.id ?? (current || projects[0].id));
+    if (!projects.length) return;
+    if (!activeProjectId) {
+      const matching = projects.find((project) => project.rootPath === settings.workspacePath);
+      if (matching) setActiveProjectId(matching.id);
+      return;
+    }
+    if (!projects.some((project) => project.id === activeProjectId)) setActiveProjectId("");
   }, [projects, settings.workspacePath, activeProjectId]);
 
   useEffect(() => {
@@ -421,6 +426,27 @@ export default function App() {
       if (Array.isArray(result?.data?.models) && result.data.models.length) setModels(groupRpcModels(result.data.models));
     });
   }, [agent.connectionState, agent.sendCommand]);
+
+  useEffect(() => {
+    if (agent.connectionState !== "ready" || agent.isStreaming || !activeId) return;
+    if (loadedSessionRef.current === activeId) return;
+    const session = sessions.find((item) => item.id === activeId);
+    if (!session?.path) return;
+    let cancelled = false;
+    loadedSessionRef.current = activeId;
+    (async () => {
+      const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
+      const messagesResult = switchResult?.success === false ? switchResult : await agent.sendCommand({ type: "get_messages" });
+      if (cancelled) return;
+      if (messagesResult?.success === false) {
+        loadedSessionRef.current = "";
+        agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi could not reopen this thread." }]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [agent.connectionState, agent.isStreaming, activeId, sessions, agent.sendCommand, agent.replaceMessages]);
 
   if (backendError) {
     return (
@@ -526,7 +552,8 @@ export default function App() {
     const items = await fetchProjects();
     setProjects(items);
     setAllSessions(await fetchSessions(undefined, true).catch(() => allSessions));
-    if (!activeProjectId && items[0]) setActiveProjectId(items[0].id);
+    setActiveProjectId((current) => current && items.some((project) => project.id === current) ? current : "");
+    return items;
   };
 
   const refreshScopedSessions = async (projectId: string | null = activeProjectId || null) => {
@@ -659,6 +686,27 @@ export default function App() {
         setActiveId("");
       }
     }
+  };
+
+  const archiveProject = async (project: ProjectInfo) => {
+    const response = await fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}`), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived: true })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: data.error ?? "Project could not be closed." }]);
+      return;
+    }
+    const items = await refreshProjects();
+    if (project.id !== activeProjectId) return;
+    const fallback = items.find((item) => item.id !== project.id);
+    if (fallback) {
+      await selectProject(fallback, view === "projects" ? "projects" : "chat");
+      return;
+    }
+    await selectUnassignedChats();
   };
 
   const newSession = async () => {
@@ -849,7 +897,8 @@ export default function App() {
   }[settings.textDensity ?? "codex"];
   const visibleMessages = settings.thinkingLevel === "off" ? agent.messages.filter((message) => message.kind !== "thinking") : agent.messages;
   const activeProject = projects.find((project) => project.id === activeProjectId);
-  const appTitle = "";
+  const appTitle = "Pi Agent";
+  const composerCentered = visibleMessages.length === 0 && !agent.isStreaming;
   const updateCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
     event.currentTarget.style.setProperty("--cursor-x", `${event.clientX}px`);
     event.currentTarget.style.setProperty("--cursor-y", `${event.clientY}px`);
@@ -916,6 +965,7 @@ export default function App() {
         onAutomations={() => navigate("automations")}
         onPin={(session) => void patchSession(session, { pinned: !session.pinned })}
         onArchive={(session) => void patchSession(session, { archived: true })}
+        onArchiveProject={(project) => void archiveProject(project)}
         onToggle={() => setSidebarCollapsed((current) => !current)}
         onBack={goBack}
         onForward={goForward}
@@ -936,7 +986,7 @@ export default function App() {
           </div>
         </div>
         {view === "settings" && settings ? (
-          <SettingsView settings={settings} onBack={() => navigate("chat")} onChange={updateSettings} />
+          <SettingsView settings={settings} models={models} onBack={() => navigate("chat")} onChange={updateSettings} />
         ) : view === "projects" ? (
           <ProjectsView
             projects={projects}
@@ -951,6 +1001,7 @@ export default function App() {
             onCreate={createProject}
             onSelect={(project) => selectProject(project, "projects")}
             onSelectSession={selectSession}
+            onArchive={archiveProject}
             onRefresh={refreshProjects}
           />
         ) : view === "search" || view === "extensions" || view === "automations" ? (
@@ -971,7 +1022,7 @@ export default function App() {
           />
         ) : (
           <div className="chat-workspace">
-            <div className="chat-column">
+            <div className={`chat-column ${composerCentered ? "empty-start" : "has-thread"}`}>
               <ThreadView
                 messages={visibleMessages}
                 isStreaming={agent.isStreaming}
@@ -979,6 +1030,7 @@ export default function App() {
                 connectionState={agent.connectionState}
                 sessionName={sessions.find((session) => session.id === activeId)?.name}
                 contextUsage={agent.contextUsage}
+                displayName={settings.displayName}
                 onAbort={agent.abort}
               />
               <Composer

@@ -17,9 +17,11 @@
 .sidebar.collapsed .sidebar-actions span,
 .sidebar.collapsed .project-row span,
 .sidebar.collapsed .project-row em,
+.sidebar.collapsed .project-close,
 .sidebar.collapsed .sidebar-brand strong,
 .sidebar.collapsed .project-label button,
 .sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .sidebar-label.inline,
 .sidebar.collapsed .folder-chats,
 .sidebar.collapsed .task-copy,
 .sidebar.collapsed .task-actions,
@@ -184,6 +186,39 @@
   min-width: 0;
 }
 
+.project-row-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 2px;
+}
+
+.project-close {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  padding: 0;
+  border: 0.5px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.project-folder:hover .project-close,
+.project-folder.active .project-close {
+  opacity: 1;
+}
+
+.project-close:hover {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--hover-bg) 86%, var(--neon-rose) 7%);
+  color: var(--text-primary);
+}
+
 .project-row span {
   overflow: hidden;
   flex: 1;
@@ -210,7 +245,34 @@
 }
 
 .sidebar-label.inline {
-  padding: 10px 8px 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px 6px;
+}
+
+.sidebar-label.inline button {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.sidebar-label.inline button:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
+.loose-chats {
+  display: grid;
+  gap: 1px;
+  padding: 0 4px 4px;
 }
 
 .task-list {
@@ -390,9 +452,11 @@
   .sidebar-actions span,
   .project-row span,
   .project-row em,
+  .project-close,
   .sidebar-brand strong,
   .project-label button,
   .sidebar-label,
+  .sidebar-label.inline,
   .folder-chats,
   .task-copy,
   .user-copy {

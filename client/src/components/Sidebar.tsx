@@ -36,6 +36,7 @@ interface SidebarProps {
   onAutomations: () => void;
   onPin: (session: Session) => void;
   onArchive: (session: Session) => void;
+  onArchiveProject: (project: ProjectInfo) => void;
   onToggle: () => void;
   onBack: () => void;
   onForward: () => void;
@@ -77,6 +78,7 @@ export default function Sidebar({
   onAutomations,
   onPin,
   onArchive,
+  onArchiveProject,
   onToggle,
   onBack,
   onForward
@@ -149,29 +151,27 @@ export default function Sidebar({
         <button onClick={onProjects} title="Manage projects" aria-label="Manage projects"><Icon name="plus" size={12} /></button>
       </div>
       <div className="project-list folder-list">
-        <div className={`project-folder ${activeProjectId === "" ? "active" : ""}`}>
-          <button
-            className={`project-row ${activeProjectId === "" ? "active" : ""}`}
-            onClick={onSelectUnassigned}
-            title="Chats not attached to a project"
-          >
-            <Icon name="archive" /> <span>Unassociated</span><em>{unassignedSessions.length}</em>
-          </button>
-          <div className="folder-chats">
-            {unassignedSessions.map(renderSession)}
-          </div>
-        </div>
         {projects.map((project) => {
           const nested = projectSessions(project.id);
           return (
             <div key={project.id} className={`project-folder ${project.id === activeProjectId ? "active" : ""}`}>
-              <button
-                className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
-                onClick={() => onSelectProject(project)}
-                title={project.rootPath}
-              >
-                <Icon name="folder" /> <span>{visibleProjectName(project.name)}</span><em>{nested.length}</em>
-              </button>
+              <div className="project-row-shell">
+                <button
+                  className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
+                  onClick={() => onSelectProject(project)}
+                  title={project.rootPath}
+                >
+                  <Icon name="folder" /> <span>{visibleProjectName(project.name)}</span><em>{nested.length}</em>
+                </button>
+                <button
+                  className="project-close"
+                  title="Close project"
+                  aria-label={`Close ${visibleProjectName(project.name)}`}
+                  onClick={() => onArchiveProject(project)}
+                >
+                  <Icon name="archive" size={12} />
+                </button>
+              </div>
               <div className="folder-chats">
                 {nested.map(renderSession)}
               </div>
@@ -182,6 +182,19 @@ export default function Sidebar({
           <button className={`project-row ${activeView === "projects" ? "active" : ""}`} onClick={onProjects}>
             <Icon name="folder" /> <span>Create project</span>
           </button>
+        ) : null}
+        {unassignedSessions.length ? (
+          <>
+            <div className="sidebar-label inline">
+              <span>Unassociated</span>
+              <button onClick={onSelectUnassigned} title="Show unassociated chats" aria-label="Show unassociated chats">
+                <Icon name="archive" size={12} />
+              </button>
+            </div>
+            <div className="loose-chats">
+              {unassignedSessions.map(renderSession)}
+            </div>
+          </>
         ) : null}
       </div>
       <div className="task-list" />

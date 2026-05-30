@@ -8,7 +8,7 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import { authRouter, maybeRefresh } from "./auth.js";
 import { PiSession } from "./piProcess.js";
-import { APP_CONFIG_DIR, PI_AUTH_PATH, TOKEN_PATH, readTokens } from "./tokenStore.js";
+import { APP_CONFIG_DIR, API_KEY_PROVIDER_IDS, PI_AUTH_PATH, TOKEN_PATH, readProviderAuthStatus, readTokens, removeApiKeyCredential, writeApiKeyCredential } from "./tokenStore.js";
 import { SESSION_DIR, listSessions, sessionsRouter } from "./sessions.js";
 import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, sanitizeSettingsPatch, writeSettings } from "./settings.js";
 import { listProjects, projectsRouter } from "./projects.js";
@@ -86,6 +86,36 @@ app.use("/api/advisor", advisorRouter);
 app.use("/api/subagents", subagentsRouter);
 app.use("/api/beautiful-ui", beautifulUiRouter);
 app.use("/api/clipboard", clipboardRouter);
+app.get("/api/provider-auth", (_req, res) => {
+  res.json({ ok: true, providers: readProviderAuthStatus() });
+});
+app.post("/api/provider-auth/:provider", (req, res) => {
+  try {
+    const provider = String(req.params.provider ?? "");
+    if (!API_KEY_PROVIDER_IDS.includes(provider as any)) {
+      res.status(400).json({ ok: false, error: "Unsupported API key provider." });
+      return;
+    }
+    const apiKey = typeof req.body?.apiKey === "string" ? req.body.apiKey : "";
+    writeApiKeyCredential(provider, apiKey);
+    res.json({ ok: true, providers: readProviderAuthStatus() });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : "Unable to save API key." });
+  }
+});
+app.delete("/api/provider-auth/:provider", (req, res) => {
+  try {
+    const provider = String(req.params.provider ?? "");
+    if (!API_KEY_PROVIDER_IDS.includes(provider as any)) {
+      res.status(400).json({ ok: false, error: "Unsupported API key provider." });
+      return;
+    }
+    removeApiKeyCredential(provider);
+    res.json({ ok: true, providers: readProviderAuthStatus() });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: err instanceof Error ? err.message : "Unable to remove API key." });
+  }
+});
 app.get("/api/settings", (_req, res) => {
   res.json({ settings: readSettings() });
 });

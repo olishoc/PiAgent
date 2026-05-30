@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AppSettings } from "../App";
+import { AppSettings, ProviderOption } from "../App";
 import { apiUrl } from "../lib/api";
 import { checkAndInstallUpdate, UpdateStatus } from "../lib/updater";
 import Icon, { IconName } from "./Icon";
@@ -7,6 +7,7 @@ import Icon, { IconName } from "./Icon";
 const nav: Array<{ id: string; label: string; icon: IconName }> = [
   { id: "General", label: "General", icon: "gear" },
   { id: "Apparence", label: "Apparence", icon: "spark" },
+  { id: "Connexions", label: "Connexions", icon: "link" },
   { id: "Configuration", label: "Configuration", icon: "shield" },
   { id: "Modeles", label: "Modeles", icon: "terminal" },
   { id: "Sous-agents", label: "Sous-agents", icon: "plug" },
@@ -19,8 +20,18 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
 
 interface SettingsViewProps {
   settings: AppSettings;
+  models: ProviderOption[];
   onBack: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
+}
+
+interface ProviderAuthState {
+  provider: string;
+  configured: boolean;
+  type?: string | null;
+  source?: string | null;
+  envVar?: string;
+  writable?: boolean;
 }
 
 async function openTarget(target: string) {
@@ -90,7 +101,7 @@ const onOffOptions: Array<SettingSelectOption<"on" | "off">> = [
 ];
 
 const thinkingOptions: Array<SettingSelectOption<AppSettings["thinkingLevel"]>> = [
-  { value: "high", label: "High", note: "thinking mode" },
+  { value: "high", label: "High", note: "deep" },
   { value: "xhigh", label: "High+", note: "max" },
   { value: "medium", label: "Medium", note: "balanced" },
   { value: "low", label: "Low" },
@@ -99,18 +110,42 @@ const thinkingOptions: Array<SettingSelectOption<AppSettings["thinkingLevel"]>> 
 ];
 
 const reasoningOptions: Array<SettingSelectOption<AppSettings["advisorReasoning"]>> = [
-  { value: "high", label: "High", note: "thinking mode" },
+  { value: "high", label: "High", note: "deep" },
   { value: "xhigh", label: "High+", note: "max" },
   { value: "medium", label: "Medium", note: "balanced" },
   { value: "low", label: "Low" },
   { value: "minimal", label: "Minimal" }
 ];
 
-const providerOptions: Array<SettingSelectOption<AppSettings["provider"]>> = [
+const fallbackProviderOptions: Array<SettingSelectOption<string>> = [
   { value: "openai-codex", label: "OpenAI Codex OAuth", note: "recommended" },
   { value: "openai", label: "OpenAI API" },
   { value: "anthropic", label: "Claude" },
   { value: "openrouter", label: "OpenRouter" }
+];
+
+const providerConnectionPages = [
+  {
+    id: "openai",
+    label: "OpenAI API",
+    eyebrow: "OPENAI_API_KEY",
+    placeholder: "sk-...",
+    description: "Use OpenAI API billing directly through Pi's auth file."
+  },
+  {
+    id: "anthropic",
+    label: "Claude / Anthropic",
+    eyebrow: "ANTHROPIC_API_KEY",
+    placeholder: "sk-ant-...",
+    description: "Connect Claude API models with an Anthropic API key."
+  },
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    eyebrow: "OPENROUTER_API_KEY",
+    placeholder: "sk-or-v1-...",
+    description: "Route OpenRouter models through Pi's OpenRouter provider."
+  }
 ];
 
 const approvalOptions: Array<SettingSelectOption<AppSettings["approvalPolicy"]>> = [
@@ -119,10 +154,13 @@ const approvalOptions: Array<SettingSelectOption<AppSettings["approvalPolicy"]>>
   { value: "never", label: "Never", note: "autonomous" }
 ];
 
-export default function SettingsView({ settings, onBack, onChange }: SettingsViewProps) {
+export default function SettingsView({ settings, models, onBack, onChange }: SettingsViewProps) {
   const [active, setActive] = useState("General");
+  const [activeProviderPage, setActiveProviderPage] = useState(providerConnectionPages[0].id);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle", message: "" });
   const [actionStatus, setActionStatus] = useState("");
+  const [providerAuth, setProviderAuth] = useState<Record<string, ProviderAuthState>>({});
+  const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
   const [diagnostics, setDiagnostics] = useState<any>(null);
   const [gitName, setGitName] = useState("");
   const [gitEmail, setGitEmail] = useState("");
@@ -133,6 +171,44 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [beautifulUiStatus, setBeautifulUiStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
   const codexFontLocked = settings.themePreset === "codex";
+  const providerOptions = models.length
+    ? [
+      ...fallbackProviderOptions.map((fallback) => {
+        const provider = models.find((item) => item.id === fallback.value);
+        return {
+          value: fallback.value,
+          label: provider?.name ?? fallback.label,
+          note: provider?.auth ?? fallback.note
+        };
+      }),
+      ...models
+        .filter((provider) => !fallbackProviderOptions.some((fallback) => fallback.value === provider.id))
+        .map((provider) => ({ value: provider.id, label: provider.name, note: provider.auth }))
+    ]
+    : fallbackProviderOptions;
+  const modelsForProvider = (providerId: string, currentModel?: string) => {
+    const provider = models.find((item) => item.id === providerId);
+    const options = (provider?.models ?? []).map((model) => ({
+      value: model.id,
+      label: model.name ?? model.id,
+      note: model.reasoning ? "reasoning" : model.contextWindow ? `${Math.round(model.contextWindow / 1000)}k` : undefined
+    }));
+    if (currentModel && !options.some((option) => option.value === currentModel)) {
+      options.unshift({ value: currentModel, label: currentModel, note: "current" });
+    }
+    return options.length ? options : [{ value: currentModel || "gpt-5.5", label: currentModel || "gpt-5.5", note: "current" }];
+  };
+  const firstModelForProvider = (providerId: string, fallback: string) => models.find((item) => item.id === providerId)?.models[0]?.id ?? fallback;
+  const changeMainProvider = (provider: string) => onChange({ provider, modelLabel: firstModelForProvider(provider, settings.modelLabel) });
+  const changeAdvisorProvider = (provider: string) => onChange({ advisorProvider: provider, advisorModel: firstModelForProvider(provider, settings.advisorModel) });
+  const subagentModelOptions = [
+    { value: "inherit", label: "Inherit main model", note: "default" },
+    ...models.flatMap((provider) => provider.models.map((model) => ({
+      value: model.id,
+      label: `${provider.name} / ${model.name ?? model.id}`,
+      note: model.reasoning ? "reasoning" : undefined
+    })))
+  ];
 
   const refreshGithubStatus = async () => {
     const response = await fetch(apiUrl("/api/github/status")).catch(() => null);
@@ -160,12 +236,57 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
     setBeautifulUiStatus(data);
   };
 
+  const refreshProviderAuth = async () => {
+    const response = await fetch(apiUrl("/api/provider-auth")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (Array.isArray(data?.providers)) {
+      setProviderAuth(Object.fromEntries(data.providers.map((provider: ProviderAuthState) => [provider.provider, provider])));
+    }
+  };
+
   useEffect(() => {
     void refreshGithubStatus();
     void refreshAdvisorStatus();
     void refreshSubagentStatus();
     void refreshBeautifulUiStatus();
+    void refreshProviderAuth();
   }, []);
+
+  const saveProviderKey = async (provider: string) => {
+    const apiKey = providerKeys[provider] ?? "";
+    if (!apiKey.trim()) {
+      setActionStatus("Paste an API key first.");
+      return;
+    }
+    setActionStatus(`Saving ${provider} key...`);
+    const response = await fetch(apiUrl(`/api/provider-auth/${encodeURIComponent(provider)}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apiKey })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      setActionStatus(data.error ?? "API key save failed.");
+      return;
+    }
+    setProviderKeys((current) => ({ ...current, [provider]: "" }));
+    if (Array.isArray(data.providers)) setProviderAuth(Object.fromEntries(data.providers.map((item: ProviderAuthState) => [item.provider, item])));
+    setActionStatus(`${provider} connected and selected.`);
+    onChange({ provider, modelLabel: firstModelForProvider(provider, settings.modelLabel) });
+    window.setTimeout(() => void refreshProviderAuth(), 300);
+  };
+
+  const disconnectProvider = async (provider: string) => {
+    setActionStatus(`Disconnecting ${provider}...`);
+    const response = await fetch(apiUrl(`/api/provider-auth/${encodeURIComponent(provider)}`), { method: "DELETE" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      setActionStatus(data.error ?? "Provider disconnect failed.");
+      return;
+    }
+    if (Array.isArray(data.providers)) setProviderAuth(Object.fromEntries(data.providers.map((item: ProviderAuthState) => [item.provider, item])));
+    setActionStatus(`${provider} disconnected from local auth file.`);
+  };
 
   const diagnose = async () => {
     setActionStatus("Running diagnostics...");
@@ -358,22 +479,21 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Fournisseur</span>
               <SettingSelect
                 value={settings.provider}
-                onChange={(value) => onChange({ provider: value })}
-                options={[
-                  { value: "openai-codex", label: "OpenAI Codex OAuth", note: "recommended" },
-                  { value: "openai", label: "OpenAI API" },
-                  { value: "anthropic", label: "Claude" },
-                  { value: "openrouter", label: "OpenRouter" }
-                ]}
+                onChange={changeMainProvider}
+                options={providerOptions}
               />
               <span>Modele</span>
-              <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
+              <SettingSelect
+                value={settings.modelLabel}
+                onChange={(value) => onChange({ modelLabel: value })}
+                options={modelsForProvider(settings.provider, settings.modelLabel)}
+              />
               <span>Thinking</span>
               <SettingSelect
                 value={settings.thinkingLevel}
                 onChange={(value) => onChange({ thinkingLevel: value })}
                 options={[
-                  { value: "medium", label: "Thinking mode", note: "balanced" },
+                  { value: "medium", label: "Balanced", note: "default" },
                   { value: "high", label: "Deep thinking", note: "review" },
                   { value: "xhigh", label: "Max thinking", note: "slow" },
                   { value: "low", label: "Light thinking" },
@@ -382,6 +502,67 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 ]}
               />
             </div>
+          </section>
+        ) : null}
+
+        {active === "Connexions" ? (
+          <section className="settings-section provider-pages">
+            <h2>Connexions API</h2>
+            <div className="provider-page-tabs">
+              {providerConnectionPages.map((provider) => (
+                <button
+                  key={provider.id}
+                  className={activeProviderPage === provider.id ? "active" : ""}
+                  onClick={() => setActiveProviderPage(provider.id)}
+                >
+                  <Icon name="link" /> {provider.label}
+                </button>
+              ))}
+            </div>
+            {providerConnectionPages.filter((provider) => provider.id === activeProviderPage).map((provider) => {
+              const status = providerAuth[provider.id];
+              const configured = Boolean(status?.configured);
+              const source = status?.source === "environment"
+                ? `Environment: ${status.envVar}`
+                : status?.source === "auth_file"
+                  ? "Local auth file"
+                  : "Not connected";
+              return (
+                <article key={provider.id} className="provider-card">
+                  <header>
+                    <div>
+                      <span>{provider.eyebrow}</span>
+                      <h2>{provider.label}</h2>
+                    </div>
+                    <strong className={configured ? "connected" : ""}>{configured ? "Connected" : "Not connected"}</strong>
+                  </header>
+                  <p>{provider.description}</p>
+                  <div className="provider-status-grid">
+                    <span>Status</span><em>{source}</em>
+                    <span>Provider</span><em>{provider.id}</em>
+                    <span>Selected model</span><em>{settings.provider === provider.id ? settings.modelLabel : firstModelForProvider(provider.id, "available after refresh")}</em>
+                  </div>
+                  <label className="secret-input">
+                    API key
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      placeholder={provider.placeholder}
+                      value={providerKeys[provider.id] ?? ""}
+                      onChange={(event) => setProviderKeys((current) => ({ ...current, [provider.id]: event.target.value }))}
+                    />
+                  </label>
+                  <div className="provider-actions">
+                    <button onClick={() => void saveProviderKey(provider.id)}><Icon name="check" /> Save key</button>
+                    <button onClick={() => {
+                      onChange({ provider: provider.id, modelLabel: firstModelForProvider(provider.id, settings.modelLabel) });
+                      setActionStatus(`${provider.label} selected.`);
+                    }}><Icon name="terminal" /> Use provider</button>
+                    <button disabled={!configured || status?.source === "environment"} onClick={() => void disconnectProvider(provider.id)}><Icon name="archive" /> Disconnect</button>
+                  </div>
+                </article>
+              );
+            })}
           </section>
         ) : null}
 
@@ -424,7 +605,13 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Profondeur max</span>
               <input type="number" min="0" max="3" value={settings.subagentMaxDepth} onChange={(e) => onChange({ subagentMaxDepth: Number(e.target.value) })} />
               <span>Modele des enfants</span>
-              <input value={settings.subagentModel} onChange={(e) => onChange({ subagentModel: e.target.value || "inherit" })} />
+              <SettingSelect
+                value={settings.subagentModel}
+                onChange={(value) => onChange({ subagentModel: value || "inherit" })}
+                options={subagentModelOptions.some((option) => option.value === settings.subagentModel)
+                  ? subagentModelOptions
+                  : [{ value: settings.subagentModel, label: settings.subagentModel, note: "current" }, ...subagentModelOptions]}
+              />
               <span>Thinking enfants</span>
               <SettingSelect
                 value={settings.subagentThinking}
@@ -468,10 +655,14 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 options={onOffOptions}
               />
               <span>Advisor modele</span>
-              <input value={`${settings.advisorProvider}/${settings.advisorModel}`} onChange={(e) => {
-                const [provider, ...modelParts] = e.target.value.split("/");
-                if (provider && modelParts.length) onChange({ advisorProvider: provider, advisorModel: modelParts.join("/") });
-              }} />
+              <div className="split-setting">
+                <SettingSelect value={settings.advisorProvider} onChange={changeAdvisorProvider} options={providerOptions} />
+                <SettingSelect
+                  value={settings.advisorModel}
+                  onChange={(value) => onChange({ advisorModel: value })}
+                  options={modelsForProvider(settings.advisorProvider, settings.advisorModel)}
+                />
+              </div>
               <span>Advisor reasoning</span>
               <SettingSelect
                 value={settings.advisorReasoning}
@@ -610,10 +801,14 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
         {active === "Configuration" ? (
           <>
             <section className="settings-card compact">
-              <span>Modele</span>
-              <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
               <span>Fournisseur</span>
-              <SettingSelect value={settings.provider} onChange={(value) => onChange({ provider: value })} options={providerOptions} />
+              <SettingSelect value={settings.provider} onChange={changeMainProvider} options={providerOptions} />
+              <span>Modele</span>
+              <SettingSelect
+                value={settings.modelLabel}
+                onChange={(value) => onChange({ modelLabel: value })}
+                options={modelsForProvider(settings.provider, settings.modelLabel)}
+              />
               <span>Espace de travail</span>
               <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
               <span>Nom affiche</span>

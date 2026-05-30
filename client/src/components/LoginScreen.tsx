@@ -16,7 +16,7 @@ export default function LoginScreen({ onLogin, loading, authUrl, error, message 
       <section className="login-panel">
         <span className="login-icon app-icon-mark" aria-hidden="true" />
         <h1>local coding workspace</h1>
-        <p>gpt-5.5 thinking mode</p>
+        <p>gpt-5.5</p>
         {message ? <p role="status">{message}</p> : null}
         {error ? <p className="inline-error">Sign in failed: {error}</p> : null}
         <button className="login-button" type="button" onClick={onLogin} disabled={loading}>

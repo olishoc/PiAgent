@@ -660,40 +660,144 @@ export function handlePiEvent(
   }
 }
 
+function savedMessagePayload(message: any) {
+  return message?.message && typeof message.message === "object" ? message.message : message;
+}
+
+function savedMessageTime(message: any, payload: any) {
+  const value = payload?.timestamp ?? payload?.createdAt ?? payload?.time ?? message?.timestamp ?? message?.createdAt ?? message?.time;
+  const parsed = value ? new Date(value).getTime() : NaN;
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function savedMessageContent(message: any, payload: any) {
+  return payload?.content ?? payload?.text ?? message?.content ?? message?.text ?? "";
+}
+
+function savedToolName(message: any, payload: any) {
+  return payload?.toolName ?? payload?.name ?? message?.toolName ?? message?.name ?? payload?.tool_call_name ?? message?.tool_call_name;
+}
+
+function normalizeToolResult(acc: DisplayMessage[], message: any, payload: any): DisplayMessage[] {
+  const toolName = savedToolName(message, payload) ?? "tool";
+  const toolResult = {
+    ...message,
+    ...payload,
+    role: "toolResult",
+    toolName,
+    toolCallId: payload?.toolCallId ?? payload?.tool_call_id ?? message?.toolCallId ?? message?.tool_call_id ?? payload?.id ?? message?.id,
+    result: payload?.result ?? message?.result ?? { content: savedMessageContent(message, payload) },
+    isError: Boolean(payload?.isError ?? message?.isError ?? payload?.error ?? message?.error),
+    timestamp: payload?.timestamp ?? message?.timestamp ?? payload?.createdAt ?? message?.createdAt
+  };
+  if (toolName === "advisor") return [...acc, advisorMessageFromToolResult(toolResult)];
+  if (toolName === "subagent") return [...acc, subagentMessageFromToolResult(toolResult)];
+  return addToolMessage(acc, {
+    id: toolResult.toolCallId ?? crypto.randomUUID(),
+    kind: "tool",
+    toolName,
+    status: toolResult.isError ? "error" : "done",
+    endedAt: savedMessageTime(message, payload)
+  });
+}
+
 function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMessage[] {
   return rawMessages.reduce<DisplayMessage[]>((acc, message) => {
-    if (message.role === "toolResult") {
-      if (message.toolName === "advisor") return [...acc, advisorMessageFromToolResult(message)];
-      if (message.toolName === "subagent") return [...acc, subagentMessageFromToolResult(message)];
+    const payload = savedMessagePayload(message);
+    const role = payload?.role ?? message?.role;
+    const recordType = payload?.type ?? message?.type;
+    const content = savedMessageContent(message, payload);
+    const createdAt = savedMessageTime(message, payload);
+    const toolName = savedToolName(message, payload);
+
+    if (recordType === "tool_execution_start") {
+      if (toolName === "advisor") return upsertAdvisorMessage(acc, { ...message, ...payload, toolName }, "running");
+      if (toolName === "subagent") return upsertSubagentMessage(acc, { ...message, ...payload, toolName }, "running");
       return addToolMessage(acc, {
-        id: message.toolCallId ?? crypto.randomUUID(),
-        kind: "tool" as const,
-        toolName: message.toolName ?? "tool",
-        status: message.isError ? "error" as const : "done" as const
+        id: payload?.toolCallId ?? payload?.id ?? message?.toolCallId ?? message?.id ?? crypto.randomUUID(),
+        kind: "tool",
+        toolName: toolName ?? "tool",
+        args: payload?.args ?? message?.args,
+        status: "running",
+        startedAt: createdAt
       });
     }
-    const role = message.role === "user" ? "user" : "agent";
-    const content = message.text ?? message.content ?? "";
-    if (message.role === "assistant" && Array.isArray(content)) {
-      return content.reduce<DisplayMessage[]>((innerAcc, part: any) => {
-        if (part.type === "thinking" && typeof part.thinking === "string") {
+
+    if (recordType === "tool_execution_end") {
+      if (toolName === "advisor") return upsertAdvisorMessage(acc, { ...message, ...payload, toolName }, payload?.isError || message?.isError ? "error" : "done", advisorResultText(payload?.result ?? message?.result));
+      if (toolName === "subagent") return upsertSubagentMessage(acc, { ...message, ...payload, toolName }, payload?.isError || message?.isError ? "error" : "done", subagentResultText(payload?.result ?? message?.result));
+      return updateToolMessage(addToolMessage(acc, {
+        id: payload?.toolCallId ?? payload?.id ?? message?.toolCallId ?? message?.id ?? crypto.randomUUID(),
+        kind: "tool",
+        toolName: toolName ?? "tool",
+        args: payload?.args ?? message?.args,
+        status: "running",
+        startedAt: createdAt
+      }), { ...message, ...payload, toolName });
+    }
+
+    if (role === "toolResult" || role === "tool" || recordType === "toolResult" || recordType === "tool_result") {
+      return normalizeToolResult(acc, message, payload);
+    }
+
+    if (role === "assistant" && Array.isArray(content)) {
+      return content.reduce<DisplayMessage[]>((innerAcc, part: any, index) => {
+        if (typeof part === "string") {
+          return part ? [...innerAcc, { id: `${payload?.id ?? message?.id ?? crypto.randomUUID()}-${index}`, kind: "agent", text: part, createdAt }] : innerAcc;
+        }
+        const partType = String(part?.type ?? "").toLowerCase();
+        const thinking = typeof part?.thinking === "string"
+          ? part.thinking
+          : partType.includes("thinking") || partType.includes("reasoning")
+            ? String(part?.text ?? part?.content ?? "")
+            : "";
+        if (thinking) {
           if (!showThinking) return innerAcc;
-          return [...innerAcc, { id: crypto.randomUUID(), kind: "thinking", text: latestThinkingLine(part.thinking), detail: part.thinking, phase: "thought", active: false, createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
+          return [...innerAcc, {
+            id: `${payload?.id ?? message?.id ?? crypto.randomUUID()}-thinking-${index}`,
+            kind: "thinking",
+            text: latestThinkingLine(thinking),
+            detail: thinking,
+            phase: "thought",
+            active: false,
+            createdAt
+          }];
         }
-        if (part.type === "toolCall") {
-          if (part.name === "subagent") {
-            return upsertSubagentMessage(innerAcc, { id: part.id, name: "subagent", args: part.arguments }, "done", "Subagent call recorded in this session.");
-          }
-          return addToolMessage(innerAcc, { id: part.id ?? crypto.randomUUID(), kind: "tool", toolName: part.name ?? "tool", args: part.arguments, status: "done" });
+        if (partType === "toolcall" || partType === "tool_call" || partType === "tool_use") {
+          const name = part.name ?? part.toolName ?? "tool";
+          const event = {
+            id: part.id ?? part.toolCallId ?? part.tool_call_id,
+            name,
+            args: part.arguments ?? part.args ?? part.input
+          };
+          if (name === "subagent") return upsertSubagentMessage(innerAcc, event, "done", "Subagent call recorded in this session.");
+          if (name === "advisor") return upsertAdvisorMessage(innerAcc, event, "done", "Advisor call recorded in this session.");
+          return addToolMessage(innerAcc, {
+            id: event.id ?? crypto.randomUUID(),
+            kind: "tool",
+            toolName: name,
+            args: event.args,
+            status: "done",
+            endedAt: createdAt
+          });
         }
-        const partText = part.text ?? "";
-        return partText ? [...innerAcc, { id: crypto.randomUUID(), kind: "agent", text: String(partText), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }] : innerAcc;
+        if (partType === "toolresult" || partType === "tool_result") {
+          return normalizeToolResult(innerAcc, part, part);
+        }
+        const partText = typeof part?.text === "string" ? part.text : typeof part?.content === "string" ? part.content : "";
+        return partText ? [...innerAcc, { id: `${payload?.id ?? message?.id ?? crypto.randomUUID()}-text-${index}`, kind: "agent", text: partText, createdAt }] : innerAcc;
       }, acc);
     }
-    const text = Array.isArray(content)
-      ? content.map((part) => part.text ?? "").filter(Boolean).join("\n")
-      : content;
-    return [...acc, { id: message.id ?? crypto.randomUUID(), kind: role, text: String(text), createdAt: message.timestamp ? new Date(message.timestamp).getTime() : Date.now() }];
+
+    const text = Array.isArray(content) ? extractTextContent(content) : String(content ?? "");
+    if (!text.trim()) return acc;
+    const kind = role === "user" ? "user" : role === "system" ? "status" : "agent";
+    return [...acc, {
+      id: payload?.id ?? message?.id ?? crypto.randomUUID(),
+      kind,
+      text,
+      createdAt
+    }];
   }, []);
 }
 

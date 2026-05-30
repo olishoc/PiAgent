@@ -42,7 +42,8 @@ interface ProjectsViewProps {
   onCreate: (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => Promise<void>;
   onSelect: (project: ProjectInfo) => Promise<void>;
   onSelectSession: (session: Session) => void;
-  onRefresh: () => Promise<void>;
+  onArchive: (project: ProjectInfo) => Promise<void>;
+  onRefresh: () => Promise<unknown>;
 }
 
 function formatPath(path: string) {
@@ -62,7 +63,7 @@ function visibleProjectName(name: string) {
   return name.replace(/Pi\s*Agent/gi, "App").replace(/PiAgent/gi, "App");
 }
 
-export default function ProjectsView({ projects, activeProjectId, activeSessionId, settings, sessions, onBackToChat, onNewChat, onCreate, onSelect, onSelectSession, onRefresh }: ProjectsViewProps) {
+export default function ProjectsView({ projects, activeProjectId, activeSessionId, settings, sessions, onBackToChat, onNewChat, onCreate, onSelect, onSelectSession, onArchive, onRefresh }: ProjectsViewProps) {
   const [name, setName] = useState("New project");
   const [rootPath, setRootPath] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
@@ -237,11 +238,16 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
         <main className="project-detail">
           <div className="project-strip">
             {projects.map((project) => (
-              <button key={project.id} className={project.id === activeProject?.id ? "active" : ""} onClick={() => void onSelect(project)}>
-                <Icon name="folder" />
-                <span>{visibleProjectName(project.name)}</span>
-                <em>{formatPath(project.rootPath)}</em>
-              </button>
+              <div key={project.id} className={`project-strip-item ${project.id === activeProject?.id ? "active" : ""}`}>
+                <button className="project-open" onClick={() => void onSelect(project)}>
+                  <Icon name="folder" />
+                  <span>{visibleProjectName(project.name)}</span>
+                  <em>{formatPath(project.rootPath)}</em>
+                </button>
+                <button className="project-strip-close" title="Close project" aria-label={`Close ${visibleProjectName(project.name)}`} onClick={() => void onArchive(project)}>
+                  <Icon name="archive" size={13} />
+                </button>
+              </div>
             ))}
             {!projects.length ? <p>No projects yet. Create one to anchor long-running work.</p> : null}
           </div>
@@ -258,6 +264,9 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
                   <span><strong>{git?.branch || activeProject.defaultBranch}</strong> branch</span>
                   <span><strong>{settings.longRunningMode ? "on" : "off"}</strong> long run</span>
                 </div>
+                <button className="project-summary-close" onClick={() => void onArchive(activeProject)}>
+                  <Icon name="archive" /> Close
+                </button>
               </section>
 
               <section className="project-panel">
