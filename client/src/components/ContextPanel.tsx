@@ -6,6 +6,7 @@ import { Session } from "./Sidebar";
 import { useEffect, useState } from "react";
 
 interface ContextPanelProps {
+  open: boolean;
   settings: AppSettings;
   activeProject?: ProjectInfo;
   activeSessionId?: string;
@@ -16,6 +17,7 @@ interface ContextPanelProps {
   onOpenSettings: () => void;
   onOpenSessions: () => void;
   onCompact: () => void;
+  onClose: () => void;
 }
 
 function formatTokens(value?: number) {
@@ -25,7 +27,7 @@ function formatTokens(value?: number) {
   return String(value);
 }
 
-export default function ContextPanel({ settings, activeProject, activeSessionId, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
+export default function ContextPanel({ open, settings, activeProject, activeSessionId, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact, onClose }: ContextPanelProps) {
   const [tab, setTab] = useState<"context" | "files" | "memory" | "apps">("context");
   const [memoryScope, setMemoryScope] = useState<"project" | "session" | "global">("project");
   const [files, setFiles] = useState<Array<{ name: string; path: string; size: number; modified: number; ext: string }>>([]);
@@ -43,6 +45,15 @@ export default function ContextPanel({ settings, activeProject, activeSessionId,
   const [clipboardStatus, setClipboardStatus] = useState("");
   const [advisorStatus, setAdvisorStatus] = useState<any>(null);
   const [subagentStatus, setSubagentStatus] = useState<any>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -207,7 +218,13 @@ export default function ContextPanel({ settings, activeProject, activeSessionId,
   };
 
   return (
-    <aside className="context-panel">
+    <div className="context-drawer-layer" role="presentation" data-open={open ? "true" : "false"}>
+      <button className="context-drawer-scrim" aria-label="Dismiss workspace context" onClick={onClose} />
+      <aside className="context-panel" aria-label="Workspace context">
+        <div className="context-panel-header">
+          <span>Workspace context</span>
+          <button onClick={onClose} aria-label="Close workspace context"><Icon name="x" size={14} /></button>
+        </div>
       <div className="context-tabs">
         <button className={tab === "context" ? "active" : ""} onClick={() => setTab("context")}><Icon name="circle" /> Context</button>
         <button className={tab === "files" ? "active" : ""} onClick={() => setTab("files")}><Icon name="file" /> Files</button>
@@ -376,6 +393,7 @@ export default function ContextPanel({ settings, activeProject, activeSessionId,
           <p>Pi extensions load from Pi when the agent process starts. Use / commands from the composer to invoke installed templates and skills.</p>
         </section>
       </> : null}
-    </aside>
+      </aside>
+    </div>
   );
 }

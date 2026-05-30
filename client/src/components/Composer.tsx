@@ -15,6 +15,7 @@ interface ComposerProps {
   extensionCommands?: Array<{ name: string; description?: string; source?: string }>;
   onSettingsChange: (patch: Partial<AppSettings>) => void;
   onAgentCommand: (cmd: Record<string, unknown>) => Promise<any>;
+  onOpenContextPanel: () => void;
 }
 
 const slashCommands = [
@@ -43,7 +44,7 @@ function formatBytes(size?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand }: ComposerProps) {
+export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand, onOpenContextPanel }: ComposerProps) {
   const [text, setText] = useState("");
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -274,7 +275,8 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               <button onClick={() => { onSettingsChange({ subagentsEnabled: !settings?.subagentsEnabled, autoLaunchSubagents: !settings?.subagentsEnabled }); setAddOpen(false); }}><Icon name={settings?.subagentsEnabled ? "check" : "plug"} size={13} /> Pi subagents</button>
               <button onClick={() => { onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic", subagentsEnabled: true }); setAddOpen(false); }}><Icon name={settings?.autoLaunchSubagents ? "check" : "spark"} size={13} /> Auto delegation</button>
               <button onClick={() => { runCommand("/subagents-doctor"); setAddOpen(false); }}><Icon name="terminal" size={13} /> Subagents doctor</button>
-              <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "folder"} size={13} /> Workspace context</button>
+              <button onClick={() => { onOpenContextPanel(); setAddOpen(false); }}><Icon name="folder" size={13} /> Workspace context</button>
+              <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "circle"} size={13} /> {tools.context ? "Context on" : "Context off"}</button>
               {extensionCommands.length ? <strong className="menu-heading">Extensions</strong> : null}
               {extensionCommands.slice(0, 8).map((command) => (
                 <button key={command.name} onClick={() => { runCommand(`/${command.name}`); setAddOpen(false); }}>

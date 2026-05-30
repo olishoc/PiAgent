@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { APP_CONFIG_DIR } from "./tokenStore.js";
 
@@ -38,11 +39,34 @@ function writeSessionMeta(meta: Record<string, SessionMeta>) {
   fs.chmodSync(SESSION_META_PATH, 0o600);
 }
 
+function sessionIdFromDate(date = new Date()) {
+  return `${date.toISOString().replace(/[:.]/g, "-")}_${randomUUID()}`;
+}
+
 export function updateSessionMeta(id: string, patch: SessionMeta) {
   const meta = readSessionMeta();
   meta[id] = { ...(meta[id] ?? {}), ...patch };
   writeSessionMeta(meta);
   return meta[id];
+}
+
+export function createSession(projectId?: string | null): SessionInfo {
+  fs.mkdirSync(SESSION_DIR, { recursive: true });
+  const id = sessionIdFromDate();
+  const filePath = path.join(SESSION_DIR, `${id}.jsonl`);
+  fs.writeFileSync(filePath, JSON.stringify({ type: "set_session_name", name: "New thread", timestamp: new Date().toISOString() }) + "\n");
+  fs.chmodSync(filePath, 0o600);
+  if (projectId !== undefined) updateSessionMeta(id, { projectId });
+  return {
+    id,
+    name: "New thread",
+    lastModified: fs.statSync(filePath).mtimeMs,
+    messageCount: 0,
+    path: filePath,
+    projectId: projectId ?? null,
+    pinned: false,
+    archived: false
+  };
 }
 
 function parseSessionName(line: string): string | null {
@@ -140,6 +164,15 @@ sessionsRouter.get("/", (req, res, next) => {
     const unassignedOnly = req.query.unassigned === "1" || req.query.unassigned === "true";
     const includeArchived = req.query.includeArchived === "1" || req.query.includeArchived === "true";
     res.json({ sessions: listSessions({ projectId, unassignedOnly, includeArchived }) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+sessionsRouter.post("/", (req, res, next) => {
+  try {
+    const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : req.body?.projectId === null ? null : undefined;
+    res.status(201).json({ ok: true, session: createSession(projectId) });
   } catch (err) {
     next(err);
   }

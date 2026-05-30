@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import { APP_CONFIG_DIR } from "./tokenStore.js";
-import { AppSettings, readSettings, sanitizeSettingsPatch, writeSettings } from "./settings.js";
+import { AppSettings, readSettings, writeSettings } from "./settings.js";
 import { ProjectInfo, readProjects } from "./projects.js";
 
 type TaskStatus = "queued" | "running" | "done" | "error" | "cancelled";
@@ -682,7 +682,7 @@ subagentsRouter.patch("/config", (req, res) => {
   if (typeof body.model === "string" && body.model.trim()) patch.subagentModel = body.model.trim();
   if (["minimal", "low", "medium", "high", "xhigh"].includes(String(body.thinking))) patch.subagentThinking = body.thinking;
   if (["off", "fork-only", "always"].includes(String(body.intercomMode))) patch.subagentIntercomMode = body.intercomMode;
-  const settings = Object.keys(patch).length ? writeSettings(sanitizeSettingsPatch(patch)) : readSettings();
+  const settings = Object.keys(patch).length ? writeSettings(patch) : readSettings();
   syncSubagentConfig(settings);
   res.json(subagentStatus(settings));
 });

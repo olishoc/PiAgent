@@ -318,6 +318,7 @@ export default function App() {
   const agent = useAgent(auth.loggedIn, settings.thinkingLevel !== "off");
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -540,24 +541,31 @@ export default function App() {
 
   const createScopedSession = async (projectId: string | null = activeProjectId || null) => {
     agent.replaceMessages([]);
-    const result = await agent.sendCommand({ type: "new_session" });
-    const state = await agent.sendCommand({ type: "get_state" });
-    const sessionId = state?.data?.sessionId;
-    if (typeof sessionId === "string") {
-      await fetch(apiUrl(`/api/sessions/${encodeURIComponent(sessionId)}`), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId })
-      }).catch(() => {});
-      setActiveId(sessionId);
+    const response = await fetch(apiUrl("/api/sessions"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId })
+    });
+    const data = await response.json().catch(() => ({}));
+    const session = data?.session as Session | undefined;
+    if (!response.ok || !session?.id || !session.path) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: data?.error ?? "Unable to create a new thread." }]);
+      return "";
     }
+    setActiveId(session.id);
     const items = await fetchSessions(projectId);
     setSessions(items);
-    if (!sessionId && items[0]) setActiveId(items[0].id);
-    if (!result?.success) {
-      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: result?.error ?? "Unable to create a new thread." }]);
+    const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
+    if (switchResult?.success === false) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open the new thread." }]);
+      return "";
     }
-    return typeof sessionId === "string" ? sessionId : items[0]?.id ?? "";
+    const messagesResult = await agent.sendCommand({ type: "get_messages" });
+    if (messagesResult?.success === false) {
+      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi opened the thread, but messages could not be loaded." }]);
+      return "";
+    }
+    return session.id;
   };
 
   const createProject = async (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => {
@@ -871,7 +879,9 @@ export default function App() {
             settings={settings}
             sessions={sessions}
             onBackToChat={() => navigate("chat")}
-            onNewChat={newSession}
+            onNewChat={async () => {
+              await createScopedSession(activeProjectId || null);
+            }}
             onCreate={createProject}
             onSelect={(project) => selectProject(project, "projects")}
             onSelectSession={selectSession}
@@ -916,9 +926,11 @@ export default function App() {
                 extensionCommands={extensionCommands}
                 onSettingsChange={updateSettings}
                 onAgentCommand={agent.sendCommand}
+                onOpenContextPanel={() => setContextPanelOpen(true)}
               />
             </div>
             <ContextPanel
+              open={contextPanelOpen}
               settings={settings}
               activeProject={activeProject}
               activeSessionId={activeId}
@@ -926,9 +938,16 @@ export default function App() {
               messages={visibleMessages}
               connectionState={agent.connectionState}
               contextUsage={agent.contextUsage}
-              onOpenSettings={() => navigate("settings")}
-              onOpenSessions={() => navigate("search")}
+              onOpenSettings={() => {
+                setContextPanelOpen(false);
+                navigate("settings");
+              }}
+              onOpenSessions={() => {
+                setContextPanelOpen(false);
+                navigate("search");
+              }}
               onCompact={compactContext}
+              onClose={() => setContextPanelOpen(false)}
             />
           </div>
         )}
