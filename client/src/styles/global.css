@@ -248,7 +248,6 @@ button:active {
   display: inline-grid;
   place-items: center;
   border: 0.5px solid var(--border-hover);
-  border-radius: 999px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
   color: var(--text-primary);
   font-size: 10px;
@@ -258,35 +257,26 @@ button:active {
 
 .app-icon-mark {
   overflow: hidden;
+  border-radius: 4px;
   background:
-    conic-gradient(from 210deg, var(--neon-violet), var(--neon-cyan), #89ffbd, #ffd36a, var(--neon-rose), var(--neon-violet)),
-    var(--surface);
+    center / cover no-repeat url("/piagent-icon.ico"),
+    #050505;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.48),
-    inset 0 -10px 20px rgba(0,0,0,0.28),
-    0 0 24px color-mix(in srgb, var(--neon-cyan) 22%, transparent),
+    inset 0 1px 0 rgba(255,255,255,0.14),
+    0 0 0 1px rgba(255,255,255,0.06),
+    0 0 22px color-mix(in srgb, var(--accent-red) 18%, transparent),
     0 8px 24px color-mix(in srgb, var(--shadow-color) 74%, transparent);
   animation: iconGlow 4.8s ease-in-out infinite;
 }
 
 .app-icon-mark::before {
-  width: 52%;
-  height: 52%;
-  border: 1.5px solid rgba(255,255,255,0.84);
-  border-top-color: rgba(255,255,255,0.28);
-  border-radius: 40% 60% 58% 42%;
-  content: "";
-  transform: rotate(-28deg);
+  display: none;
+  content: none;
 }
 
 .app-icon-mark::after {
-  position: absolute;
-  width: 58%;
-  height: 1.5px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.72);
-  content: "";
-  transform: rotate(35deg);
+  display: none;
+  content: none;
 }
 
 .brand-mark {

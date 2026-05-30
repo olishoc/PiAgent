@@ -54,10 +54,10 @@ function shortModelLabel(model?: string) {
 }
 
 function thinkingModeLabel(level?: AppSettings["thinkingLevel"]) {
-  if (!level || level === "high" || level === "xhigh") return "High (thinking mode)";
+  if (!level || level === "high" || level === "xhigh") return "High";
   if (level === "off") return "Direct mode";
-  if (level === "minimal") return "Minimal (thinking mode)";
-  return `${level[0].toUpperCase()}${level.slice(1)} (thinking mode)`;
+  if (level === "minimal") return "Minimal";
+  return `${level[0].toUpperCase()}${level.slice(1)}`;
 }
 
 export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand, onOpenContextPanel }: ComposerProps) {
