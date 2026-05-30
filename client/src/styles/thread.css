@@ -133,17 +133,17 @@
   min-height: 58%;
   place-items: center;
   align-content: center;
-  gap: 14px;
+  gap: 16px;
   color: var(--text-tertiary);
   font-size: 13px;
   text-align: center;
 }
 
 .empty-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 15px;
-  animation: softFloat 4s ease-in-out infinite;
+  width: 44px;
+  height: 44px;
+  border-radius: 17px;
+  animation: softFloat 4s ease-in-out infinite, iconGlow 5s ease-in-out infinite;
 }
 
 .empty-thread h1 {
@@ -161,7 +161,10 @@
 }
 
 .empty-thread h1 em {
-  color: color-mix(in srgb, var(--accent) 82%, var(--text-primary));
+  background: linear-gradient(90deg, var(--neon-cyan), var(--neon-violet), var(--neon-rose));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
   font-style: normal;
   font-weight: 680;
 }
@@ -729,7 +732,12 @@
 }
 
 .settings-section { margin-bottom: 30px; }
-.settings-section h2 { margin: 0 0 12px; font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.settings-section h2 {
+  margin: 0 0 12px;
+  color: color-mix(in srgb, var(--text-secondary) 82%, var(--neon-cyan));
+  font-size: 13px;
+  font-weight: 500;
+}
 
 .mode-grid {
   display: grid;
@@ -742,8 +750,13 @@
 .theme-preview {
   border: 0.5px solid var(--border-hover);
   border-radius: var(--radius-xl);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 86%, #ffffff 3%), color-mix(in srgb, var(--bg-input) 70%, transparent)),
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--neon-cyan) 7%, transparent), transparent 32%);
   backdrop-filter: var(--glass-blur);
+  box-shadow:
+    0 18px 58px color-mix(in srgb, var(--shadow-color) 68%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
 }
 
 .mode-grid button {
@@ -756,7 +769,10 @@
   text-align: left;
 }
 
-.mode-grid button.selected { background: color-mix(in srgb, var(--selected-bg) 72%, var(--surface)); }
+.mode-grid button.selected {
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--selected-bg) 76%, var(--surface)), color-mix(in srgb, var(--surface) 78%, var(--neon-cyan) 5%));
+}
 .mode-grid button.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hover)); }
 
 .mode-grid span,
@@ -768,10 +784,11 @@
 }
 
 .settings-card {
+  position: relative;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;
   gap: 0;
-  overflow: hidden;
+  overflow: visible;
   margin-bottom: 28px;
 }
 
@@ -793,7 +810,8 @@
   min-height: 32px;
   border: 0.5px solid var(--border);
   border-radius: 999px;
-  background: var(--bg-input);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 92%, #ffffff 3%), color-mix(in srgb, var(--bg-input) 86%, transparent));
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 400;
@@ -803,6 +821,10 @@
   position: relative;
   align-self: center;
   min-width: 0;
+}
+
+.setting-select.open {
+  z-index: 120;
 }
 
 .settings-card .setting-select {
@@ -856,18 +878,21 @@
 
 .setting-select-menu {
   position: absolute;
-  z-index: 30;
+  z-index: 160;
   right: 12px;
-  top: calc(100% - 4px);
+  top: calc(100% + 6px);
   display: grid;
   width: min(320px, calc(100vw - 40px));
   gap: 4px;
   padding: 8px;
   border: 0.5px solid color-mix(in srgb, var(--border-hover) 82%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--bg-menu) 90%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-menu) 82%, transparent), color-mix(in srgb, var(--surface) 72%, transparent)),
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--neon-violet) 8%, transparent), transparent 38%);
   box-shadow:
-    0 28px 80px color-mix(in srgb, var(--shadow-color) 92%, transparent),
+    0 30px 92px color-mix(in srgb, var(--shadow-color) 94%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--neon-cyan) 6%, transparent),
     inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
   backdrop-filter: var(--glass-blur);
   animation: dropdownFloat 150ms ease;
@@ -888,7 +913,8 @@
 
 .setting-select-menu button.active,
 .setting-select-menu button:hover {
-  background: color-mix(in srgb, var(--selected-bg) 74%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--selected-bg) 76%, transparent), color-mix(in srgb, var(--neon-cyan) 7%, transparent));
   color: var(--text-primary);
 }
 
@@ -925,7 +951,9 @@
 .theme-preview {
   margin-bottom: 10px;
   padding: 10px 14px;
-  background: var(--bg-code);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--bg-code) 88%, transparent), color-mix(in srgb, var(--surface) 66%, transparent)),
+    radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--neon-rose) 8%, transparent), transparent 36%);
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.7;
@@ -945,7 +973,8 @@
   padding: 11px;
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 86%, transparent), color-mix(in srgb, var(--bg-input) 72%, transparent));
 }
 
 .subagent-profile-grid strong {
@@ -990,6 +1019,29 @@
   .settings-card,
   .settings-card.compact { grid-template-columns: 1fr; }
   .thread-feed { padding-inline: 22px; }
+}
+
+@media (max-width: 520px) {
+  .thread-feed {
+    padding-inline: 12px;
+  }
+
+  .empty-thread {
+    min-height: 54%;
+    gap: 12px;
+  }
+
+  .empty-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 14px;
+  }
+
+  .empty-thread h1 {
+    max-width: 230px;
+    font-size: 23px;
+    line-height: 1.16;
+  }
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }

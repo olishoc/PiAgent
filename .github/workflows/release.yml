@@ -37,7 +37,7 @@ jobs:
         env:
           PIAGENT_MANIFEST_VERSION: ${{ github.ref_name }}
           PIAGENT_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
-          PIAGENT_RELEASE_NOTES: "PiAgent ${{ github.ref_name }}: Codex-like app UI, project chat wiring, visible label cleanup, and dev backend port takeover."
+          PIAGENT_RELEASE_NOTES: "PiAgent ${{ github.ref_name }}: refined Codex-style glow UI, unified settings dropdowns, organized composer plus menu, and cleaner responsive empty state."
         run: npm run desktop:latest-json
 
       - name: Publish GitHub Release

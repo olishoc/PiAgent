@@ -108,7 +108,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
         {messages.length === 0 ? (
           <div className="empty-thread">
             <span className="empty-icon app-icon-mark" aria-hidden="true" />
-            <h1><span>What can I help</span> <em>you ship?</em></h1>
+            <h1><span>What should we</span> <em>build?</em></h1>
           </div>
         ) : null}
         {messages.map((message) => (

@@ -33,6 +33,10 @@
   --accent-amber: #d29922;
   --accent-blue: #58a6ff;
   --accent-red: #f85149;
+  --neon-cyan: #45f0ff;
+  --neon-violet: #a985ff;
+  --neon-rose: #ff6fb1;
+  --glass-gradient: linear-gradient(145deg, color-mix(in srgb, var(--surface) 86%, #ffffff 4%), color-mix(in srgb, var(--bg-input) 72%, transparent));
   --radius-sm: 10px;
   --radius-md: 14px;
   --radius-lg: 16px;
@@ -145,7 +149,8 @@ button:active {
   height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 24% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 34%),
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--neon-violet) 11%, transparent), transparent 34%),
+    radial-gradient(circle at 82% 10%, color-mix(in srgb, var(--neon-cyan) 8%, transparent), transparent 30%),
     linear-gradient(135deg, color-mix(in srgb, var(--bg-app) 92%, #ffffff), var(--bg-app));
   color: var(--text-primary);
 }
@@ -153,19 +158,21 @@ button:active {
 .app-shell::before {
   position: fixed;
   z-index: 0;
-  width: 420px;
-  height: 420px;
-  left: calc(var(--cursor-x) - 210px);
-  top: calc(var(--cursor-y) - 210px);
+  width: 330px;
+  height: 330px;
+  left: calc(var(--cursor-x) - 165px);
+  top: calc(var(--cursor-y) - 165px);
   border-radius: 50%;
   background:
-    radial-gradient(circle, color-mix(in srgb, var(--accent) 20%, transparent), color-mix(in srgb, var(--accent-blue) 7%, transparent) 38%, transparent 68%);
+    radial-gradient(circle, rgba(255,255,255,0.9) 0 1px, color-mix(in srgb, var(--neon-cyan) 88%, #ffffff) 2px, transparent 5px),
+    radial-gradient(circle, color-mix(in srgb, var(--neon-cyan) 36%, transparent) 0 13%, color-mix(in srgb, var(--neon-violet) 21%, transparent) 28%, color-mix(in srgb, var(--neon-rose) 10%, transparent) 44%, transparent 68%);
   content: "";
-  opacity: 0.58;
+  opacity: 0.88;
   pointer-events: none;
-  filter: blur(20px);
+  filter: blur(13px) saturate(1.55);
+  mix-blend-mode: screen;
   transform: translate3d(0, 0, 0);
-  transition: left 90ms ease-out, top 90ms ease-out, opacity 220ms ease;
+  will-change: left, top;
 }
 
 .app-shell::after {
@@ -173,8 +180,9 @@ button:active {
   z-index: 0;
   inset: 0;
   background:
-    linear-gradient(120deg, transparent 0%, color-mix(in srgb, var(--accent) 4%, transparent) 42%, transparent 70%),
-    radial-gradient(circle at 85% 14%, color-mix(in srgb, var(--accent-green) 8%, transparent), transparent 26%);
+    linear-gradient(120deg, transparent 0%, color-mix(in srgb, var(--neon-violet) 5%, transparent) 42%, transparent 70%),
+    radial-gradient(circle at 85% 14%, color-mix(in srgb, var(--neon-cyan) 8%, transparent), transparent 26%),
+    radial-gradient(circle at 18% 86%, color-mix(in srgb, var(--neon-rose) 6%, transparent), transparent 28%);
   content: "";
   pointer-events: none;
   animation: ambientSweep 14s ease-in-out infinite alternate;
@@ -191,7 +199,9 @@ button:active {
   flex: 1;
   min-width: 0;
   flex-direction: column;
-  background: color-mix(in srgb, var(--bg-main) 82%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 78%, transparent), color-mix(in srgb, var(--bg-main) 92%, transparent)),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 42%);
 }
 
 .update-notice {
@@ -211,7 +221,9 @@ button:active {
   gap: 16px;
   padding: 0 14px 0 18px;
   border-bottom: 0.5px solid var(--border);
-  background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--bg-sidebar) 76%, transparent), color-mix(in srgb, var(--bg-elevated) 56%, transparent)),
+    color-mix(in srgb, var(--bg-sidebar) 82%, transparent);
   backdrop-filter: var(--glass-blur);
   color: var(--text-primary);
   font-size: 12px;
@@ -247,22 +259,24 @@ button:active {
 .app-icon-mark {
   overflow: hidden;
   background:
-    linear-gradient(145deg, color-mix(in srgb, var(--accent) 58%, #ffffff), color-mix(in srgb, var(--accent-blue) 52%, #050505)),
+    conic-gradient(from 210deg, var(--neon-violet), var(--neon-cyan), #89ffbd, #ffd36a, var(--neon-rose), var(--neon-violet)),
     var(--surface);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.34),
-    0 0 24px color-mix(in srgb, var(--accent) 26%, transparent),
+    inset 0 1px 0 rgba(255,255,255,0.48),
+    inset 0 -10px 20px rgba(0,0,0,0.28),
+    0 0 24px color-mix(in srgb, var(--neon-cyan) 22%, transparent),
     0 8px 24px color-mix(in srgb, var(--shadow-color) 74%, transparent);
+  animation: iconGlow 4.8s ease-in-out infinite;
 }
 
 .app-icon-mark::before {
-  width: 46%;
-  height: 46%;
-  border: 1.5px solid rgba(255,255,255,0.9);
-  border-left-color: rgba(255,255,255,0.35);
-  border-radius: 45% 55% 52% 48%;
+  width: 52%;
+  height: 52%;
+  border: 1.5px solid rgba(255,255,255,0.84);
+  border-top-color: rgba(255,255,255,0.28);
+  border-radius: 40% 60% 58% 42%;
   content: "";
-  transform: rotate(-18deg);
+  transform: rotate(-28deg);
 }
 
 .app-icon-mark::after {
@@ -392,8 +406,11 @@ button:active {
   padding: 12px;
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: 0 10px 28px color-mix(in srgb, var(--shadow-color) 62%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 84%, transparent), color-mix(in srgb, var(--bg-input) 66%, transparent));
+  box-shadow:
+    0 10px 28px color-mix(in srgb, var(--shadow-color) 62%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 9%, transparent);
 }
 
 .context-tabs {
@@ -832,7 +849,8 @@ button:active {
 .utility-view button {
   border: 0.5px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--surface);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 82%, transparent), color-mix(in srgb, var(--bg-input) 66%, transparent));
   color: var(--text-primary);
 }
 
@@ -938,8 +956,13 @@ button:active {
 .project-summary {
   border: 0.5px solid var(--border);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 84%, transparent), color-mix(in srgb, var(--bg-input) 68%, transparent)),
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--neon-violet) 6%, transparent), transparent 38%);
   backdrop-filter: var(--glass-blur);
+  box-shadow:
+    0 18px 58px color-mix(in srgb, var(--shadow-color) 62%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 9%, transparent);
 }
 
 .project-create {
@@ -1208,7 +1231,8 @@ button:active {
   padding: 10px;
   border: 0.5px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--subtle-bg);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--subtle-bg) 78%, transparent), color-mix(in srgb, var(--surface) 58%, transparent));
 }
 
 .workflow-list em {
@@ -1306,6 +1330,15 @@ button:active {
 @keyframes ambientSweep {
   from { opacity: 0.52; transform: translate3d(-16px, -8px, 0); }
   to { opacity: 0.86; transform: translate3d(16px, 10px, 0); }
+}
+
+@keyframes iconGlow {
+  0%, 100% {
+    filter: saturate(1.05) brightness(0.98);
+  }
+  50% {
+    filter: saturate(1.35) brightness(1.1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

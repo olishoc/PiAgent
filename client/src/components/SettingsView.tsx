@@ -84,6 +84,41 @@ function SettingSelect<T extends string>({ value, options, onChange, disabled, t
   );
 }
 
+const onOffOptions: Array<SettingSelectOption<"on" | "off">> = [
+  { value: "on", label: "Active" },
+  { value: "off", label: "Desactive" }
+];
+
+const thinkingOptions: Array<SettingSelectOption<AppSettings["thinkingLevel"]>> = [
+  { value: "high", label: "High", note: "thinking mode" },
+  { value: "xhigh", label: "High+", note: "max" },
+  { value: "medium", label: "Medium", note: "balanced" },
+  { value: "low", label: "Low" },
+  { value: "minimal", label: "Minimal" },
+  { value: "off", label: "Direct mode" }
+];
+
+const reasoningOptions: Array<SettingSelectOption<AppSettings["advisorReasoning"]>> = [
+  { value: "high", label: "High", note: "thinking mode" },
+  { value: "xhigh", label: "High+", note: "max" },
+  { value: "medium", label: "Medium", note: "balanced" },
+  { value: "low", label: "Low" },
+  { value: "minimal", label: "Minimal" }
+];
+
+const providerOptions: Array<SettingSelectOption<AppSettings["provider"]>> = [
+  { value: "openai-codex", label: "OpenAI Codex OAuth", note: "recommended" },
+  { value: "openai", label: "OpenAI API" },
+  { value: "anthropic", label: "Claude" },
+  { value: "openrouter", label: "OpenRouter" }
+];
+
+const approvalOptions: Array<SettingSelectOption<AppSettings["approvalPolicy"]>> = [
+  { value: "on-request", label: "On request", note: "safer" },
+  { value: "on-failure", label: "On failure", note: "faster" },
+  { value: "never", label: "Never", note: "autonomous" }
+];
+
 export default function SettingsView({ settings, onBack, onChange }: SettingsViewProps) {
   const [active, setActive] = useState("General");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle", message: "" });
@@ -357,95 +392,104 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Moteur pi-subagents</span>
               <span>{subagentStatus?.installed ? `${subagentStatus.engine}@${subagentStatus.version ?? "?"} dans ${subagentStatus.extensionPath}` : "Package manquant. L'installateur doit inclure pi-subagents."}</span>
               <span>Sous-agents</span>
-              <select value={settings.subagentsEnabled ? "on" : "off"} onChange={(e) => onChange({ subagentsEnabled: e.target.value === "on", autoLaunchSubagents: e.target.value === "on" })}>
-                <option value="on">Actifs</option>
-                <option value="off">Desactives</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentsEnabled ? "on" : "off"}
+                onChange={(value) => onChange({ subagentsEnabled: value === "on", autoLaunchSubagents: value === "on" })}
+                options={[
+                  { value: "on", label: "Actifs", note: "ready" },
+                  { value: "off", label: "Desactives" }
+                ]}
+              />
               <span>Delegation automatique</span>
-              <select value={settings.subagentRoutingMode} onChange={(e) => onChange({ subagentRoutingMode: e.target.value as AppSettings["subagentRoutingMode"], autoLaunchSubagents: e.target.value !== "manual", subagentsEnabled: true })}>
-                <option value="manual">Manuel</option>
-                <option value="assistive">Assistif</option>
-                <option value="automatic">Automatique</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentRoutingMode}
+                onChange={(value) => onChange({ subagentRoutingMode: value, autoLaunchSubagents: value !== "manual", subagentsEnabled: true })}
+                options={[
+                  { value: "manual", label: "Manuel" },
+                  { value: "assistive", label: "Assistif" },
+                  { value: "automatic", label: "Automatique", note: "parallel" }
+                ]}
+              />
               <span>Max parallele</span>
               <input type="number" min="1" max="8" value={settings.subagentMaxParallel} onChange={(e) => onChange({ subagentMaxParallel: Number(e.target.value) })} />
               <span>Async par defaut</span>
-              <select value={settings.subagentAsyncByDefault ? "on" : "off"} onChange={(e) => onChange({ subagentAsyncByDefault: e.target.value === "on" })}>
-                <option value="on">Runs longs en arriere-plan</option>
-                <option value="off">Foreground</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentAsyncByDefault ? "on" : "off"}
+                onChange={(value) => onChange({ subagentAsyncByDefault: value === "on" })}
+                options={[
+                  { value: "on", label: "Arriere-plan", note: "long runs" },
+                  { value: "off", label: "Foreground" }
+                ]}
+              />
               <span>Profondeur max</span>
               <input type="number" min="0" max="3" value={settings.subagentMaxDepth} onChange={(e) => onChange({ subagentMaxDepth: Number(e.target.value) })} />
               <span>Modele des enfants</span>
               <input value={settings.subagentModel} onChange={(e) => onChange({ subagentModel: e.target.value || "inherit" })} />
               <span>Thinking enfants</span>
-              <select value={settings.subagentThinking} onChange={(e) => onChange({ subagentThinking: e.target.value as AppSettings["subagentThinking"] })}>
-                <option value="minimal">Minimal</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="xhigh">XHigh</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentThinking}
+                onChange={(value) => onChange({ subagentThinking: value })}
+                options={thinkingOptions}
+              />
               <span>Review loop</span>
-              <select value={settings.subagentReviewLoop ? "on" : "off"} onChange={(e) => onChange({ subagentReviewLoop: e.target.value === "on" })}>
-                <option value="on">Worker puis reviewers</option>
-                <option value="off">Ne pas forcer</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentReviewLoop ? "on" : "off"}
+                onChange={(value) => onChange({ subagentReviewLoop: value === "on" })}
+                options={[
+                  { value: "on", label: "Worker + reviewers" },
+                  { value: "off", label: "Ne pas forcer" }
+                ]}
+              />
               <span>Worktrees</span>
-              <select value={settings.subagentUseWorktrees ? "on" : "off"} onChange={(e) => onChange({ subagentUseWorktrees: e.target.value === "on" })}>
-                <option value="off">Single writer par defaut</option>
-                <option value="on">Isoler les runs paralleles si Git est clean</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentUseWorktrees ? "on" : "off"}
+                onChange={(value) => onChange({ subagentUseWorktrees: value === "on" })}
+                options={[
+                  { value: "off", label: "Single writer" },
+                  { value: "on", label: "Worktrees", note: "clean Git" }
+                ]}
+              />
               <span>Intercom</span>
-              <select value={settings.subagentIntercomMode} onChange={(e) => onChange({ subagentIntercomMode: e.target.value as AppSettings["subagentIntercomMode"] })}>
-                <option value="off">Off</option>
-                <option value="fork-only">Fork only</option>
-                <option value="always">Always</option>
-              </select>
+              <SettingSelect
+                value={settings.subagentIntercomMode}
+                onChange={(value) => onChange({ subagentIntercomMode: value })}
+                options={[
+                  { value: "off", label: "Off" },
+                  { value: "fork-only", label: "Fork only" },
+                  { value: "always", label: "Always" }
+                ]}
+              />
               <span>Status sous-agents</span>
               <button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Verifier pi-subagents</button>
               <span>Advisor</span>
-              <select value={settings.advisorEnabled ? "on" : "off"} onChange={(e) => onChange({ advisorEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect
+                value={settings.advisorEnabled ? "on" : "off"}
+                onChange={(value) => onChange({ advisorEnabled: value === "on" })}
+                options={onOffOptions}
+              />
               <span>Advisor modele</span>
               <input value={`${settings.advisorProvider}/${settings.advisorModel}`} onChange={(e) => {
                 const [provider, ...modelParts] = e.target.value.split("/");
                 if (provider && modelParts.length) onChange({ advisorProvider: provider, advisorModel: modelParts.join("/") });
               }} />
               <span>Advisor reasoning</span>
-              <select value={settings.advisorReasoning} onChange={(e) => onChange({ advisorReasoning: e.target.value as AppSettings["advisorReasoning"] })}>
-                <option value="minimal">Minimal</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="xhigh">XHigh</option>
-              </select>
+              <SettingSelect
+                value={settings.advisorReasoning}
+                onChange={(value) => onChange({ advisorReasoning: value })}
+                options={reasoningOptions}
+              />
               <span>Advisor max/run</span>
               <input type="number" min="1" max="12" value={settings.advisorMaxUsesPerRun} onChange={(e) => onChange({ advisorMaxUsesPerRun: Number(e.target.value) })} />
               <span>Advisor status</span>
               <button onClick={() => void refreshAdvisorStatus()}><Icon name="shield" /> Verifier pi-advisor</button>
               <span>Web guidance</span>
-              <select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect value={settings.webEnabled ? "on" : "off"} onChange={(value) => onChange({ webEnabled: value === "on" })} options={onOffOptions} />
               <span>Chrome</span>
-              <select value={settings.chromeEnabled ? "on" : "off"} onChange={(e) => onChange({ chromeEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect value={settings.chromeEnabled ? "on" : "off"} onChange={(value) => onChange({ chromeEnabled: value === "on" })} options={onOffOptions} />
               <span>Contexte</span>
-              <select value={settings.contextEnabled ? "on" : "off"} onChange={(e) => onChange({ contextEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect value={settings.contextEnabled ? "on" : "off"} onChange={(value) => onChange({ contextEnabled: value === "on" })} options={onOffOptions} />
               <span>Acces ordinateur</span>
-              <select value={settings.computerUseEnabled ? "on" : "off"} onChange={(e) => onChange({ computerUseEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect value={settings.computerUseEnabled ? "on" : "off"} onChange={(value) => onChange({ computerUseEnabled: value === "on" })} options={onOffOptions} />
             </div>
             {subagentStatus?.profiles ? (
               <div className="subagent-profile-grid">
@@ -466,20 +510,18 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <h2>Travail long et projets</h2>
             <div className="settings-card compact">
               <span>Mode longue duree</span>
-              <select value={settings.longRunningMode ? "on" : "off"} onChange={(e) => onChange({ longRunningMode: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect value={settings.longRunningMode ? "on" : "off"} onChange={(value) => onChange({ longRunningMode: value === "on" })} options={onOffOptions} />
               <span>Advisor automatique</span>
-              <select value={settings.autoLaunchAdvisor ? "on" : "off"} onChange={(e) => onChange({ autoLaunchAdvisor: e.target.value === "on", autoReview: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <SettingSelect value={settings.autoLaunchAdvisor ? "on" : "off"} onChange={(value) => onChange({ autoLaunchAdvisor: value === "on", autoReview: value === "on" })} options={onOffOptions} />
               <span>Sous-agents automatiques</span>
-              <select value={settings.autoLaunchSubagents ? "on" : "off"} onChange={(e) => onChange({ autoLaunchSubagents: e.target.value === "on", subagentsEnabled: e.target.value === "on", subagentRoutingMode: e.target.value === "on" ? "automatic" : "manual" })}>
-                <option value="on">Deleguer automatiquement</option>
-                <option value="off">Manuel</option>
-              </select>
+              <SettingSelect
+                value={settings.autoLaunchSubagents ? "on" : "off"}
+                onChange={(value) => onChange({ autoLaunchSubagents: value === "on", subagentsEnabled: value === "on", subagentRoutingMode: value === "on" ? "automatic" : "manual" })}
+                options={[
+                  { value: "on", label: "Automatique", note: "delegate" },
+                  { value: "off", label: "Manuel" }
+                ]}
+              />
               <span>Workspace courant</span>
               <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
               <span>Workflow</span>
@@ -495,57 +537,41 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Architecture</span>
               <span>Local-first global memory: representation utilisateur, souvenirs atomiques, skills/outils, journal d'observations, scopes projet/session.</span>
               <span>Mode</span>
-              <select value={settings.memoryMode} onChange={(e) => onChange({ memoryMode: e.target.value as AppSettings["memoryMode"], memoryEnabled: e.target.value !== "off" })}>
-                <option value="off">Off</option>
-                <option value="manual">Manual only</option>
-                <option value="assistive">Assistive</option>
-                <option value="deep">Deep Hermes-style</option>
-              </select>
+              <SettingSelect
+                value={settings.memoryMode}
+                onChange={(value) => onChange({ memoryMode: value, memoryEnabled: value !== "off" })}
+                options={[
+                  { value: "deep", label: "Deep", note: "hybrid" },
+                  { value: "assistive", label: "Assistive" },
+                  { value: "manual", label: "Manual only" },
+                  { value: "off", label: "Off" }
+                ]}
+              />
               <span>Memoire locale</span>
-              <select value={settings.memoryEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEnabled: e.target.value === "on", memoryMode: e.target.value === "on" ? "deep" : "off" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactivee</option>
-              </select>
+              <SettingSelect value={settings.memoryEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryEnabled: value === "on", memoryMode: value === "on" ? "deep" : "off" })} options={onOffOptions} />
               <span>Injection automatique</span>
-              <select value={settings.memoryAutoInject ? "on" : "off"} onChange={(e) => onChange({ memoryAutoInject: e.target.value === "on" })}>
-                <option value="on">Recuperer un petit contexte pertinent</option>
-                <option value="off">Recherche manuelle seulement</option>
-              </select>
+              <SettingSelect
+                value={settings.memoryAutoInject ? "on" : "off"}
+                onChange={(value) => onChange({ memoryAutoInject: value === "on" })}
+                options={[
+                  { value: "on", label: "Auto recall" },
+                  { value: "off", label: "Manual only" }
+                ]}
+              />
               <span>Apprendre des chats</span>
-              <select value={settings.memoryLearnFromChats ? "on" : "off"} onChange={(e) => onChange({ memoryLearnFromChats: e.target.value === "on" })}>
-                <option value="on">Extraire preferences, workflows, decisions</option>
-                <option value="off">Ne pas apprendre automatiquement</option>
-              </select>
+              <SettingSelect value={settings.memoryLearnFromChats ? "on" : "off"} onChange={(value) => onChange({ memoryLearnFromChats: value === "on" })} options={onOffOptions} />
               <span>Apprendre les outils</span>
-              <select value={settings.memoryLearnTools ? "on" : "off"} onChange={(e) => onChange({ memoryLearnTools: e.target.value === "on" })}>
-                <option value="on">Construire une memoire de skills/outils</option>
-                <option value="off">Ne pas suivre les outils</option>
-              </select>
+              <SettingSelect value={settings.memoryLearnTools ? "on" : "off"} onChange={(value) => onChange({ memoryLearnTools: value === "on" })} options={onOffOptions} />
               <span>Profil global</span>
-              <select value={settings.memoryProfileEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryProfileEnabled: e.target.value === "on" })}>
-                <option value="on">Peer card globale</option>
-                <option value="off">Souvenirs sans profil</option>
-              </select>
+              <SettingSelect value={settings.memoryProfileEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryProfileEnabled: value === "on" })} options={onOffOptions} />
               <span>Journal d'observations</span>
-              <select value={settings.memoryEventLogEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEventLogEnabled: e.target.value === "on" })}>
-                <option value="on">Conserver un journal inspectable</option>
-                <option value="off">Souvenirs seulement</option>
-              </select>
+              <SettingSelect value={settings.memoryEventLogEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryEventLogEnabled: value === "on" })} options={onOffOptions} />
               <span>Memoire episodique</span>
-              <select value={settings.memoryEpisodicEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEpisodicEnabled: e.target.value === "on" })}>
-                <option value="on">Messages, outils et checkpoints consultables</option>
-                <option value="off">Seulement faits durables</option>
-              </select>
+              <SettingSelect value={settings.memoryEpisodicEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryEpisodicEnabled: value === "on" })} options={onOffOptions} />
               <span>Rappel hybride</span>
-              <select value={settings.memoryHybridRecallEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryHybridRecallEnabled: e.target.value === "on" })}>
-                <option value="on">Faits + episodes + entites + recence</option>
-                <option value="off">Contexte durable seulement</option>
-              </select>
+              <SettingSelect value={settings.memoryHybridRecallEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryHybridRecallEnabled: value === "on" })} options={onOffOptions} />
               <span>Corrections</span>
-              <select value={settings.memoryCorrectionsEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryCorrectionsEnabled: e.target.value === "on" })}>
-                <option value="on">Superseder les souvenirs faux</option>
-                <option value="off">Archivage manuel seulement</option>
-              </select>
+              <SettingSelect value={settings.memoryCorrectionsEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryCorrectionsEnabled: value === "on" })} options={onOffOptions} />
               <span>Episodes injectes</span>
               <input type="number" min="0" max="30" step="1" value={settings.memoryMaxEpisodicHits} onChange={(e) => onChange({ memoryMaxEpisodicHits: Number(e.target.value) })} />
               <span>Confiance minimale</span>
@@ -587,21 +613,13 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Modele</span>
               <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
               <span>Fournisseur</span>
-              <select value={settings.provider} onChange={(e) => onChange({ provider: e.target.value as AppSettings["provider"] })}>
-                <option value="openai-codex">OpenAI Codex OAuth</option>
-                <option value="openai">OpenAI API</option>
-                <option value="anthropic">Claude</option>
-                <option value="openrouter">OpenRouter</option>
-              </select>
+              <SettingSelect value={settings.provider} onChange={(value) => onChange({ provider: value })} options={providerOptions} />
               <span>Espace de travail</span>
               <input value={settings.workspacePath} onChange={(e) => onChange({ workspacePath: e.target.value })} />
               <span>Nom affiche</span>
               <input value={settings.displayName} onChange={(e) => onChange({ displayName: e.target.value })} />
               <span>Revision automatique</span>
-              <select value={settings.autoReview ? "on" : "off"} onChange={(e) => onChange({ autoReview: e.target.value === "on" })}>
-                <option value="on">Activee</option>
-                <option value="off">Desactivee</option>
-              </select>
+              <SettingSelect value={settings.autoReview ? "on" : "off"} onChange={(value) => onChange({ autoReview: value === "on" })} options={onOffOptions} />
             </section>
 
             <section className="settings-section">
@@ -640,18 +658,9 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
               <span>Configurer Subagents</span><button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Lire pi-subagents</button>
               <span>Beautiful UI Mode</span><span>{beautifulUiStatus?.ok ? `Skill charge via ${beautifulUiStatus.loadedBy} dans ${beautifulUiStatus.skillDir}` : "Skill non prepare."}</span>
               <span>Verifier Beautiful UI</span><button onClick={() => void refreshBeautifulUiStatus()}><Icon name="layout" /> Lire beautiful-ui</button>
-              <span>Web guidance</span><select value={settings.webEnabled ? "on" : "off"} onChange={(e) => onChange({ webEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
-              <span>Chrome</span><select value={settings.chromeEnabled ? "on" : "off"} onChange={(e) => onChange({ chromeEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
-              <span>Computer use</span><select value={settings.computerUseEnabled ? "on" : "off"} onChange={(e) => onChange({ computerUseEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <span>Web guidance</span><SettingSelect value={settings.webEnabled ? "on" : "off"} onChange={(value) => onChange({ webEnabled: value === "on" })} options={onOffOptions} />
+              <span>Chrome</span><SettingSelect value={settings.chromeEnabled ? "on" : "off"} onChange={(value) => onChange({ chromeEnabled: value === "on" })} options={onOffOptions} />
+              <span>Computer use</span><SettingSelect value={settings.computerUseEnabled ? "on" : "off"} onChange={(value) => onChange({ computerUseEnabled: value === "on" })} options={onOffOptions} />
               <span>Contexte</span><span>Active depuis le composeur pour inclure les chemins et sessions locales.</span>
               <span>Extensions Pi</span><button onClick={() => void runOpen("config")}><Icon name="folder" /> Ouvrir le dossier config</button>
               <span>Diagnostics</span><button onClick={() => void diagnose()}><Icon name="search" /> Verifier l'environnement</button>
@@ -676,15 +685,8 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 setActionStatus(data.ok ? "Git user configured." : data.error ?? "Git configuration failed.");
               }}><Icon name="check" /> Save Git identity</button>
               <span>Branche</span><span>Pi utilise le workspace courant et les permissions choisies.</span>
-              <span>Mode</span><select value={settings.approvalPolicy} onChange={(e) => onChange({ approvalPolicy: e.target.value as AppSettings["approvalPolicy"] })}>
-                <option value="on-request">Demander avant action risquee</option>
-                <option value="on-failure">Demander en cas d'echec</option>
-                <option value="never">Ne jamais demander</option>
-              </select>
-              <span>GitHub</span><select value={settings.githubEnabled ? "on" : "off"} onChange={(e) => onChange({ githubEnabled: e.target.value === "on" })}>
-                <option value="on">Active</option>
-                <option value="off">Desactive</option>
-              </select>
+              <span>Mode</span><SettingSelect value={settings.approvalPolicy} onChange={(value) => onChange({ approvalPolicy: value })} options={approvalOptions} />
+              <span>GitHub</span><SettingSelect value={settings.githubEnabled ? "on" : "off"} onChange={(value) => onChange({ githubEnabled: value === "on" })} options={onOffOptions} />
               <span>Authentification GitHub</span>
               <button onClick={() => void connectGithub()}><Icon name="link" /> {githubStatus?.connected ? "Reconnecter" : "Connecter GitHub"}</button>
               <span>Etat GitHub</span>

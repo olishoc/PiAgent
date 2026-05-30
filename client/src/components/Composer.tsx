@@ -53,6 +53,13 @@ function shortModelLabel(model?: string) {
     .replace(/-mini$/i, " mini");
 }
 
+function thinkingModeLabel(level?: AppSettings["thinkingLevel"]) {
+  if (!level || level === "high" || level === "xhigh") return "High (thinking mode)";
+  if (level === "off") return "Direct mode";
+  if (level === "minimal") return "Minimal (thinking mode)";
+  return `${level[0].toUpperCase()}${level.slice(1)} (thinking mode)`;
+}
+
 export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand, onOpenContextPanel }: ComposerProps) {
   const [text, setText] = useState("");
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
@@ -274,24 +281,24 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
           </button>
           {addOpen ? (
             <div className="pill-menu add-menu">
+              <strong className="menu-heading">Files</strong>
               <button onClick={() => { void pickFiles(); setAddOpen(false); }}><Icon name="paperclip" size={13} /> Add files</button>
               <button onClick={() => { void pickFolders(); setAddOpen(false); }}><Icon name="folder" size={13} /> Add folders</button>
               <button onClick={() => { void pasteClipboard(); setAddOpen(false); }}><Icon name="clipboard" size={13} /> Paste clipboard</button>
+              <strong className="menu-heading">Agent context</strong>
+              <button className={tools.web ? "active" : ""} onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web guidance</button>
+              <button className={tools.context ? "active" : ""} onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "circle"} size={13} /> {tools.context ? "Workspace context on" : "Workspace context off"}</button>
+              <button onClick={() => { onOpenContextPanel(); setAddOpen(false); }}><Icon name="folder" size={13} /> Open context drawer</button>
+              <strong className="menu-heading">Review and agents</strong>
+              <button className={tools.advisor ? "active" : ""} onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
+              <button className={settings?.subagentsEnabled ? "active" : ""} onClick={() => { onSettingsChange({ subagentsEnabled: !settings?.subagentsEnabled, autoLaunchSubagents: !settings?.subagentsEnabled }); }}>
+                <Icon name={settings?.subagentsEnabled ? "check" : "plug"} size={13} /> Pi subagents
+              </button>
+              <button className={settings?.autoLaunchSubagents ? "active" : ""} onClick={() => { onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic", subagentsEnabled: true }); }}>
+                <Icon name={settings?.autoLaunchSubagents ? "check" : "spark"} size={13} /> Auto delegation
+              </button>
+              <strong className="menu-heading">Workflows</strong>
               <button onClick={() => { insertCommandDraft("/beautiful-ui"); setAddOpen(false); }}><Icon name="layout" size={13} /> Beautiful UI mode</button>
-              <button onClick={() => toggleTool("web")}><Icon name={tools.web ? "check" : "search"} size={13} /> Web guidance</button>
-              <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
-              <button onClick={() => { runCommand("/advisor ask"); setAddOpen(false); }}><Icon name="shield" size={13} /> Ask advisor now</button>
-              <button onClick={() => { onSettingsChange({ subagentsEnabled: !settings?.subagentsEnabled, autoLaunchSubagents: !settings?.subagentsEnabled }); setAddOpen(false); }}><Icon name={settings?.subagentsEnabled ? "check" : "plug"} size={13} /> Pi subagents</button>
-              <button onClick={() => { onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic", subagentsEnabled: true }); setAddOpen(false); }}><Icon name={settings?.autoLaunchSubagents ? "check" : "spark"} size={13} /> Auto delegation</button>
-              <button onClick={() => { runCommand("/subagents-doctor"); setAddOpen(false); }}><Icon name="terminal" size={13} /> Subagents doctor</button>
-              <button onClick={() => { onOpenContextPanel(); setAddOpen(false); }}><Icon name="folder" size={13} /> Workspace context</button>
-              <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "circle"} size={13} /> {tools.context ? "Context on" : "Context off"}</button>
-              {extensionCommands.length ? <strong className="menu-heading">Extensions</strong> : null}
-              {extensionCommands.slice(0, 8).map((command) => (
-                <button key={command.name} onClick={() => { runCommand(`/${command.name}`); setAddOpen(false); }}>
-                  <Icon name="plug" size={13} /> /{command.name}
-                </button>
-              ))}
             </div>
           ) : null}
         </div>
@@ -325,7 +332,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
         <div className="composer-meta">
           <div className="pill-menu-wrap" ref={modelRef}>
             <button className="model-pill" onClick={() => setModelOpen((current) => !current)}>
-              {shortModelLabel(settings?.modelLabel)} {settings?.thinkingLevel === "off" ? "Direct mode" : "Thinking mode"} <Icon name="chevronDown" size={12} />
+              {shortModelLabel(settings?.modelLabel)} {thinkingModeLabel(settings?.thinkingLevel)} <Icon name="chevronDown" size={12} />
             </button>
             {modelOpen ? (
               <div className="pill-menu model-menu">
