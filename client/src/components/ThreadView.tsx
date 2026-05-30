@@ -107,7 +107,8 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
       <div className="thread-feed" ref={feedRef} onScroll={onScroll}>
         {messages.length === 0 ? (
           <div className="empty-thread">
-            <h1>Ask Pi Agent</h1>
+            <span className="empty-icon app-icon-mark" aria-hidden="true" />
+            <h1><span>What can I help</span> <em>you ship?</em></h1>
           </div>
         ) : null}
         {messages.map((message) => (

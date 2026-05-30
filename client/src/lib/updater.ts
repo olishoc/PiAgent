@@ -17,13 +17,13 @@ export async function checkAndInstallUpdate(onStatus: (status: UpdateStatus) => 
     const { check } = await import("@tauri-apps/plugin-updater");
     const update = await check();
     if (!update) {
-      onStatus({ state: "current", message: "PiAgent is up to date." });
+      onStatus({ state: "current", message: "App is up to date." });
       return;
     }
 
-    onStatus({ state: "available", message: `Installing PiAgent ${update.version}...` });
+    onStatus({ state: "available", message: `Installing ${update.version}...` });
     await update.downloadAndInstall();
-    onStatus({ state: "installing", message: "Update installed. Restart PiAgent to finish." });
+    onStatus({ state: "installing", message: "Update installed. Restart to finish." });
   } catch (error) {
     onStatus({ state: "error", message: error instanceof Error ? error.message : String(error) });
   }

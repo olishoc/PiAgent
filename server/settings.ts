@@ -77,7 +77,7 @@ const SETTINGS_BACKUP_PATH = path.join(APP_CONFIG_DIR, "settings.backup.json");
 
 export const DEFAULT_SETTINGS: AppSettings = {
   onboardingComplete: false,
-  displayName: "PiAgent local",
+  displayName: "Local user",
   accessMode: "full",
   approvalPolicy: "on-request",
   workspacePath: process.cwd(),
@@ -116,10 +116,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   density: "comfortable",
   textDensity: "codex",
   fontFamily: "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-  messageFontSize: 12.5,
-  messageLineHeight: 1.5,
-  composerFontSize: 12.5,
-  messageSpacing: 14,
+  messageFontSize: 13.5,
+  messageLineHeight: 1.54,
+  composerFontSize: 13.5,
+  messageSpacing: 16,
   longRunningMode: true,
   autoLaunchAdvisor: true,
   autoLaunchSubagents: true,

@@ -19,7 +19,7 @@ interface ComposerProps {
 }
 
 const slashCommands = [
-  { command: "/help", label: "Show available Pi Agent commands" },
+  { command: "/help", label: "Show available commands" },
   { command: "/new", label: "Start a new thread" },
   { command: "/compact", label: "Ask Pi to compact the active context" },
   { command: "/permissions", label: "Open permissions and access mode" },
@@ -42,6 +42,15 @@ function formatBytes(size?: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function shortModelLabel(model?: string) {
+  const raw = model || "gpt-5.5";
+  return raw
+    .replace(/^gpt-/i, "")
+    .replace(/^openai\//i, "")
+    .replace(/-codex.*$/i, "")
+    .replace(/-mini$/i, " mini");
 }
 
 export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand, onOpenContextPanel }: ComposerProps) {
@@ -162,7 +171,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               name: pathString.split(/[\\/]/).pop() ?? pathString,
               path: pathString,
               kind: "file" as const,
-              text: "Attached folder. Ask Pi Agent to inspect files in this folder by path."
+              text: "Attached folder. Ask the agent to inspect files in this folder by path."
             };
           })
         ]);
@@ -250,7 +259,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       <textarea
         ref={ref}
         value={text}
-        placeholder={isStreaming ? "Steer Pi while it is working..." : "Ask Pi Agent..."}
+        placeholder={isStreaming ? "Steer while it is working..." : "Ask anything..."}
         onChange={(event) => {
           setText(event.target.value);
           setShowCommands(event.target.value.startsWith("/"));
@@ -316,7 +325,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
         <div className="composer-meta">
           <div className="pill-menu-wrap" ref={modelRef}>
             <button className="model-pill" onClick={() => setModelOpen((current) => !current)}>
-              {settings?.modelLabel ?? "gpt-5.5"} <Icon name="chevronDown" size={12} />
+              {shortModelLabel(settings?.modelLabel)} {settings?.thinkingLevel === "off" ? "Direct mode" : "Thinking mode"} <Icon name="chevronDown" size={12} />
             </button>
             {modelOpen ? (
               <div className="pill-menu model-menu">

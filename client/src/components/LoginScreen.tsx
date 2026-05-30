@@ -14,8 +14,9 @@ export default function LoginScreen({ onLogin, loading, authUrl, error, message 
   return (
     <main className="login-screen">
       <section className="login-panel">
-        <h1>pi agent</h1>
-        <p>powered by gpt-5.5</p>
+        <span className="login-icon app-icon-mark" aria-hidden="true" />
+        <h1>local coding workspace</h1>
+        <p>gpt-5.5 thinking mode</p>
         {message ? <p role="status">{message}</p> : null}
         {error ? <p className="inline-error">Sign in failed: {error}</p> : null}
         <button className="login-button" type="button" onClick={onLogin} disabled={loading}>

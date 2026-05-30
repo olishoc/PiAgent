@@ -114,8 +114,8 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
         return;
       }
       const setup = entry.setupCommand
-        ? `Set up the ${entry.title} extension for PiAgent. Use this command or equivalent MCP configuration when appropriate:\n\n${entry.setupCommand}\n\nExplain the permissions and verify it is available before using it.`
-        : `Plan how to connect and use the ${entry.title} extension in PiAgent. Treat it as ${entry.source}/${entry.authType}, explain required credentials, and do not assume it is installed until verified.`;
+        ? `Set up the ${entry.title} extension for this local app. Use this command or equivalent MCP configuration when appropriate:\n\n${entry.setupCommand}\n\nExplain the permissions and verify it is available before using it.`
+        : `Plan how to connect and use the ${entry.title} extension in this local app. Treat it as ${entry.source}/${entry.authType}, explain required credentials, and do not assume it is installed until verified.`;
       onRunCommand(setup);
     };
     const extensionNeedle = query.trim().toLowerCase();
@@ -141,7 +141,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
               <button className={extensionTab === "plugins" ? "active" : ""} onClick={() => setExtensionTab("plugins")}>Plugiciels</button>
               <button className={extensionTab === "skills" ? "active" : ""} onClick={() => setExtensionTab("skills")}>Competences</button>
             </div>
-            <h1>Adaptez PiAgent a vos besoins</h1>
+            <h1>Adaptez l'espace de travail</h1>
           </div>
           <div className="header-actions">
             <button onClick={onOpenSettings}><Icon name="gear" /> Gerer</button>
@@ -151,7 +151,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
         <div className="extension-searchbar">
           <Icon name="search" />
           <input value={query} placeholder="Rechercher des modules d'extension" onChange={(event) => setQuery(event.target.value)} />
-          <button className={extensionFilter === "built-in" ? "active" : ""} onClick={() => setExtensionFilter("built-in")}>Built by PiAgent</button>
+          <button className={extensionFilter === "built-in" ? "active" : ""} onClick={() => setExtensionFilter("built-in")}>Built in</button>
           <button className={extensionFilter === "all" ? "active" : ""} onClick={() => setExtensionFilter("all")}>Tout</button>
         </div>
         <div className="extension-hero">

@@ -98,7 +98,7 @@ const entries: Omit<ExtensionCatalogEntry, "status">[] = [
   },
   {
     id: "memory",
-    title: "PiAgent Global Memory",
+    title: "Global Memory",
     category: "Featured",
     description: "Hermes/Honcho-inspired local-first memory: user representation, skills, tools, scoped recall, and consolidation.",
     authType: "none",

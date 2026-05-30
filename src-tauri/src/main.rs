@@ -171,8 +171,11 @@ ForEach-Object {
     if ($process) {
         $cmd = [string]$process.CommandLine
         $isNode = $process.Name -eq 'node.exe' -or $process.Name -eq 'node-x86_64-pc-windows-msvc.exe'
-        $isPackagedBackend = ($cmd -like '*server\dist\index.js*' -or $cmd -like '*server/dist/index.js*') -and $cmd -like ('*' + $root + '*')
-        $isDevBackend = $healthVersion -eq 'dev' -and $cmd -like '*node_modules*tsx*' -and $cmd -like '*index.ts*'
+        $isServerDist = $cmd -like '*server\dist\index.js*' -or $cmd -like '*server/dist/index.js*'
+        $isPackagedBackend = $isServerDist -and $cmd -like ('*' + $root + '*')
+        $isTsxDevBackend = $cmd -like '*node_modules*tsx*' -and $cmd -like '*index.ts*'
+        $isNodeDevBackend = $isServerDist
+        $isDevBackend = $healthVersion -eq 'dev' -and ($isTsxDevBackend -or $isNodeDevBackend)
         if ($isNode -and ($isPackagedBackend -or $isDevBackend)) {
             Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
         }

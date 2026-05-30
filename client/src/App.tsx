@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, PointerEvent } from "react";
 import Composer from "./components/Composer";
 import LoginScreen from "./components/LoginScreen";
 import Sidebar, { Session } from "./components/Sidebar";
@@ -244,6 +244,7 @@ export interface ProviderOption {
 export default function App() {
   const auth = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<"chat" | "settings" | "search" | "extensions" | "automations" | "projects">("chat");
   const [viewHistory, setViewHistory] = useState<Array<typeof view>>(["chat"]);
@@ -256,7 +257,7 @@ export default function App() {
   const [systemPrefersDark, setSystemPrefersDark] = useState(() => typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true : true);
   const [settings, setSettings] = useState<AppSettings>({
     onboardingComplete: false,
-    displayName: "PiAgent local",
+    displayName: "Local user",
     accessMode: "full",
     approvalPolicy: "on-request",
     workspacePath: "",
@@ -295,10 +296,10 @@ export default function App() {
     density: "comfortable",
     textDensity: "codex",
     fontFamily: "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
-    messageFontSize: 12.5,
-    messageLineHeight: 1.5,
-    composerFontSize: 12.5,
-    messageSpacing: 14,
+    messageFontSize: 13.5,
+    messageLineHeight: 1.54,
+    composerFontSize: 13.5,
+    messageSpacing: 16,
     longRunningMode: true,
     autoLaunchAdvisor: true,
     autoLaunchSubagents: true,
@@ -372,6 +373,7 @@ export default function App() {
         setProjects(items);
         setActiveProjectId((current) => current || items[0]?.id || "");
       }).catch(() => {});
+      fetchSessions(undefined, true).then(setAllSessions).catch(() => {});
     })();
     return () => {
       cancelled = true;
@@ -386,6 +388,9 @@ export default function App() {
       setSessions(items);
       setActiveId((current) => items.some((session) => session.id === current) ? current : items[0]?.id ?? "");
     }).catch(() => {});
+    fetchSessions(undefined, true).then((items) => {
+      if (!cancelled) setAllSessions(items);
+    }).catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -397,6 +402,7 @@ export default function App() {
       setSessions(items);
       setActiveId((current) => items.some((session) => session.id === current) ? current : items[0]?.id ?? "");
     }).catch(() => {});
+    fetchSessions(undefined, true).then(setAllSessions).catch(() => {});
   }, [auth.loggedIn, agent.isStreaming, activeProjectId]);
 
   useEffect(() => {
@@ -420,7 +426,7 @@ export default function App() {
     return (
       <div className="app-shell">
         <main className="backend-error">
-          <h1>PiAgent backend unavailable</h1>
+          <h1>Backend unavailable</h1>
           <p>{backendError}</p>
           <button onClick={() => window.location.reload()}>retry</button>
         </main>
@@ -519,21 +525,29 @@ export default function App() {
   const refreshProjects = async () => {
     const items = await fetchProjects();
     setProjects(items);
+    setAllSessions(await fetchSessions(undefined, true).catch(() => allSessions));
     if (!activeProjectId && items[0]) setActiveProjectId(items[0].id);
   };
 
   const refreshScopedSessions = async (projectId: string | null = activeProjectId || null) => {
     const items = await fetchSessions(projectId);
     setSessions(items);
+    setAllSessions(await fetchSessions(undefined, true).catch(() => allSessions));
     const nextActive = items.some((session) => session.id === activeId) ? activeId : items[0]?.id ?? "";
-    setActiveId(nextActive);
     if (nextActive) {
       const nextSession = items.find((session) => session.id === nextActive);
       if (nextSession) {
-        await agent.sendCommand({ type: "switch_session", sessionPath: nextSession.path });
-        await agent.sendCommand({ type: "get_messages" });
+        const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: nextSession.path });
+        const messagesResult = switchResult?.success === false ? switchResult : await agent.sendCommand({ type: "get_messages" });
+        if (messagesResult?.success === false) {
+          setActiveId("");
+          agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi could not open this thread." }]);
+        } else {
+          setActiveId(nextActive);
+        }
       }
     } else {
+      setActiveId("");
       agent.replaceMessages([]);
     }
     return items;
@@ -552,9 +566,9 @@ export default function App() {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: data?.error ?? "Unable to create a new thread." }]);
       return "";
     }
-    setActiveId(session.id);
     const items = await fetchSessions(projectId);
     setSessions(items);
+    setAllSessions(await fetchSessions(undefined, true).catch(() => allSessions));
     const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
     if (switchResult?.success === false) {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open the new thread." }]);
@@ -565,6 +579,7 @@ export default function App() {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi opened the thread, but messages could not be loaded." }]);
       return "";
     }
+    setActiveId(session.id);
     return session.id;
   };
 
@@ -596,10 +611,18 @@ export default function App() {
     void agent.sendCommand({ type: "get_state" });
     const items = await fetchSessions(project.id);
     setSessions(items);
-    setActiveId(items[0]?.id ?? "");
+    setAllSessions(await fetchSessions(undefined, true).catch(() => allSessions));
     if (items[0]) {
-      void agent.sendCommand({ type: "switch_session", sessionPath: items[0].path });
-      void agent.sendCommand({ type: "get_messages" });
+      const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: items[0].path });
+      const messagesResult = switchResult?.success === false ? switchResult : await agent.sendCommand({ type: "get_messages" });
+      if (messagesResult?.success === false) {
+        setActiveId("");
+        agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi could not open this project chat." }]);
+      } else {
+        setActiveId(items[0].id);
+      }
+    } else {
+      setActiveId("");
     }
     await refreshProjects();
   };
@@ -620,12 +643,20 @@ export default function App() {
     });
     const items = await fetchSessions(activeProjectId || null);
     setSessions(items);
+    setAllSessions(await fetchSessions(undefined, true).catch(() => allSessions));
     if (patch.archived && activeId === session.id) {
-      setActiveId(items[0]?.id ?? "");
       agent.replaceMessages([]);
       if (items[0]) {
-        await agent.sendCommand({ type: "switch_session", sessionPath: items[0].path });
-        await agent.sendCommand({ type: "get_messages" });
+        const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: items[0].path });
+        const messagesResult = switchResult?.success === false ? switchResult : await agent.sendCommand({ type: "get_messages" });
+        if (messagesResult?.success === false) {
+          setActiveId("");
+          agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi could not open the next thread." }]);
+        } else {
+          setActiveId(items[0].id);
+        }
+      } else {
+        setActiveId("");
       }
     }
   };
@@ -661,6 +692,24 @@ export default function App() {
   };
 
   const selectSession = async (session: Session) => {
+    const sessionProjectId = session.projectId ?? "";
+    if (sessionProjectId !== activeProjectId) {
+      if (sessionProjectId) {
+        const project = projects.find((item) => item.id === sessionProjectId);
+        if (project) {
+          const response = await fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/open`), { method: "POST" });
+          const data = await response.json().catch(() => ({}));
+          if (data.settings) applySettings(data.settings);
+          setActiveProjectId(project.id);
+          setSessions(await fetchSessions(project.id));
+          await agent.sendCommand({ type: "reload_agent" });
+          void agent.sendCommand({ type: "get_state" });
+        }
+      } else {
+        setActiveProjectId("");
+        setSessions(await fetchSessions(null));
+      }
+    }
     const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
     if (switchResult?.success === false) {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open this thread." }]);
@@ -744,11 +793,15 @@ export default function App() {
       && (activeProjectId ? session.projectId === activeProjectId : !session.projectId)
     ));
     const targetSessionId = activeScopedSession?.id ?? await createScopedSession(activeProjectId || null);
+    if (!targetSessionId) return;
     agent.sendPrompt(text, attachments, options, { projectId: activeProjectId || undefined, sessionId: targetSessionId || undefined });
     const current = sessions.find((session) => session.id === targetSessionId);
     if (!current || current.messageCount < 2 || current.name === "New thread") {
       void agent.sendCommand({ type: "set_session_name", name: generatedTitle(text) })
-        .then(() => fetchSessions(activeProjectId || null).then(setSessions).catch(() => {}));
+        .then(() => {
+          void fetchSessions(activeProjectId || null).then(setSessions).catch(() => {});
+          void fetchSessions(undefined, true).then(setAllSessions).catch(() => {});
+        });
     }
   };
 
@@ -784,9 +837,9 @@ export default function App() {
   const codexUiFont = "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
   const uiFont = requestedThemePreset === "codex" ? codexUiFont : settings.fontFamily;
   const textPreset = {
-    compact: { messageFontSize: 12, messageLineHeight: 1.42, composerFontSize: 12, messageSpacing: 11 },
-    codex: { messageFontSize: 12.5, messageLineHeight: 1.5, composerFontSize: 12.5, messageSpacing: 14 },
-    comfortable: { messageFontSize: 13, messageLineHeight: 1.58, composerFontSize: 13, messageSpacing: 18 },
+    compact: { messageFontSize: 13, messageLineHeight: 1.46, composerFontSize: 13, messageSpacing: 13 },
+    codex: { messageFontSize: 13.5, messageLineHeight: 1.54, composerFontSize: 13.5, messageSpacing: 16 },
+    comfortable: { messageFontSize: 14, messageLineHeight: 1.62, composerFontSize: 14, messageSpacing: 20 },
     custom: {
       messageFontSize: settings.messageFontSize,
       messageLineHeight: settings.messageLineHeight,
@@ -796,11 +849,16 @@ export default function App() {
   }[settings.textDensity ?? "codex"];
   const visibleMessages = settings.thinkingLevel === "off" ? agent.messages.filter((message) => message.kind !== "thinking") : agent.messages;
   const activeProject = projects.find((project) => project.id === activeProjectId);
-  const appTitle = "Pi Agent";
+  const appTitle = "";
+  const updateCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.style.setProperty("--cursor-x", `${event.clientX}px`);
+    event.currentTarget.style.setProperty("--cursor-y", `${event.clientY}px`);
+  };
 
   return (
     <div
       className={`app-shell density-${settings?.density ?? "comfortable"}`}
+      onPointerMove={updateCursorGlow}
       style={{
         "--bg-app": surface.app,
         "--bg-sidebar": surface.sidebar,
@@ -838,6 +896,7 @@ export default function App() {
     >
       <Sidebar
         sessions={sessions}
+        allSessions={allSessions}
         activeId={activeId}
         accountId={auth.accountId}
         displayName={settings.displayName}
@@ -865,8 +924,8 @@ export default function App() {
       <main className="main-panel">
         <div className="app-toolbar">
           <div className="toolbar-title">
-            <span className="brand-mark">PI</span>
-            <span>{appTitle}</span>
+            <span className="brand-mark app-icon-mark" aria-hidden="true" />
+            {appTitle ? <span>{appTitle}</span> : null}
             <em>{agent.connectionState}</em>
           </div>
           <div className="toolbar-actions">

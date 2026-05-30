@@ -16,9 +16,11 @@
 
 .sidebar.collapsed .sidebar-actions span,
 .sidebar.collapsed .project-row span,
+.sidebar.collapsed .project-row em,
 .sidebar.collapsed .sidebar-brand strong,
 .sidebar.collapsed .project-label button,
 .sidebar.collapsed .sidebar-label,
+.sidebar.collapsed .folder-chats,
 .sidebar.collapsed .task-copy,
 .sidebar.collapsed .task-actions,
 .sidebar.collapsed .user-copy {
@@ -160,6 +162,53 @@
   padding: 0 8px 2px;
 }
 
+.folder-list {
+  flex: 1;
+  align-content: start;
+  overflow-y: auto;
+  padding-bottom: 10px;
+}
+
+.project-folder {
+  display: grid;
+  gap: 2px;
+  padding: 2px 0 4px;
+  border-radius: 18px;
+}
+
+.project-folder.active {
+  background: color-mix(in srgb, var(--subtle-bg) 62%, transparent);
+}
+
+.project-row {
+  min-width: 0;
+}
+
+.project-row span {
+  overflow: hidden;
+  flex: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-row em {
+  display: grid;
+  min-width: 20px;
+  height: 18px;
+  place-items: center;
+  border: 0.5px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.folder-chats {
+  display: grid;
+  gap: 1px;
+  padding: 0 4px 0 22px;
+}
+
 .sidebar-label.inline {
   padding: 10px 8px 6px;
 }
@@ -168,6 +217,10 @@
   flex: 1;
   overflow-y: auto;
   padding: 0 8px 8px;
+}
+
+.task-list:empty {
+  display: none;
 }
 
 .task-row {
@@ -189,6 +242,27 @@
   border-color: var(--border-hover);
   background: color-mix(in srgb, var(--selected-bg) 78%, var(--surface));
   box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.task-row.folder-chat {
+  min-height: 27px;
+  padding: 3px 6px;
+  border-radius: 12px;
+}
+
+.task-row.folder-chat .status-dot {
+  width: 5px;
+  height: 5px;
+  flex-basis: 5px;
+}
+
+.task-row.folder-chat .task-actions {
+  gap: 2px;
+}
+
+.task-row.folder-chat .task-actions span {
+  width: 20px;
+  height: 20px;
 }
 
 .task-row:hover {
@@ -252,7 +326,7 @@
 .task-name {
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -315,9 +389,11 @@
 
   .sidebar-actions span,
   .project-row span,
+  .project-row em,
   .sidebar-brand strong,
   .project-label button,
   .sidebar-label,
+  .folder-chats,
   .task-copy,
   .user-copy {
     display: none;

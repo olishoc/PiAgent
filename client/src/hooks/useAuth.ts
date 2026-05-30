@@ -75,7 +75,7 @@ export function useAuth() {
         }));
         await openAuthUrl(data.authUrl);
       }
-      setState((current) => ({ ...current, loading: false, loginMessage: "Finish sign in in your browser, then return to PiAgent." }));
+      setState((current) => ({ ...current, loading: false, loginMessage: "Finish sign in in your browser, then return here." }));
     } catch (error) {
       loginInFlightRef.current = false;
       setState((current) => ({

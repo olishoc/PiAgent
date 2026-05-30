@@ -46,8 +46,9 @@ interface ProjectsViewProps {
 }
 
 function formatPath(path: string) {
-  if (path.length <= 58) return path;
-  return `...${path.slice(-55)}`;
+  const visible = path.replace(/Pi\s*Agent/gi, "App").replace(/PiAgent/gi, "App");
+  if (visible.length <= 58) return visible;
+  return `...${visible.slice(-55)}`;
 }
 
 function formatSize(size?: number) {
@@ -55,6 +56,10 @@ function formatSize(size?: number) {
   if (size < 1024) return `${size} B`;
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function visibleProjectName(name: string) {
+  return name.replace(/Pi\s*Agent/gi, "App").replace(/PiAgent/gi, "App");
 }
 
 export default function ProjectsView({ projects, activeProjectId, activeSessionId, settings, sessions, onBackToChat, onNewChat, onCreate, onSelect, onSelectSession, onRefresh }: ProjectsViewProps) {
@@ -167,7 +172,7 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: workflowName,
-        description: "Long-running PiAgent workflow",
+        description: "Long-running workflow",
         steps: ["Plan", "Implement", "Verify", "Advisor review"]
       })
     });
@@ -217,7 +222,7 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
         <aside className="project-create">
           <h2>Create project</h2>
           <label>Project name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
-          <label>Folder<input value={rootPath} placeholder="Leave empty to create in PiAgent projects" onChange={(event) => setRootPath(event.target.value)} /></label>
+          <label>Folder<input value={rootPath} placeholder="Leave empty to create in local projects" onChange={(event) => setRootPath(event.target.value)} /></label>
           <button onClick={() => void pickFolder()}><Icon name="folder" /> Choose folder</button>
           <label>Git remote<input value={repoUrl} placeholder="https://github.com/owner/repo.git" onChange={(event) => setRepoUrl(event.target.value)} /></label>
           <label>Default branch<input value={defaultBranch} onChange={(event) => setDefaultBranch(event.target.value)} /></label>
@@ -234,7 +239,7 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
             {projects.map((project) => (
               <button key={project.id} className={project.id === activeProject?.id ? "active" : ""} onClick={() => void onSelect(project)}>
                 <Icon name="folder" />
-                <span>{project.name}</span>
+                <span>{visibleProjectName(project.name)}</span>
                 <em>{formatPath(project.rootPath)}</em>
               </button>
             ))}
@@ -245,8 +250,8 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
             <>
               <section className="project-summary">
                 <div>
-                  <h2>{activeProject.name}</h2>
-                  <p>{activeProject.rootPath}</p>
+                  <h2>{visibleProjectName(activeProject.name)}</h2>
+                  <p>{formatPath(activeProject.rootPath)}</p>
                 </div>
                 <div className="project-kpis">
                   <span><strong>{tree.filter((entry) => entry.type === "file").length}</strong> files</span>
@@ -273,32 +278,32 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
 
               <section className="project-panel">
                 <div className="panel-title">
-                  <h2><Icon name="archive" /> Chats</h2>
-                  <button onClick={() => void onNewChat()}><Icon name="plus" /> New chat</button>
-                </div>
-                <div className="project-chat-list">
-                  {sessions.map((session) => (
-                    <button
-                      key={session.id}
-                      className={session.id === activeSessionId ? "active" : ""}
-                      onClick={() => onSelectSession(session)}
-                      title={session.path}
-                    >
-                      <Icon name="file" size={13} />
-                      <span>{session.name}</span>
-                      <em>{session.messageCount} messages</em>
-                    </button>
-                  ))}
-                  {!sessions.length ? <p>No chats in this project yet.</p> : null}
-                </div>
-              </section>
-
-              <section className="project-panel">
-                <div className="panel-title">
-                  <h2><Icon name="folder" /> Files</h2>
+                  <h2><Icon name="folder" /> Project folder</h2>
                   <button onClick={() => void refreshProjectData()}><Icon name="search" /> Rescan</button>
                 </div>
                 <div className="project-tree">
+                  <div className="project-tree-folder">
+                    <div className="tree-folder-label">
+                      <Icon name="archive" size={13} />
+                      <span>Chats</span>
+                      <button onClick={() => void onNewChat()}><Icon name="plus" size={12} /> New</button>
+                    </div>
+                    <div className="project-chat-list embedded">
+                      {sessions.map((session) => (
+                        <button
+                          key={session.id}
+                          className={session.id === activeSessionId ? "active" : ""}
+                          onClick={() => onSelectSession(session)}
+                          title={session.path}
+                        >
+                          <Icon name="file" size={13} />
+                          <span>{session.name}</span>
+                          <em>{session.messageCount}</em>
+                        </button>
+                      ))}
+                      {!sessions.length ? <p>No chats in this project yet.</p> : null}
+                    </div>
+                  </div>
                   {tree.slice(0, 220).map((entry) => (
                     <button key={entry.path} onClick={() => openFile(entry)} style={{ paddingLeft: 10 + entry.depth * 14 }}>
                       <Icon name={entry.type === "directory" ? "folder" : "file"} size={13} />

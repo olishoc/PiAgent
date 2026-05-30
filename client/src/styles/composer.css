@@ -8,6 +8,15 @@
   background: color-mix(in srgb, var(--bg-composer) 92%, transparent);
   box-shadow: 0 18px 60px color-mix(in srgb, var(--shadow-color) 78%, transparent);
   backdrop-filter: var(--glass-blur);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.composer:hover,
+.composer:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border-hover));
+  box-shadow:
+    0 22px 70px color-mix(in srgb, var(--shadow-color) 84%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--accent) 7%, transparent);
 }
 
 .composer.streaming {
@@ -117,7 +126,7 @@
 .composer-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 10px;
 }
 
@@ -183,10 +192,12 @@
   padding: 7px;
   border: 0.5px solid var(--border-hover);
   border-radius: var(--radius-lg);
-  background: var(--bg-menu);
-  box-shadow: 0 18px 50px var(--shadow-color);
+  background: color-mix(in srgb, var(--bg-menu) 90%, transparent);
+  box-shadow:
+    0 22px 70px color-mix(in srgb, var(--shadow-color) 86%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
   backdrop-filter: var(--glass-blur);
-  animation: paletteIn 120ms ease;
+  animation: paletteIn 150ms ease;
 }
 
 .composer-meta .pill-menu {
@@ -280,6 +291,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
   color: var(--text-secondary);
   font-size: 12px;
 }

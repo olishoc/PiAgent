@@ -281,7 +281,7 @@ projectsRouter.post("/", async (req, res, next) => {
     }
     if (project.repoUrl) await execGit(rootPath, ["remote", "add", "origin", project.repoUrl]);
     if (generatedRoot && !fs.existsSync(path.join(rootPath, "README.md"))) {
-      fs.writeFileSync(path.join(rootPath, "README.md"), `# ${name}\n\nPiAgent project workspace.\n`);
+      fs.writeFileSync(path.join(rootPath, "README.md"), `# ${name}\n\nLocal project workspace.\n`);
     }
     saveProject(project);
     writeSettings({ workspacePath: rootPath });

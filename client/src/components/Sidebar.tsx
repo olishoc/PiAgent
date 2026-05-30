@@ -17,6 +17,7 @@ interface SidebarProps {
   sessions: Session[];
   activeId: string;
   appTitle?: string;
+  allSessions?: Session[];
   accountId?: string;
   displayName?: string;
   activeView: string;
@@ -49,10 +50,15 @@ function ageLabel(session: Session) {
   return `${hours}h ago`;
 }
 
+function visibleProjectName(name: string) {
+  return name.replace(/Pi\s*Agent/gi, "App").replace(/PiAgent/gi, "App");
+}
+
 export default function Sidebar({
   sessions,
   activeId,
-  appTitle = "Pi Agent",
+  appTitle = "",
+  allSessions,
   accountId,
   displayName,
   activeView,
@@ -75,16 +81,17 @@ export default function Sidebar({
   onBack,
   onForward
 }: SidebarProps) {
-  const shownName = displayName?.trim() || "PiAgent user";
-  const initials = shownName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "PI";
-  const pinned = sessions.filter((session) => session.pinned);
-  const recent = sessions.filter((session) => !session.pinned);
+  const shownName = displayName?.trim() || "Local user";
+  const initials = shownName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "L";
+  const visibleSessions = (allSessions?.length ? allSessions : sessions).filter((session) => !session.archived);
+  const unassignedSessions = visibleSessions.filter((session) => !session.projectId);
+  const projectSessions = (projectId: string) => visibleSessions.filter((session) => session.projectId === projectId);
   const renderSession = (session: Session) => {
     const status = session.status ?? "done";
     return (
       <button
         key={session.id}
-        className={`task-row ${session.id === activeId ? "active" : ""}`}
+        className={`task-row folder-chat ${session.id === activeId ? "active" : ""}`}
         onClick={() => onSelect(session)}
         title={session.name}
       >
@@ -123,8 +130,8 @@ export default function Sidebar({
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-brand">
-        <span className="brand-mark">PI</span>
-        <strong>{appTitle}</strong>
+        <span className="brand-mark app-icon-mark" aria-hidden="true" />
+        {appTitle ? <strong>{appTitle}</strong> : null}
       </div>
       <div className="sidebar-topnav">
         <button aria-label="toggle sidebar" onClick={onToggle} title="Toggle sidebar"><Icon name="layout" /></button>
@@ -141,36 +148,43 @@ export default function Sidebar({
         <span>Projects</span>
         <button onClick={onProjects} title="Manage projects" aria-label="Manage projects"><Icon name="plus" size={12} /></button>
       </div>
-      <div className="project-list">
-        <button
-          className={`project-row ${activeProjectId === "" ? "active" : ""}`}
-          onClick={onSelectUnassigned}
-          title="Chats not attached to a project"
-        >
-          <Icon name="archive" /> <span>Unassociated chats</span>
-        </button>
-        {projects.slice(0, 5).map((project) => (
+      <div className="project-list folder-list">
+        <div className={`project-folder ${activeProjectId === "" ? "active" : ""}`}>
           <button
-            key={project.id}
-            className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
-            onClick={() => onSelectProject(project)}
-            title={project.rootPath}
+            className={`project-row ${activeProjectId === "" ? "active" : ""}`}
+            onClick={onSelectUnassigned}
+            title="Chats not attached to a project"
           >
-            <Icon name="folder" /> <span>{project.name}</span>
+            <Icon name="archive" /> <span>Unassociated</span><em>{unassignedSessions.length}</em>
           </button>
-        ))}
+          <div className="folder-chats">
+            {unassignedSessions.map(renderSession)}
+          </div>
+        </div>
+        {projects.map((project) => {
+          const nested = projectSessions(project.id);
+          return (
+            <div key={project.id} className={`project-folder ${project.id === activeProjectId ? "active" : ""}`}>
+              <button
+                className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
+                onClick={() => onSelectProject(project)}
+                title={project.rootPath}
+              >
+                <Icon name="folder" /> <span>{visibleProjectName(project.name)}</span><em>{nested.length}</em>
+              </button>
+              <div className="folder-chats">
+                {nested.map(renderSession)}
+              </div>
+            </div>
+          );
+        })}
         {!projects.length ? (
           <button className={`project-row ${activeView === "projects" ? "active" : ""}`} onClick={onProjects}>
             <Icon name="folder" /> <span>Create project</span>
           </button>
         ) : null}
       </div>
-      <div className="task-list">
-        {pinned.length ? <div className="sidebar-label inline">Pinned</div> : null}
-        {pinned.map(renderSession)}
-        <div className="sidebar-label inline">{activeProjectId ? "Project chats" : "Unassociated chats"}</div>
-        {recent.map(renderSession)}
-      </div>
+      <div className="task-list" />
       <footer className="sidebar-footer">
         <div className="avatar">{initials}</div>
         <div className="user-copy">

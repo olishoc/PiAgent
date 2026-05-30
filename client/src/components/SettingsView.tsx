@@ -34,6 +34,56 @@ async function openTarget(target: string) {
   return data.path as string;
 }
 
+interface SettingSelectOption<T extends string> {
+  value: T;
+  label: string;
+  note?: string;
+}
+
+function SettingSelect<T extends string>({ value, options, onChange, disabled, title }: {
+  value: T;
+  options: Array<SettingSelectOption<T>>;
+  onChange: (value: T) => void;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.value === value) ?? options[0];
+  return (
+    <div className={`setting-select ${open ? "open" : ""} ${disabled ? "disabled" : ""}`} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
+    }}>
+      <button type="button" disabled={disabled} title={title} onClick={() => setOpen((current) => !current)}>
+        <span>{selected?.label ?? value}</span>
+        {selected?.note ? <em>{selected.note}</em> : null}
+        <Icon name="chevronDown" size={13} />
+      </button>
+      {open && !disabled ? (
+        <div className="setting-select-menu" role="listbox">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={option.value === value ? "active" : ""}
+              role="option"
+              aria-selected={option.value === value}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+            >
+              <Icon name={option.value === value ? "check" : "circle"} size={13} />
+              <span>{option.label}</span>
+              {option.note ? <em>{option.note}</em> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function SettingsView({ settings, onBack, onChange }: SettingsViewProps) {
   const [active, setActive] = useState("General");
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle", message: "" });
@@ -156,22 +206,30 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <section className="settings-card">
               <div>
                 <strong>Autorisations par defaut</strong>
-                <p>Controle quand PiAgent demande une approbation avant d'agir.</p>
+                <p>Controle quand l'agent demande une approbation avant d'agir.</p>
               </div>
-              <select value={settings.approvalPolicy} onChange={(e) => onChange({ approvalPolicy: e.target.value as AppSettings["approvalPolicy"] })}>
-                <option value="on-request">On request</option>
-                <option value="on-failure">On failure</option>
-                <option value="never">Never</option>
-              </select>
+              <SettingSelect
+                value={settings.approvalPolicy}
+                onChange={(value) => onChange({ approvalPolicy: value })}
+                options={[
+                  { value: "on-request", label: "On request", note: "safer" },
+                  { value: "on-failure", label: "On failure", note: "faster" },
+                  { value: "never", label: "Never", note: "autonomous" }
+                ]}
+              />
               <div>
                 <strong>Acces de l'agent</strong>
                 <p>Applique les drapeaux Pi au prochain lancement de session.</p>
               </div>
-              <select value={settings.accessMode} onChange={(e) => onChange({ accessMode: e.target.value as AppSettings["accessMode"] })}>
-                <option value="read-only">Lecture seule</option>
-                <option value="limited">Limite</option>
-                <option value="full">Acces complet</option>
-              </select>
+              <SettingSelect
+                value={settings.accessMode}
+                onChange={(value) => onChange({ accessMode: value })}
+                options={[
+                  { value: "full", label: "Full access", note: "coding" },
+                  { value: "limited", label: "Limite", note: "review" },
+                  { value: "read-only", label: "Lecture seule", note: "safe" }
+                ]}
+              />
             </section>
           </>
         ) : null}
@@ -187,50 +245,67 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             </div>
             <div className="settings-card compact">
               <span>Theme</span>
-              <select value={settings.theme} onChange={(e) => onChange({ theme: e.target.value as AppSettings["theme"] })}>
-                <option value="dark">Fonce</option>
-                <option value="light">Clair</option>
-                <option value="system">Systeme</option>
-              </select>
+              <SettingSelect
+                value={settings.theme}
+                onChange={(value) => onChange({ theme: value })}
+                options={[
+                  { value: "dark", label: "Fonce", note: "glass" },
+                  { value: "light", label: "Clair", note: "clean" },
+                  { value: "system", label: "Systeme", note: "auto" }
+                ]}
+              />
               <span>Palette</span>
-              <select value={settings.themePreset} onChange={(e) => onChange({ themePreset: e.target.value as AppSettings["themePreset"] })}>
-                <option value="codex">Codex</option>
-                <option value="graphite">Graphite</option>
-                <option value="midnight">Midnight</option>
-                <option value="ember">Ember</option>
-                <option value="absolute">Absolutely</option>
-                <option value="paper">Paper light</option>
-                <option value="dawn">Dawn light</option>
-                <option value="contrast">High contrast</option>
-              </select>
+              <SettingSelect
+                value={settings.themePreset}
+                onChange={(value) => onChange({ themePreset: value })}
+                options={[
+                  { value: "codex", label: "Codex", note: "exact" },
+                  { value: "graphite", label: "Graphite" },
+                  { value: "midnight", label: "Midnight" },
+                  { value: "ember", label: "Ember" },
+                  { value: "absolute", label: "Absolute" },
+                  { value: "paper", label: "Paper light" },
+                  { value: "dawn", label: "Dawn light" },
+                  { value: "contrast", label: "High contrast" }
+                ]}
+              />
               <span>Accent</span>
               <input type="color" value={settings.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />
               <span>Densite</span>
-              <select value={settings.density} onChange={(e) => onChange({ density: e.target.value as AppSettings["density"] })}>
-                <option value="comfortable">Comfortable</option>
-                <option value="compact">Compact</option>
-              </select>
+              <SettingSelect
+                value={settings.density}
+                onChange={(value) => onChange({ density: value })}
+                options={[
+                  { value: "comfortable", label: "Comfortable" },
+                  { value: "compact", label: "Compact" }
+                ]}
+              />
               <span>Texte du chat</span>
-              <select value={settings.textDensity} onChange={(e) => onChange({ textDensity: e.target.value as AppSettings["textDensity"] })}>
-                <option value="compact">Compact</option>
-                <option value="codex">Codex</option>
-                <option value="comfortable">Comfortable</option>
-                <option value="custom">Personnalise</option>
-              </select>
+              <SettingSelect
+                value={settings.textDensity}
+                onChange={(value) => onChange({ textDensity: value })}
+                options={[
+                  { value: "codex", label: "Codex", note: "13.5" },
+                  { value: "comfortable", label: "Comfortable", note: "14" },
+                  { value: "compact", label: "Compact", note: "13" },
+                  { value: "custom", label: "Personnalise" }
+                ]}
+              />
               <span>Police</span>
-              <select
+              <SettingSelect
                 value={codexFontLocked ? "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif" : settings.fontFamily}
                 disabled={codexFontLocked}
                 title={codexFontLocked ? "La palette Codex utilise sa police systeme pour garder le style exact." : undefined}
-                onChange={(e) => onChange({ fontFamily: e.target.value })}
-              >
-                <option value={"\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"}>OpenAI Sans style</option>
-                <option value={"\"SF Mono\", \"Fira Code\", \"Cascadia Code\", \"Consolas\", monospace"}>SF Mono stack</option>
-                <option value={"\"Cascadia Code\", \"Consolas\", monospace"}>Cascadia Code</option>
-                <option value={"\"Fira Code\", \"Cascadia Code\", monospace"}>Fira Code</option>
-                <option value={"\"Consolas\", monospace"}>Consolas</option>
-                <option value={"Inter, Arial, sans-serif"}>Inter style</option>
-              </select>
+                onChange={(value) => onChange({ fontFamily: value })}
+                options={[
+                  { value: "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif", label: "OpenAI Sans style" },
+                  { value: "\"SF Mono\", \"Fira Code\", \"Cascadia Code\", \"Consolas\", monospace", label: "SF Mono stack" },
+                  { value: "\"Cascadia Code\", \"Consolas\", monospace", label: "Cascadia Code" },
+                  { value: "\"Fira Code\", \"Cascadia Code\", monospace", label: "Fira Code" },
+                  { value: "\"Consolas\", monospace", label: "Consolas" },
+                  { value: "Inter, Arial, sans-serif", label: "Inter style" }
+                ]}
+              />
               <span>Taille messages</span>
               <input type="number" min="11" max="18" step="0.5" value={settings.messageFontSize} onChange={(e) => onChange({ textDensity: "custom", messageFontSize: Number(e.target.value) })} />
               <span>Interligne</span>
@@ -246,23 +321,31 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <h2>Modele et thinking</h2>
             <div className="settings-card compact">
               <span>Fournisseur</span>
-              <select value={settings.provider} onChange={(e) => onChange({ provider: e.target.value as AppSettings["provider"] })}>
-                <option value="openai-codex">OpenAI Codex OAuth</option>
-                <option value="openai">OpenAI API</option>
-                <option value="anthropic">Claude</option>
-                <option value="openrouter">OpenRouter</option>
-              </select>
+              <SettingSelect
+                value={settings.provider}
+                onChange={(value) => onChange({ provider: value })}
+                options={[
+                  { value: "openai-codex", label: "OpenAI Codex OAuth", note: "recommended" },
+                  { value: "openai", label: "OpenAI API" },
+                  { value: "anthropic", label: "Claude" },
+                  { value: "openrouter", label: "OpenRouter" }
+                ]}
+              />
               <span>Modele</span>
               <input value={settings.modelLabel} onChange={(e) => onChange({ modelLabel: e.target.value })} />
               <span>Thinking</span>
-              <select value={settings.thinkingLevel} onChange={(e) => onChange({ thinkingLevel: e.target.value as AppSettings["thinkingLevel"] })}>
-                <option value="off">Off</option>
-                <option value="minimal">Minimal</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="xhigh">XHigh</option>
-              </select>
+              <SettingSelect
+                value={settings.thinkingLevel}
+                onChange={(value) => onChange({ thinkingLevel: value })}
+                options={[
+                  { value: "medium", label: "Thinking mode", note: "balanced" },
+                  { value: "high", label: "Deep thinking", note: "review" },
+                  { value: "xhigh", label: "Max thinking", note: "slow" },
+                  { value: "low", label: "Light thinking" },
+                  { value: "minimal", label: "Minimal" },
+                  { value: "off", label: "Direct mode" }
+                ]}
+              />
             </div>
           </section>
         ) : null}
@@ -418,7 +501,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="assistive">Assistive</option>
                 <option value="deep">Deep Hermes-style</option>
               </select>
-              <span>Memoire PiAgent</span>
+              <span>Memoire locale</span>
               <select value={settings.memoryEnabled ? "on" : "off"} onChange={(e) => onChange({ memoryEnabled: e.target.value === "on", memoryMode: e.target.value === "on" ? "deep" : "off" })}>
                 <option value="on">Active</option>
                 <option value="off">Desactivee</option>
@@ -524,9 +607,9 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
             <section className="settings-section">
               <h2>Dependances de l'espace de travail</h2>
               <div className="settings-card">
-                <span>Mises a jour PiAgent</span><button disabled={updateBusy} onClick={() => void checkAndInstallUpdate(setUpdateStatus)}><Icon name="play" /> {updateBusy ? "Verification..." : "Verifier"}</button>
+                <span>Mises a jour</span><button disabled={updateBusy} onClick={() => void checkAndInstallUpdate(setUpdateStatus)}><Icon name="play" /> {updateBusy ? "Verification..." : "Verifier"}</button>
                 <span>Etat des mises a jour</span><span>{updateStatus.message || "Aucune verification lancee"}</span>
-                <span>Backend PiAgent</span><button onClick={() => void diagnose()}><Icon name="search" /> Diagnostiquer</button>
+                <span>Backend local</span><button onClick={() => void diagnose()}><Icon name="search" /> Diagnostiquer</button>
                 <span>Sessions Pi</span><button onClick={() => void runOpen("sessions")}><Icon name="folder" /> Ouvrir le dossier</button>
                 <span>Configuration</span><button onClick={() => void runOpen("settings")}><Icon name="file" /> Ouvrir settings.json</button>
               </div>
