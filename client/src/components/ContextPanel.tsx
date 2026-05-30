@@ -6,7 +6,6 @@ import { Session } from "./Sidebar";
 import { useEffect, useState } from "react";
 
 interface ContextPanelProps {
-  open: boolean;
   settings: AppSettings;
   activeProject?: ProjectInfo;
   activeSessionId?: string;
@@ -26,7 +25,7 @@ function formatTokens(value?: number) {
   return String(value);
 }
 
-export default function ContextPanel({ open, settings, activeProject, activeSessionId, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
+export default function ContextPanel({ settings, activeProject, activeSessionId, sessions, messages, connectionState, contextUsage, onOpenSettings, onOpenSessions, onCompact }: ContextPanelProps) {
   const [tab, setTab] = useState<"context" | "files" | "memory" | "apps">("context");
   const [memoryScope, setMemoryScope] = useState<"project" | "session" | "global">("project");
   const [files, setFiles] = useState<Array<{ name: string; path: string; size: number; modified: number; ext: string }>>([]);
@@ -217,7 +216,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       </div>
       {tab === "context" ? <>
       <section>
-        <h2><Icon name="bot" /> Agent</h2>
+        <h2><Icon name="spark" /> Agent</h2>
         <div className="context-kv"><span>Status</span><strong>{connectionState}</strong></div>
         <div className="context-kv"><span>Model</span><strong>{settings.provider}/{settings.modelLabel}</strong></div>
         <div className="context-kv"><span>Access</span><strong>{settings.accessMode}</strong></div>
@@ -309,7 +308,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
         </section>
         {memoryProfile ? (
           <section>
-            <h2><Icon name="bot" /> User representation</h2>
+            <h2><Icon name="spark" /> User representation</h2>
             {memoryProfile.preferences?.slice(0, 4).map((item: string, index: number) => <p key={`pref-${index}`}>Preference: {item}</p>)}
             {memoryProfile.workflows?.slice(0, 3).map((item: string, index: number) => <p key={`flow-${index}`}>Workflow: {item}</p>)}
             {memoryProfile.constraints?.slice(0, 3).map((item: string, index: number) => <p key={`constraint-${index}`}>Constraint: {item}</p>)}

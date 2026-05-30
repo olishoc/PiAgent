@@ -4,8 +4,9 @@
   min-width: 236px;
   height: 100vh;
   flex-direction: column;
-  background: var(--bg-sidebar);
+  background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
   border-right: 0.5px solid var(--border);
+  backdrop-filter: var(--glass-blur);
 }
 
 .sidebar.collapsed {
@@ -15,6 +16,7 @@
 
 .sidebar.collapsed .sidebar-actions span,
 .sidebar.collapsed .project-row span,
+.sidebar.collapsed .sidebar-brand strong,
 .sidebar.collapsed .project-label button,
 .sidebar.collapsed .sidebar-label,
 .sidebar.collapsed .task-copy,
@@ -23,11 +25,28 @@
   display: none;
 }
 
+.sidebar-brand {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
+}
+
+.sidebar-brand strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-topnav {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 40px;
+  height: 34px;
   padding: 0 10px;
 }
 
@@ -38,7 +57,8 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12.5px;
+  font-weight: 400;
   text-align: left;
 }
 
@@ -47,7 +67,7 @@
   width: 28px;
   height: 28px;
   place-items: center;
-  border-radius: 7px;
+  border-radius: 999px;
 }
 
 .sidebar-topnav button:hover {
@@ -67,7 +87,7 @@
   height: 34px;
   align-items: center;
   gap: 9px;
-  border-radius: 8px;
+  border-radius: 999px;
   padding: 0 10px;
 }
 
@@ -86,7 +106,7 @@
   place-items: center;
   padding: 0;
   border: 0.5px solid var(--border);
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
@@ -104,6 +124,7 @@
   padding: 16px 16px 8px;
   color: var(--text-tertiary);
   font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0;
   text-transform: uppercase;
 }
@@ -152,13 +173,13 @@
 .task-row {
   display: flex;
   width: 100%;
-  min-height: 50px;
+  min-height: 30px;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 4px;
-  padding: 7px 8px;
+  gap: 8px;
+  margin-bottom: 1px;
+  padding: 4px 8px;
   border: 0.5px solid transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   cursor: pointer;
   text-align: left;
@@ -166,7 +187,8 @@
 
 .task-row.active {
   border-color: var(--border-hover);
-  background: var(--selected-bg);
+  background: color-mix(in srgb, var(--selected-bg) 78%, var(--surface));
+  box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .task-row:hover {
@@ -174,9 +196,9 @@
 }
 
 .status-dot {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
   border-radius: 50%;
   background: var(--dot-done);
 }
@@ -192,11 +214,12 @@
 }
 
 .task-copy {
-  display: flex;
+  display: grid;
   min-width: 0;
   flex: 1;
-  flex-direction: column;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
 }
 
 .task-actions {
@@ -237,7 +260,7 @@
 .task-time {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: 10.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -249,6 +272,7 @@
   min-height: 58px;
   padding: 10px;
   border-top: 0.5px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 36%, transparent);
 }
 
 .avatar {
@@ -291,6 +315,7 @@
 
   .sidebar-actions span,
   .project-row span,
+  .sidebar-brand strong,
   .project-label button,
   .sidebar-label,
   .task-copy,

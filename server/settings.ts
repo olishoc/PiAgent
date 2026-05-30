@@ -115,7 +115,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accentColor: "#58a6ff",
   density: "comfortable",
   textDensity: "codex",
-  fontFamily: "\"SF Mono\", \"Fira Code\", \"Cascadia Code\", \"Consolas\", monospace",
+  fontFamily: "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
   messageFontSize: 12.5,
   messageLineHeight: 1.5,
   composerFontSize: 12.5,

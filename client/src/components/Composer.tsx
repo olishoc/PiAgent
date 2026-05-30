@@ -18,7 +18,7 @@ interface ComposerProps {
 }
 
 const slashCommands = [
-  { command: "/help", label: "Show available PiAgent commands" },
+  { command: "/help", label: "Show available Pi Agent commands" },
   { command: "/new", label: "Start a new thread" },
   { command: "/compact", label: "Ask Pi to compact the active context" },
   { command: "/permissions", label: "Open permissions and access mode" },
@@ -161,7 +161,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               name: pathString.split(/[\\/]/).pop() ?? pathString,
               path: pathString,
               kind: "file" as const,
-              text: "Attached folder. Ask PiAgent to inspect files in this folder by path."
+              text: "Attached folder. Ask Pi Agent to inspect files in this folder by path."
             };
           })
         ]);
@@ -249,7 +249,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       <textarea
         ref={ref}
         value={text}
-        placeholder={isStreaming ? "Steer Pi while it is working..." : "Ask PiAgent to inspect, edit, run, or explain..."}
+        placeholder={isStreaming ? "Steer Pi while it is working..." : "Ask Pi Agent..."}
         onChange={(event) => {
           setText(event.target.value);
           setShowCommands(event.target.value.startsWith("/"));
@@ -272,7 +272,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               <button onClick={() => toggleTool("advisor")}><Icon name={tools.advisor ? "check" : "spark"} size={13} /> Pi Advisor</button>
               <button onClick={() => { runCommand("/advisor ask"); setAddOpen(false); }}><Icon name="shield" size={13} /> Ask advisor now</button>
               <button onClick={() => { onSettingsChange({ subagentsEnabled: !settings?.subagentsEnabled, autoLaunchSubagents: !settings?.subagentsEnabled }); setAddOpen(false); }}><Icon name={settings?.subagentsEnabled ? "check" : "plug"} size={13} /> Pi subagents</button>
-              <button onClick={() => { onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic", subagentsEnabled: true }); setAddOpen(false); }}><Icon name={settings?.autoLaunchSubagents ? "check" : "bot"} size={13} /> Auto delegation</button>
+              <button onClick={() => { onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic", subagentsEnabled: true }); setAddOpen(false); }}><Icon name={settings?.autoLaunchSubagents ? "check" : "spark"} size={13} /> Auto delegation</button>
               <button onClick={() => { runCommand("/subagents-doctor"); setAddOpen(false); }}><Icon name="terminal" size={13} /> Subagents doctor</button>
               <button onClick={() => toggleTool("context")}><Icon name={tools.context ? "check" : "folder"} size={13} /> Workspace context</button>
               {extensionCommands.length ? <strong className="menu-heading">Extensions</strong> : null}
@@ -310,25 +310,6 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               </div>
             ) : null}
           </div>
-          {(["web", "advisor", "context"] as const).map((tool) => (
-            <button
-              key={tool}
-              className={tools[tool] ? "enabled" : ""}
-              onClick={() => toggleTool(tool)}
-              title={`Toggle ${tool}`}
-            >
-              <Icon name={tool === "web" ? "search" : tool === "advisor" ? "spark" : "folder"} size={13} />
-              {tool === "advisor" ? "advisor" : tool}
-            </button>
-          ))}
-          <button
-            className={settings?.autoLaunchSubagents ? "enabled" : ""}
-            onClick={() => onSettingsChange({ autoLaunchSubagents: !settings?.autoLaunchSubagents, subagentsEnabled: true, subagentRoutingMode: settings?.autoLaunchSubagents ? "manual" : "automatic" })}
-            title="Toggle automatic pi-subagents delegation"
-          >
-            <Icon name="plug" size={13} />
-            subagents
-          </button>
         </div>
         <div className="composer-meta">
           <div className="pill-menu-wrap" ref={modelRef}>

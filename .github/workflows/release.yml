@@ -37,7 +37,7 @@ jobs:
         env:
           PIAGENT_MANIFEST_VERSION: ${{ github.ref_name }}
           PIAGENT_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
-          PIAGENT_RELEASE_NOTES: ${{ github.ref_name }}
+          PIAGENT_RELEASE_NOTES: PiAgent ${{ github.ref_name }}: polished desktop UI, project chats, and safer backend startup.
         run: npm run desktop:latest-json
 
       - name: Publish GitHub Release

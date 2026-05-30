@@ -159,6 +159,43 @@ Get-CimInstance Win32_Process | Where-Object {
 #[cfg(not(target_os = "windows"))]
 fn kill_stale_backend_processes(_root: &Path) {}
 
+#[cfg(target_os = "windows")]
+fn kill_backend_port_owner(root: &Path, health_version: &str) {
+    let root_text = root.to_string_lossy().to_string();
+    let script = r#"$root = $env:PIAGENT_BACKEND_ROOT
+$healthVersion = $env:PIAGENT_HEALTH_VERSION
+Get-NetTCPConnection -LocalPort 1456 -State Listen -ErrorAction SilentlyContinue |
+Select-Object -ExpandProperty OwningProcess -Unique |
+ForEach-Object {
+    $process = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $_) -ErrorAction SilentlyContinue
+    if ($process) {
+        $cmd = [string]$process.CommandLine
+        $isNode = $process.Name -eq 'node.exe' -or $process.Name -eq 'node-x86_64-pc-windows-msvc.exe'
+        $isPackagedBackend = ($cmd -like '*server\dist\index.js*' -or $cmd -like '*server/dist/index.js*') -and $cmd -like ('*' + $root + '*')
+        $isDevBackend = $healthVersion -eq 'dev' -and $cmd -like '*node_modules*tsx*' -and $cmd -like '*index.ts*'
+        if ($isNode -and ($isPackagedBackend -or $isDevBackend)) {
+            Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+        }
+    }
+}"#;
+
+    let _ = Command::new("powershell.exe")
+        .arg("-NoProfile")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(script)
+        .env("PIAGENT_BACKEND_ROOT", root_text)
+        .env("PIAGENT_HEALTH_VERSION", health_version)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(target_os = "windows"))]
+fn kill_backend_port_owner(_root: &Path, _health_version: &str) {}
+
 fn start_backend(app: &tauri::AppHandle, state: &State<BackendProcess>) -> Result<(), String> {
     let mut guard = state
         .0
@@ -192,6 +229,10 @@ fn start_backend(app: &tauri::AppHandle, state: &State<BackendProcess>) -> Resul
     if let Some(health) = backend_health() {
         if backend_matches_expected(&health) {
             return Ok(());
+        }
+        if health.get("app").and_then(|value| value.as_str()) == Some("PiAgent") {
+            let health_version = health.get("version").and_then(|value| value.as_str()).unwrap_or("");
+            kill_backend_port_owner(&root, health_version);
         }
     }
     kill_stale_backend_processes(&root);

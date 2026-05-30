@@ -8,7 +8,6 @@ import { useAgent } from "./hooks/useAgent";
 import { useAuth } from "./hooks/useAuth";
 import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
 import SettingsView from "./components/SettingsView";
-import { checkAndInstallUpdate } from "./lib/updater";
 import UtilityView from "./components/UtilityView";
 import ContextPanel from "./components/ContextPanel";
 import Icon from "./components/Icon";
@@ -191,7 +190,7 @@ interface ThemeSurface {
 }
 
 const themeSurfaces: Record<AppSettings["themePreset"], ThemeSurface> = {
-  codex: { app: "#0b0b0b", sidebar: "#171813", main: "#0b0b0b", composer: "#1f1f1f", surface: "#1d1d1d", elevated: "#242424", input: "#282828", menu: "#191919", code: "#0d1117", hover: "rgba(255,255,255,0.06)", selected: "rgba(255,255,255,0.1)", userMessage: "rgba(255,255,255,0.032)", subtle: "rgba(255,255,255,0.045)", shadow: "rgba(0,0,0,0.34)", scrollbar: "rgba(255,255,255,0.18)", scrollbarHover: "rgba(255,255,255,0.32)", hero: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 24%, #0b0b0b), #151515 68%)", overlay: "rgba(0,0,0,0.52)", textPrimary: "#eeeeee", textSecondary: "#a4a4a4", textTertiary: "#666666", border: "rgba(255,255,255,0.08)", borderHover: "rgba(255,255,255,0.18)", tool: "#151515" },
+  codex: { app: "#f5f6f3", sidebar: "rgba(236, 240, 247, 0.72)", main: "rgba(252, 252, 249, 0.86)", composer: "rgba(255, 255, 255, 0.8)", surface: "rgba(255, 255, 255, 0.68)", elevated: "rgba(255, 255, 255, 0.92)", input: "rgba(255, 255, 255, 0.82)", menu: "#ffffff", code: "rgba(246, 247, 244, 0.92)", hover: "rgba(0,0,0,0.045)", selected: "rgba(0,0,0,0.068)", userMessage: "rgba(255,255,255,0.7)", subtle: "rgba(0,0,0,0.035)", shadow: "rgba(36,41,47,0.12)", scrollbar: "rgba(0,0,0,0.2)", scrollbarHover: "rgba(0,0,0,0.32)", hero: "linear-gradient(135deg, rgba(234,241,255,0.92), rgba(255,255,255,0.86) 62%, rgba(241,244,238,0.92))", overlay: "rgba(255,255,255,0.76)", textPrimary: "#171717", textSecondary: "#5f6368", textTertiary: "#8b8f94", border: "rgba(0,0,0,0.1)", borderHover: "rgba(0,0,0,0.18)", tool: "rgba(255,255,255,0.62)" },
   graphite: { app: "#101112", sidebar: "#181a1d", main: "#101112", composer: "#202226", surface: "#1c1f23", elevated: "#262a2f", input: "#2b3036", menu: "#1e2227", code: "#111418", hover: "rgba(255,255,255,0.07)", selected: "rgba(255,255,255,0.12)", userMessage: "rgba(255,255,255,0.04)", subtle: "rgba(255,255,255,0.05)", shadow: "rgba(0,0,0,0.34)", scrollbar: "rgba(255,255,255,0.19)", scrollbarHover: "rgba(255,255,255,0.34)", hero: "linear-gradient(135deg, #202631, #111317 70%)", overlay: "rgba(5,7,10,0.58)", textPrimary: "#f1f2f3", textSecondary: "#aab0b6", textTertiary: "#6f7780", border: "rgba(255,255,255,0.1)", borderHover: "rgba(255,255,255,0.19)", tool: "#17191c" },
   midnight: { app: "#070a12", sidebar: "#101624", main: "#070a12", composer: "#171d2b", surface: "#131a29", elevated: "#1e2639", input: "#222b3f", menu: "#121927", code: "#0a1020", hover: "rgba(181,202,255,0.08)", selected: "rgba(181,202,255,0.13)", userMessage: "rgba(181,202,255,0.045)", subtle: "rgba(181,202,255,0.055)", shadow: "rgba(0,0,0,0.38)", scrollbar: "rgba(181,202,255,0.2)", scrollbarHover: "rgba(181,202,255,0.36)", hero: "linear-gradient(135deg, #172447, #080b16 72%)", overlay: "rgba(4,7,15,0.62)", textPrimary: "#eef3ff", textSecondary: "#a7b1c8", textTertiary: "#65718a", border: "rgba(181,202,255,0.12)", borderHover: "rgba(181,202,255,0.22)", tool: "#0f1521" },
   ember: { app: "#100d0b", sidebar: "#1d1712", main: "#100d0b", composer: "#241d17", surface: "#211a15", elevated: "#2c241d", input: "#312820", menu: "#211914", code: "#130d0a", hover: "rgba(255,211,189,0.075)", selected: "rgba(255,211,189,0.13)", userMessage: "rgba(255,211,189,0.04)", subtle: "rgba(255,211,189,0.055)", shadow: "rgba(0,0,0,0.36)", scrollbar: "rgba(255,211,189,0.2)", scrollbarHover: "rgba(255,211,189,0.36)", hero: "linear-gradient(135deg, #332014, #110c09 70%)", overlay: "rgba(10,5,3,0.58)", textPrimary: "#fff0e8", textSecondary: "#c8aaa0", textTertiary: "#7b6259", border: "rgba(255,211,189,0.12)", borderHover: "rgba(255,211,189,0.23)", tool: "#19120f" },
@@ -199,6 +198,33 @@ const themeSurfaces: Record<AppSettings["themePreset"], ThemeSurface> = {
   paper: { app: "#f7f7f3", sidebar: "#e7e6df", main: "#fbfbf8", composer: "#ffffff", surface: "#efeee8", elevated: "#f5f4ef", input: "#ffffff", menu: "#ffffff", code: "#f2f2ee", hover: "rgba(0,0,0,0.055)", selected: "rgba(0,0,0,0.08)", userMessage: "rgba(0,0,0,0.035)", subtle: "rgba(0,0,0,0.045)", shadow: "rgba(0,0,0,0.16)", scrollbar: "rgba(0,0,0,0.22)", scrollbarHover: "rgba(0,0,0,0.35)", hero: "linear-gradient(135deg, #e9ece2, #f8f8f4 72%)", overlay: "rgba(255,255,255,0.76)", textPrimary: "#1d1d1b", textSecondary: "#575750", textTertiary: "#74736b", border: "rgba(0,0,0,0.14)", borderHover: "rgba(0,0,0,0.22)", tool: "#f1f1ec" },
   dawn: { app: "#fbf4ee", sidebar: "#ede2d8", main: "#fff8f2", composer: "#fffdf9", surface: "#f3e8de", elevated: "#f8eee5", input: "#fffaf5", menu: "#fffdf9", code: "#f7efe7", hover: "rgba(75,47,27,0.06)", selected: "rgba(75,47,27,0.1)", userMessage: "rgba(75,47,27,0.04)", subtle: "rgba(75,47,27,0.05)", shadow: "rgba(61,36,18,0.16)", scrollbar: "rgba(75,47,27,0.25)", scrollbarHover: "rgba(75,47,27,0.38)", hero: "linear-gradient(135deg, #f0ded0, #fff8f2 72%)", overlay: "rgba(255,250,245,0.78)", textPrimary: "#261f1a", textSecondary: "#66564d", textTertiary: "#8a766a", border: "rgba(75,47,27,0.16)", borderHover: "rgba(75,47,27,0.25)", tool: "#f6eee7" },
   contrast: { app: "#050505", sidebar: "#0f0f0f", main: "#050505", composer: "#151515", surface: "#1a1a1a", elevated: "#252525", input: "#2b2b2b", menu: "#131313", code: "#000000", hover: "rgba(255,255,255,0.1)", selected: "rgba(255,255,255,0.17)", userMessage: "rgba(255,255,255,0.06)", subtle: "rgba(255,255,255,0.07)", shadow: "rgba(0,0,0,0.46)", scrollbar: "rgba(255,255,255,0.26)", scrollbarHover: "rgba(255,255,255,0.48)", hero: "linear-gradient(135deg, #242424, #050505 70%)", overlay: "rgba(0,0,0,0.64)", textPrimary: "#ffffff", textSecondary: "#d7d7d7", textTertiary: "#9d9d9d", border: "rgba(255,255,255,0.22)", borderHover: "rgba(255,255,255,0.34)", tool: "#0c0c0c" }
+};
+
+const codexDarkSurface: ThemeSurface = {
+  app: "#050506",
+  sidebar: "rgba(18, 19, 21, 0.78)",
+  main: "rgba(7, 7, 8, 0.9)",
+  composer: "rgba(30, 31, 33, 0.78)",
+  surface: "rgba(28, 29, 31, 0.72)",
+  elevated: "rgba(42, 43, 46, 0.92)",
+  input: "rgba(37, 38, 40, 0.86)",
+  menu: "#1f2022",
+  code: "rgba(13, 14, 16, 0.94)",
+  hover: "rgba(255,255,255,0.07)",
+  selected: "rgba(255,255,255,0.11)",
+  userMessage: "rgba(255,255,255,0.052)",
+  subtle: "rgba(255,255,255,0.052)",
+  shadow: "rgba(0,0,0,0.42)",
+  scrollbar: "rgba(255,255,255,0.2)",
+  scrollbarHover: "rgba(255,255,255,0.34)",
+  hero: "linear-gradient(135deg, rgba(36,38,42,0.95), rgba(8,8,9,0.96) 72%)",
+  overlay: "rgba(16,17,18,0.78)",
+  textPrimary: "#f4f4f1",
+  textSecondary: "#b4b7b9",
+  textTertiary: "#777b80",
+  border: "rgba(255,255,255,0.1)",
+  borderHover: "rgba(255,255,255,0.2)",
+  tool: "rgba(20,21,23,0.72)"
 };
 
 export interface ModelOption {
@@ -223,11 +249,11 @@ export default function App() {
   const [viewHistory, setViewHistory] = useState<Array<typeof view>>(["chat"]);
   const [viewIndex, setViewIndex] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [contextOpen, setContextOpen] = useState(true);
   const [models, setModels] = useState<ProviderOption[]>([]);
   const [extensionCommands, setExtensionCommands] = useState<Array<{ name: string; description?: string; source?: string }>>([]);
   const [backendError, setBackendError] = useState("");
   const [updateNotice, setUpdateNotice] = useState("");
+  const [systemPrefersDark, setSystemPrefersDark] = useState(() => typeof window !== "undefined" ? window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true : true);
   const [settings, setSettings] = useState<AppSettings>({
     onboardingComplete: false,
     displayName: "PiAgent local",
@@ -268,7 +294,7 @@ export default function App() {
     accentColor: "#58a6ff",
     density: "comfortable",
     textDensity: "codex",
-    fontFamily: "\"SF Mono\", \"Fira Code\", \"Cascadia Code\", \"Consolas\", monospace",
+    fontFamily: "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
     messageFontSize: 12.5,
     messageLineHeight: 1.5,
     composerFontSize: 12.5,
@@ -296,6 +322,15 @@ export default function App() {
   useEffect(() => {
     settingsRef.current = settings;
   }, [settings]);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(prefers-color-scheme: dark)");
+    if (!media) return;
+    const sync = () => setSystemPrefersDark(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   const applySettings = (nextSettings?: Partial<AppSettings> | null) => {
     if (!nextSettings || typeof nextSettings !== "object") return settingsRef.current;
@@ -336,10 +371,6 @@ export default function App() {
         setProjects(items);
         setActiveProjectId((current) => current || items[0]?.id || "");
       }).catch(() => {});
-      void checkAndInstallUpdate((status) => {
-        if (status.state === "current" || status.state === "idle") return;
-        setUpdateNotice(status.message);
-      });
     })();
     return () => {
       cancelled = true;
@@ -348,15 +379,23 @@ export default function App() {
 
   useEffect(() => {
     if (!auth.loggedIn) return;
+    let cancelled = false;
     fetchSessions(activeProjectId || null).then((items) => {
+      if (cancelled) return;
       setSessions(items);
-      if (!activeId && items[0]) setActiveId(items[0].id);
+      setActiveId((current) => items.some((session) => session.id === current) ? current : items[0]?.id ?? "");
     }).catch(() => {});
-  }, [auth.loggedIn, activeId, activeProjectId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [auth.loggedIn, activeProjectId]);
 
   useEffect(() => {
     if (!auth.loggedIn || agent.isStreaming) return;
-    fetchSessions(activeProjectId || null).then(setSessions).catch(() => {});
+    fetchSessions(activeProjectId || null).then((items) => {
+      setSessions(items);
+      setActiveId((current) => items.some((session) => session.id === current) ? current : items[0]?.id ?? "");
+    }).catch(() => {});
   }, [auth.loggedIn, agent.isStreaming, activeProjectId]);
 
   useEffect(() => {
@@ -518,6 +557,7 @@ export default function App() {
     if (!result?.success) {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: result?.error ?? "Unable to create a new thread." }]);
     }
+    return typeof sessionId === "string" ? sessionId : items[0]?.id ?? "";
   };
 
   const createProject = async (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => {
@@ -537,12 +577,12 @@ export default function App() {
     await createScopedSession(data.project.id);
   };
 
-  const selectProject = async (project: ProjectInfo) => {
+  const selectProject = async (project: ProjectInfo, destination: "chat" | "projects" = "chat") => {
     const response = await fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/open`), { method: "POST" });
     const data = await response.json();
     if (data.settings) applySettings(data.settings);
     setActiveProjectId(project.id);
-    navigate("chat");
+    navigate(destination);
     agent.replaceMessages([]);
     await agent.sendCommand({ type: "reload_agent" });
     void agent.sendCommand({ type: "get_state" });
@@ -649,19 +689,19 @@ export default function App() {
     if (command === "/beautiful-ui" || command.startsWith("/beautiful-ui ")) {
       navigate("chat");
       const args = command.replace(/^\/beautiful-ui\s*/i, "").trim();
-      agent.sendPrompt(`/skill:beautiful-ui${args ? ` ${args}` : ""}`, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
+      void sendScopedPrompt(`/skill:beautiful-ui${args ? ` ${args}` : ""}`);
       return;
     }
     if (command === "/subagents-doctor" || command === "/parallel-review" || command === "/review-loop" || command.startsWith("/run ") || command.startsWith("/chain ") || command.startsWith("/parallel ")) {
       navigate("chat");
-      agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
+      void sendScopedPrompt(command);
       return;
     }
     if (command === "/advisor" || command.startsWith("/advisor ")) {
       navigate("chat");
       if (/^\/advisor\s+on\b/i.test(command)) updateSettings({ advisorEnabled: true });
       if (/^\/advisor\s+off\b/i.test(command)) updateSettings({ advisorEnabled: false });
-      agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
+      void sendScopedPrompt(command);
       return;
     }
     if (command === "/help") {
@@ -683,13 +723,22 @@ export default function App() {
     return words.length > 58 ? `${words.slice(0, 55).trim()}...` : words;
   };
 
-  const sendPrompt = (text: string, attachments?: Parameters<typeof agent.sendPrompt>[1], options?: Parameters<typeof agent.sendPrompt>[2]) => {
-    agent.sendPrompt(text, attachments, options, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
-    const current = sessions.find((session) => session.id === activeId);
+  const sendScopedPrompt = async (text: string, attachments: Parameters<typeof agent.sendPrompt>[1] = [], options?: Parameters<typeof agent.sendPrompt>[2]) => {
+    const activeScopedSession = sessions.find((session) => (
+      session.id === activeId
+      && (activeProjectId ? session.projectId === activeProjectId : !session.projectId)
+    ));
+    const targetSessionId = activeScopedSession?.id ?? await createScopedSession(activeProjectId || null);
+    agent.sendPrompt(text, attachments, options, { projectId: activeProjectId || undefined, sessionId: targetSessionId || undefined });
+    const current = sessions.find((session) => session.id === targetSessionId);
     if (!current || current.messageCount < 2 || current.name === "New thread") {
       void agent.sendCommand({ type: "set_session_name", name: generatedTitle(text) })
         .then(() => fetchSessions(activeProjectId || null).then(setSessions).catch(() => {}));
     }
+  };
+
+  const sendPrompt = async (text: string, attachments?: Parameters<typeof agent.sendPrompt>[1], options?: Parameters<typeof agent.sendPrompt>[2]) => {
+    await sendScopedPrompt(text, attachments ?? [], options);
   };
 
   const compactContext = () => {
@@ -709,10 +758,16 @@ export default function App() {
     });
   };
 
-  const resolvedThemePreset = settings?.theme === "light" && !["paper", "dawn"].includes(settings?.themePreset)
+  const resolvedTheme = settings?.theme === "system" ? (systemPrefersDark ? "dark" : "light") : settings?.theme;
+  const requestedThemePreset = settings?.themePreset ?? "codex";
+  const resolvedThemePreset = resolvedTheme === "light" && !["codex", "paper", "dawn"].includes(requestedThemePreset)
     ? "paper"
-    : settings?.themePreset ?? "codex";
-  const surface = themeSurfaces[resolvedThemePreset];
+    : requestedThemePreset;
+  const surface = resolvedTheme === "dark" && resolvedThemePreset === "codex"
+    ? codexDarkSurface
+    : themeSurfaces[resolvedThemePreset];
+  const codexUiFont = "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
+  const uiFont = requestedThemePreset === "codex" ? codexUiFont : settings.fontFamily;
   const textPreset = {
     compact: { messageFontSize: 12, messageLineHeight: 1.42, composerFontSize: 12, messageSpacing: 11 },
     codex: { messageFontSize: 12.5, messageLineHeight: 1.5, composerFontSize: 12.5, messageSpacing: 14 },
@@ -726,6 +781,7 @@ export default function App() {
   }[settings.textDensity ?? "codex"];
   const visibleMessages = settings.thinkingLevel === "off" ? agent.messages.filter((message) => message.kind !== "thinking") : agent.messages;
   const activeProject = projects.find((project) => project.id === activeProjectId);
+  const appTitle = "Pi Agent";
 
   return (
     <div
@@ -758,7 +814,7 @@ export default function App() {
         "--border-hover": surface.borderHover,
         "--accent": settings?.accentColor ?? "#58a6ff",
         "--accent-blue": settings?.accentColor ?? "#58a6ff",
-        "--font-ui": settings.fontFamily,
+        "--font-ui": uiFont,
         "--message-font-size": `${textPreset.messageFontSize}px`,
         "--message-line-height": String(textPreset.messageLineHeight),
         "--composer-font-size": `${textPreset.composerFontSize}px`,
@@ -789,20 +845,19 @@ export default function App() {
         onToggle={() => setSidebarCollapsed((current) => !current)}
         onBack={goBack}
         onForward={goForward}
+        appTitle={appTitle}
       />
       <main className="main-panel">
-        {updateNotice ? <div className="update-notice">{updateNotice}</div> : null}
         <div className="app-toolbar">
           <div className="toolbar-title">
-            <Icon name="bot" />
-            <span>PiAgent</span>
+            <span className="brand-mark">PI</span>
+            <span>{appTitle}</span>
             <em>{agent.connectionState}</em>
           </div>
           <div className="toolbar-actions">
             <button onClick={() => navigate("search")}><Icon name="search" /> Search</button>
             <button onClick={() => navigate("projects")}><Icon name="folder" /> Projects</button>
             <button onClick={() => navigate("extensions")}><Icon name="plug" /> Extensions</button>
-            <button onClick={() => setContextOpen((current) => !current)}><Icon name="layout" /> Context</button>
             <button onClick={() => navigate("settings")}><Icon name="gear" /> Settings</button>
           </div>
         </div>
@@ -812,10 +867,14 @@ export default function App() {
           <ProjectsView
             projects={projects}
             activeProjectId={activeProjectId}
+            activeSessionId={activeId}
             settings={settings}
+            sessions={sessions}
             onBackToChat={() => navigate("chat")}
+            onNewChat={newSession}
             onCreate={createProject}
-            onSelect={selectProject}
+            onSelect={(project) => selectProject(project, "projects")}
+            onSelectSession={selectSession}
             onRefresh={refreshProjects}
           />
         ) : view === "search" || view === "extensions" || view === "automations" ? (
@@ -831,7 +890,7 @@ export default function App() {
             onSettingsChange={updateSettings}
             onRunCommand={(command) => {
               navigate("chat");
-              agent.sendPrompt(command, [], undefined, { projectId: activeProjectId || undefined, sessionId: activeId || undefined });
+              void sendScopedPrompt(command);
             }}
           />
         ) : (
@@ -844,7 +903,6 @@ export default function App() {
                 connectionState={agent.connectionState}
                 sessionName={sessions.find((session) => session.id === activeId)?.name}
                 contextUsage={agent.contextUsage}
-                onToggleContext={() => setContextOpen((current) => !current)}
                 onAbort={agent.abort}
               />
               <Composer
@@ -861,7 +919,6 @@ export default function App() {
               />
             </div>
             <ContextPanel
-              open={contextOpen}
               settings={settings}
               activeProject={activeProject}
               activeSessionId={activeId}

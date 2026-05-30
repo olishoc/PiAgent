@@ -8,7 +8,7 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
   { id: "General", label: "General", icon: "gear" },
   { id: "Apparence", label: "Apparence", icon: "spark" },
   { id: "Configuration", label: "Configuration", icon: "shield" },
-  { id: "Modeles", label: "Modeles", icon: "bot" },
+  { id: "Modeles", label: "Modeles", icon: "terminal" },
   { id: "Sous-agents", label: "Sous-agents", icon: "plug" },
   { id: "Projets", label: "Projets", icon: "folder" },
   { id: "Memoire", label: "Memoire", icon: "spark" },
@@ -47,6 +47,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
   const [subagentStatus, setSubagentStatus] = useState<any>(null);
   const [beautifulUiStatus, setBeautifulUiStatus] = useState<any>(null);
   const updateBusy = updateStatus.state === "checking" || updateStatus.state === "available" || updateStatus.state === "installing";
+  const codexFontLocked = settings.themePreset === "codex";
 
   const refreshGithubStatus = async () => {
     const response = await fetch(apiUrl("/api/github/status")).catch(() => null);
@@ -147,7 +148,7 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                   <Icon name="terminal" /> Pour le codage<span>Reponses techniques, outils actifs, workflow Pi complet</span>
                 </button>
                 <button className={settings.accessMode === "limited" ? "selected" : ""} onClick={() => onChange({ accessMode: "limited" })}>
-                  <Icon name="bot" /> Pour le travail quotidien<span>Moins d'outils actifs par defaut, meme modele</span>
+                  <Icon name="spark" /> Pour le travail quotidien<span>Moins d'outils actifs par defaut, meme modele</span>
                 </button>
               </div>
             </section>
@@ -217,7 +218,13 @@ export default function SettingsView({ settings, onBack, onChange }: SettingsVie
                 <option value="custom">Personnalise</option>
               </select>
               <span>Police</span>
-              <select value={settings.fontFamily} onChange={(e) => onChange({ fontFamily: e.target.value })}>
+              <select
+                value={codexFontLocked ? "\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif" : settings.fontFamily}
+                disabled={codexFontLocked}
+                title={codexFontLocked ? "La palette Codex utilise sa police systeme pour garder le style exact." : undefined}
+                onChange={(e) => onChange({ fontFamily: e.target.value })}
+              >
+                <option value={"\"OpenAI Sans\", Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"}>OpenAI Sans style</option>
                 <option value={"\"SF Mono\", \"Fira Code\", \"Cascadia Code\", \"Consolas\", monospace"}>SF Mono stack</option>
                 <option value={"\"Cascadia Code\", \"Consolas\", monospace"}>Cascadia Code</option>
                 <option value={"\"Fira Code\", \"Cascadia Code\", monospace"}>Fira Code</option>

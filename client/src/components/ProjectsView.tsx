@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AppSettings, ProjectInfo, ProjectTreeEntry } from "../App";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
+import type { Session } from "./Sidebar";
 
 interface GitStatus {
   ok?: boolean;
@@ -33,10 +34,14 @@ interface ProjectSubagentState {
 interface ProjectsViewProps {
   projects: ProjectInfo[];
   activeProjectId: string;
+  activeSessionId: string;
   settings: AppSettings;
+  sessions: Session[];
   onBackToChat: () => void;
+  onNewChat: () => Promise<void>;
   onCreate: (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => Promise<void>;
   onSelect: (project: ProjectInfo) => Promise<void>;
+  onSelectSession: (session: Session) => void;
   onRefresh: () => Promise<void>;
 }
 
@@ -52,7 +57,7 @@ function formatSize(size?: number) {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export default function ProjectsView({ projects, activeProjectId, settings, onBackToChat, onCreate, onSelect, onRefresh }: ProjectsViewProps) {
+export default function ProjectsView({ projects, activeProjectId, activeSessionId, settings, sessions, onBackToChat, onNewChat, onCreate, onSelect, onSelectSession, onRefresh }: ProjectsViewProps) {
   const [name, setName] = useState("New project");
   const [rootPath, setRootPath] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
@@ -268,6 +273,28 @@ export default function ProjectsView({ projects, activeProjectId, settings, onBa
 
               <section className="project-panel">
                 <div className="panel-title">
+                  <h2><Icon name="archive" /> Chats</h2>
+                  <button onClick={() => void onNewChat()}><Icon name="plus" /> New chat</button>
+                </div>
+                <div className="project-chat-list">
+                  {sessions.map((session) => (
+                    <button
+                      key={session.id}
+                      className={session.id === activeSessionId ? "active" : ""}
+                      onClick={() => onSelectSession(session)}
+                      title={session.path}
+                    >
+                      <Icon name="file" size={13} />
+                      <span>{session.name}</span>
+                      <em>{session.messageCount} messages</em>
+                    </button>
+                  ))}
+                  {!sessions.length ? <p>No chats in this project yet.</p> : null}
+                </div>
+              </section>
+
+              <section className="project-panel">
+                <div className="panel-title">
                   <h2><Icon name="folder" /> Files</h2>
                   <button onClick={() => void refreshProjectData()}><Icon name="search" /> Rescan</button>
                 </div>
@@ -304,7 +331,7 @@ export default function ProjectsView({ projects, activeProjectId, settings, onBa
               <section className="project-panel">
                 <div className="panel-title">
                   <h2><Icon name="plug" /> Subagents</h2>
-                  <button onClick={() => void generateDelegationPlan()}><Icon name="bot" /> Plan</button>
+                  <button onClick={() => void generateDelegationPlan()}><Icon name="spark" /> Plan</button>
                 </div>
                 <div className="git-line">
                   <strong>{subagentStatus?.installed ? "ready" : "missing"}</strong>

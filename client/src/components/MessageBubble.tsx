@@ -121,7 +121,7 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
 
   return (
     <article className="message agent-message">
-      <div className="agent-label"><Icon name="bot" size={14} /> agent <span>{timeLabel(message.createdAt)}</span></div>
+      <div className="agent-label"><span className="mini-mark">PI</span> agent <span>{timeLabel(message.createdAt)}</span></div>
       <div className="agent-text">{renderCodeAware(message.text)}</div>
     </article>
   );

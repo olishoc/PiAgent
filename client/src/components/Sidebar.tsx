@@ -16,6 +16,7 @@ export interface Session {
 interface SidebarProps {
   sessions: Session[];
   activeId: string;
+  appTitle?: string;
   accountId?: string;
   displayName?: string;
   activeView: string;
@@ -51,6 +52,7 @@ function ageLabel(session: Session) {
 export default function Sidebar({
   sessions,
   activeId,
+  appTitle = "Pi Agent",
   accountId,
   displayName,
   activeView,
@@ -89,7 +91,7 @@ export default function Sidebar({
         <span className={`status-dot ${status}`} />
         <span className="task-copy">
           <span className="task-name">{session.name}</span>
-          <span className="task-time">{session.messageCount} messages - {ageLabel({ ...session, status })}</span>
+          <span className="task-time">{ageLabel({ ...session, status })}</span>
         </span>
         <span className="task-actions">
           <span
@@ -120,6 +122,10 @@ export default function Sidebar({
   };
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
+      <div className="sidebar-brand">
+        <span className="brand-mark">PI</span>
+        <strong>{appTitle}</strong>
+      </div>
       <div className="sidebar-topnav">
         <button aria-label="toggle sidebar" onClick={onToggle} title="Toggle sidebar"><Icon name="layout" /></button>
         <button aria-label="back" onClick={onBack} title="Back"><Icon name="arrowLeft" /></button>

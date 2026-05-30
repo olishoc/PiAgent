@@ -11,11 +11,10 @@ interface ThreadViewProps {
   connectionState?: string;
   sessionName?: string;
   contextUsage?: ContextUsage | null;
-  onToggleContext: () => void;
   onAbort: () => void;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, sessionName, contextUsage, onToggleContext, onAbort }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, onAbort }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -30,7 +29,6 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   }, 0), [messages]);
   const thinkingCount = useMemo(() => messages.filter((message) => message.kind === "thinking").length, [messages]);
   const advisorCount = useMemo(() => messages.filter((message) => message.kind === "advisor").length, [messages]);
-  const subagentCount = useMemo(() => messages.filter((message) => message.kind === "subagent").length, [messages]);
   const runningToolCount = useMemo(() => messages.reduce((count, message) => {
     if (message.kind === "tool" && message.status === "running") return count + 1;
     if (message.kind === "tool_group") return count + message.tools.filter((tool) => tool.status === "running").length;
@@ -92,33 +90,24 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
     <section className="thread-shell">
       <header className="thread-header">
         <div>
-          <strong>{sessionName || "New PiAgent thread"}</strong>
+          <strong>{sessionName || "New chat"}</strong>
           <div className="thread-badges">
             <span className={`state-badge ${runState.replace(/\s+/g, "-")}`}>{runState}</span>
-            <span>{connectionState ?? "idle"}</span>
-            <span>{toolCount} tools</span>
-            <span>{thinkingCount} thoughts</span>
-            <span>{advisorCount} advisor</span>
-            <span>{subagentCount} subagents</span>
-            <span>context {contextUsage?.percent ?? 0}%</span>
+            {connectionState && connectionState !== runState ? <span>{connectionState}</span> : null}
+            {toolCount > 0 ? <span>{toolCount} tools</span> : null}
+            {thinkingCount > 0 ? <span>{thinkingCount} thoughts</span> : null}
+            {advisorCount > 0 ? <span>{advisorCount} advisor</span> : null}
+            {(contextUsage?.percent ?? 0) > 0 ? <span>{contextUsage?.percent}% used</span> : null}
           </div>
         </div>
         <div className="thread-actions">
           {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}
-          <button onClick={onToggleContext}><Icon name="layout" /> Context</button>
         </div>
       </header>
       <div className="thread-feed" ref={feedRef} onScroll={onScroll}>
         {messages.length === 0 ? (
           <div className="empty-thread">
-            <div className="empty-orbit"><Icon name="bot" size={28} /></div>
-            <h1>What should PiAgent build or inspect?</h1>
-            <p>Attach files, use slash commands, or ask for a concrete coding task. PiAgent will stream activity, tool calls, and responses here.</p>
-            <div className="empty-suggestions">
-              <span>/attach add project files</span>
-              <span>/permissions change access</span>
-              <span>/sessions search history</span>
-            </div>
+            <h1>Ask Pi Agent</h1>
           </div>
         ) : null}
         {messages.map((message) => (

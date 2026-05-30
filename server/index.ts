@@ -53,9 +53,16 @@ const BACKEND_FEATURES = {
   clipboardTools: true,
   beautifulUiMode: true
 };
+const devServerOrigins = BACKEND_VERSION === "dev" || process.env.NODE_ENV !== "production"
+  ? [
+      /^http:\/\/127\.0\.0\.1:(517[3-9]|5180)$/,
+      /^http:\/\/localhost:(517[3-9]|5180)$/
+    ]
+  : [];
 const allowedOrigins = [
-  /^http:\/\/127\.0\.0\.1:(1456|5173)$/,
-  /^http:\/\/localhost:(1456|5173)$/,
+  /^http:\/\/127\.0\.0\.1:1456$/,
+  /^http:\/\/localhost:1456$/,
+  ...devServerOrigins,
   /^https?:\/\/tauri\.localhost(?::\d+)?$/,
   /^tauri:\/\/localhost$/
 ];
