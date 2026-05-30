@@ -661,9 +661,6 @@ export default function App() {
   };
 
   const selectSession = async (session: Session) => {
-    setActiveId(session.id);
-    navigate("chat");
-    agent.replaceMessages([]);
     const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
     if (switchResult?.success === false) {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open this thread." }]);
@@ -672,7 +669,10 @@ export default function App() {
     const messagesResult = await agent.sendCommand({ type: "get_messages" });
     if (messagesResult?.success === false) {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: messagesResult.error ?? "Pi opened this thread, but messages could not be loaded." }]);
+      return;
     }
+    setActiveId(session.id);
+    navigate("chat");
   };
 
   const runComposerCommand = (command: string) => {
