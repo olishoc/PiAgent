@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent } from "react";
+import type { CSSProperties } from "react";
 import Composer from "./components/Composer";
 import LoginScreen from "./components/LoginScreen";
 import Sidebar, { Session } from "./components/Sidebar";
 import ThreadView from "./components/ThreadView";
+import AnimatedBackdrop from "./components/AnimatedBackdrop";
 import { type Attachment, type DisplayMessage, type PromptOptions, useAgent } from "./hooks/useAgent";
 import { useAuth } from "./hooks/useAuth";
 import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
@@ -157,9 +158,10 @@ export interface AppSettings {
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
-  animatedBackground: "midnight-ocean" | "aurora-glass" | "liquid-prism" | "solar-frost";
+  animatedBackground: "aurora-glass" | "midnight-ocean" | "liquid-prism" | "solar-frost" | "sci-fi-grid" | "lunar-waves" | "cartoon-beach";
   lightDeflection: "balanced" | "strong" | "extreme";
   cursorLight: "off" | "subtle" | "strong";
+  answerSurface: "open" | "glass";
   accentColor: string;
   density: "comfortable" | "compact";
   textDensity: "compact" | "codex" | "comfortable" | "custom";
@@ -356,9 +358,10 @@ export default function App() {
     memoryMinConfidence: 0.35,
     theme: "dark",
     themePreset: "codex",
-    animatedBackground: "midnight-ocean",
+    animatedBackground: "aurora-glass",
     lightDeflection: "strong",
     cursorLight: "subtle",
+    answerSurface: "glass",
     accentColor: "#58a6ff",
     density: "comfortable",
     textDensity: "codex",
@@ -387,6 +390,7 @@ export default function App() {
   const loadedSessionRef = useRef("");
   const protectedActiveSessionRef = useRef("");
   const runtimeSessionRef = useRef("");
+  const [appShellElement, setAppShellElement] = useState<HTMLDivElement | null>(null);
   const sessionOpenRequestRef = useRef(0);
   const agent = useAgent(auth.loggedIn, settings.thinkingLevel !== "off", activeId);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
@@ -1169,8 +1173,28 @@ export default function App() {
     }
     const backgroundSend = Boolean(route?.background && activeIdRef.current !== targetSessionId);
     const wantsSteering = Boolean(options?.steering);
+    const runningSessionId = agent.runningSessionId || runtimeSessionRef.current;
+    const runningInAnotherChat = Boolean(agent.isStreaming && runningSessionId && runningSessionId !== targetSessionId);
+    if (runningInAnotherChat && !route?.fromQueue) {
+      if (!backgroundSend) {
+        const runningSession = [...sessions, ...allSessions].find((session) => session.id === runningSessionId);
+        const runningLabel = runningSession ? sessionDisplayName(runningSession.name) : "the running chat";
+        agent.replaceMessages([
+          ...agent.messages,
+          {
+            id: crypto.randomUUID(),
+            kind: "status",
+            text: wantsSteering
+              ? `Steering is only available in ${runningLabel}. This message was not sent.`
+              : `Pi is already working in ${runningLabel}. This message was not queued in this chat. Open the running chat to steer it, or wait for it to finish.`
+          }
+        ]);
+      }
+      return false;
+    }
     if (agent.isStreaming && !wantsSteering && !route?.fromQueue) {
       setPromptQueue((current) => {
+        const sameSession = current.filter((item) => item.sessionId !== targetSessionId);
         const queued = [...current, {
           id: crypto.randomUUID(),
           text,
@@ -1180,7 +1204,7 @@ export default function App() {
           projectId: targetProjectId,
           createdAt: Date.now()
         }];
-        return queued.slice(-12);
+        return [...sameSession, ...queued.filter((item) => item.sessionId === targetSessionId).slice(-6)].slice(-12);
       });
       return true;
     }
@@ -1299,6 +1323,7 @@ export default function App() {
     if (message.kind === "tool_group") return count + message.tools.filter((tool) => tool.status === "running").length;
     return count;
   }, 0);
+  const activeQueuedCount = activeId ? promptQueue.filter((item) => item.sessionId === activeId).length : promptQueue.length;
   const hasRunError = agent.connectionState === "error" || visibleMessages.some((message) => message.kind === "status" && /error|failed|stopped|timed out/i.test(message.text));
   const toolbarStatus = agent.connectionState === "ready"
     ? "Ready"
@@ -1322,7 +1347,7 @@ export default function App() {
             : "";
   const toolbarDetail = [
     agent.footerStatus && !/^connected$/i.test(agent.footerStatus) ? agent.footerStatus : "",
-    promptQueue.length ? `${promptQueue.length} queued` : "",
+    activeQueuedCount ? `${activeQueuedCount} queued` : "",
     runningToolCount > 0 ? `${runningToolCount} tools` : "",
     (agent.contextUsage?.percent ?? 0) > 0 ? `${agent.contextUsage?.percent}% context` : ""
   ].filter(Boolean).join(" / ");
@@ -1330,17 +1355,48 @@ export default function App() {
   const activeSessionName = activeSession ? sessionDisplayName(activeSession.name) : "";
   const hasOnlyOpeningStatus = Boolean(openingSessionId) && visibleMessages.every((message) => message.kind === "status");
   const composerCentered = (visibleMessages.length === 0 || hasOnlyOpeningStatus) && !visibleStreaming;
-  const updateCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.style.setProperty("--cursor-x", `${event.clientX}px`);
-    event.currentTarget.style.setProperty("--cursor-y", `${event.clientY}px`);
-    const target = event.target;
-    const nearInteractive = target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [role='button'], .composer, .pill-menu, .session-row, .project-row, .message-actions, .toolbar-actions"));
-    event.currentTarget.classList.add("cursor-active");
-    event.currentTarget.classList.toggle("cursor-interactive", nearInteractive);
-  };
-  const hideCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
-    event.currentTarget.classList.remove("cursor-active", "cursor-interactive");
-  };
+
+  useEffect(() => {
+    const shell = appShellElement;
+    if (!shell) return;
+    const interactiveSelector = "button, a, input, textarea, select, [role='button'], .composer, .pill-menu, .setting-select-menu, .session-row, .project-row, .message-actions, .toolbar-actions";
+    const setCursor = (event: PointerEvent | MouseEvent) => {
+      shell.style.setProperty("--cursor-x", `${event.clientX}px`);
+      shell.style.setProperty("--cursor-y", `${event.clientY}px`);
+      const nearInteractive = event.target instanceof Element && Boolean(event.target.closest(interactiveSelector));
+      shell.classList.add("cursor-active");
+      shell.classList.toggle("cursor-interactive", nearInteractive);
+    };
+    const press = (event: PointerEvent | MouseEvent) => {
+      setCursor(event);
+      shell.classList.add("cursor-pressing");
+    };
+    const release = (event: PointerEvent | MouseEvent) => {
+      setCursor(event);
+      shell.classList.remove("cursor-pressing");
+    };
+    const hide = () => shell.classList.remove("cursor-active", "cursor-interactive", "cursor-pressing");
+    window.addEventListener("pointermove", setCursor, { passive: true });
+    window.addEventListener("pointerdown", press, { passive: true });
+    window.addEventListener("pointerup", release, { passive: true });
+    window.addEventListener("mousemove", setCursor, { passive: true });
+    window.addEventListener("mousedown", press, { passive: true });
+    window.addEventListener("mouseup", release, { passive: true });
+    window.addEventListener("blur", hide);
+    document.addEventListener("mouseleave", hide);
+    document.addEventListener("visibilitychange", hide);
+    return () => {
+      window.removeEventListener("pointermove", setCursor);
+      window.removeEventListener("pointerdown", press);
+      window.removeEventListener("pointerup", release);
+      window.removeEventListener("mousemove", setCursor);
+      window.removeEventListener("mousedown", press);
+      window.removeEventListener("mouseup", release);
+      window.removeEventListener("blur", hide);
+      document.removeEventListener("mouseleave", hide);
+      document.removeEventListener("visibilitychange", hide);
+    };
+  }, [appShellElement]);
 
   if (backendError) {
     return (
@@ -1358,14 +1414,14 @@ export default function App() {
 
   return (
     <div
+      ref={setAppShellElement}
       className={`app-shell density-${settings?.density ?? "comfortable"}`}
       data-theme={resolvedTheme}
-      data-background={settings?.animatedBackground ?? "midnight-ocean"}
+      data-background={settings?.animatedBackground ?? "aurora-glass"}
+      data-palette={requestedThemePreset}
       data-refraction={settings?.lightDeflection ?? "strong"}
       data-cursor-light={settings?.cursorLight ?? "subtle"}
-      onPointerMove={updateCursorGlow}
-      onPointerEnter={updateCursorGlow}
-      onPointerLeave={hideCursorGlow}
+      data-answer-surface={settings?.answerSurface ?? "glass"}
       style={{
         "--bg-app": surface.app,
         "--bg-sidebar": surface.sidebar,
@@ -1401,6 +1457,13 @@ export default function App() {
         "--message-spacing": `${textPreset.messageSpacing}px`
       } as CSSProperties}
     >
+      <AnimatedBackdrop
+        mode={settings?.animatedBackground ?? "aurora-glass"}
+        theme={resolvedTheme ?? "dark"}
+        palette={requestedThemePreset}
+        accent={settings?.accentColor ?? "#58a6ff"}
+        cursorLight={settings?.cursorLight ?? "subtle"}
+      />
       <div className="environment-backdrop" aria-hidden="true">
         <div className="sky-layer" />
         <div className="horizon-glow" />
@@ -1546,8 +1609,8 @@ export default function App() {
                 onAbort={agent.abort}
                 disabled={agent.connectionState !== "ready"}
                 isStreaming={visibleStreaming}
-                isAgentBusy={agent.isStreaming}
-                queuedCount={promptQueue.length}
+                isAgentBusy={visibleStreaming}
+                queuedCount={activeQueuedCount}
                 settings={settings ?? undefined}
                 models={models}
                 extensionCommands={extensionCommands}

@@ -8,9 +8,10 @@ export type ProviderId = string;
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ThemePreset = "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
 export type TextDensity = "compact" | "codex" | "comfortable" | "custom";
-export type AnimatedBackground = "midnight-ocean" | "aurora-glass" | "liquid-prism" | "solar-frost";
+export type AnimatedBackground = "aurora-glass" | "midnight-ocean" | "liquid-prism" | "solar-frost" | "sci-fi-grid" | "lunar-waves" | "cartoon-beach";
 export type LightDeflection = "balanced" | "strong" | "extreme";
 export type CursorLight = "off" | "subtle" | "strong";
+export type AnswerSurface = "open" | "glass";
 export type MemoryMode = "off" | "manual" | "assistive" | "deep";
 export type SubagentRoutingMode = "manual" | "assistive" | "automatic";
 export type SubagentIntercomMode = "off" | "fork-only" | "always";
@@ -55,6 +56,7 @@ export interface AppSettings {
   animatedBackground: AnimatedBackground;
   lightDeflection: LightDeflection;
   cursorLight: CursorLight;
+  answerSurface: AnswerSurface;
   accentColor: string;
   density: "comfortable" | "compact";
   textDensity: TextDensity;
@@ -118,9 +120,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memoryMinConfidence: 0.35,
   theme: "dark",
   themePreset: "codex",
-  animatedBackground: "midnight-ocean",
+  animatedBackground: "aurora-glass",
   lightDeflection: "strong",
   cursorLight: "subtle",
+  answerSurface: "glass",
   accentColor: "#58a6ff",
   density: "comfortable",
   textDensity: "codex",
@@ -145,9 +148,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const THEME_PRESETS: ThemePreset[] = ["codex", "graphite", "midnight", "ember", "absolute", "paper", "dawn", "contrast"];
-const ANIMATED_BACKGROUNDS: AnimatedBackground[] = ["midnight-ocean", "aurora-glass", "liquid-prism", "solar-frost"];
+const ANIMATED_BACKGROUNDS: AnimatedBackground[] = ["aurora-glass", "midnight-ocean", "liquid-prism", "solar-frost", "sci-fi-grid", "lunar-waves", "cartoon-beach"];
 const LIGHT_DEFLECTIONS: LightDeflection[] = ["balanced", "strong", "extreme"];
 const CURSOR_LIGHTS: CursorLight[] = ["off", "subtle", "strong"];
+const ANSWER_SURFACES: AnswerSurface[] = ["open", "glass"];
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const TEXT_DENSITIES: TextDensity[] = ["compact", "codex", "comfortable", "custom"];
 const ACCESS_MODES: AccessMode[] = ["read-only", "limited", "full"];
@@ -217,6 +221,7 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   subagentRoutingMode: SUBAGENT_ROUTING_MODES,
   subagentIntercomMode: SUBAGENT_INTERCOM_MODES,
   subagentThinking: THINKING_LEVELS,
+  answerSurface: ANSWER_SURFACES,
   theme: THEMES,
   themePreset: THEME_PRESETS,
   animatedBackground: ANIMATED_BACKGROUNDS,
@@ -243,9 +248,10 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   if (!loaded.advisorProvider) loaded.advisorProvider = loaded.provider || "openai-codex";
   if (!loaded.advisorModel) loaded.advisorModel = loaded.modelLabel || "gpt-5.5";
   if (!THEME_PRESETS.includes(loaded.themePreset as ThemePreset)) loaded.themePreset = "codex";
-  if (!ANIMATED_BACKGROUNDS.includes(loaded.animatedBackground as AnimatedBackground)) loaded.animatedBackground = "midnight-ocean";
+  if (!ANIMATED_BACKGROUNDS.includes(loaded.animatedBackground as AnimatedBackground)) loaded.animatedBackground = "aurora-glass";
   if (!LIGHT_DEFLECTIONS.includes(loaded.lightDeflection as LightDeflection)) loaded.lightDeflection = "strong";
   if (!CURSOR_LIGHTS.includes(loaded.cursorLight as CursorLight)) loaded.cursorLight = "subtle";
+  if (!ANSWER_SURFACES.includes(loaded.answerSurface as AnswerSurface)) loaded.answerSurface = "glass";
   if (!THINKING_LEVELS.includes(loaded.thinkingLevel as ThinkingLevel)) loaded.thinkingLevel = "medium";
   if (!THINKING_LEVELS.includes(loaded.advisorReasoning as ThinkingLevel) || loaded.advisorReasoning === "off") loaded.advisorReasoning = "high";
   if (!TEXT_DENSITIES.includes(loaded.textDensity as TextDensity)) loaded.textDensity = "codex";

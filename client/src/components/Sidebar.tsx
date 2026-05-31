@@ -62,8 +62,6 @@ export default function Sidebar({
   activeId,
   appTitle = "",
   allSessions,
-  accountId,
-  displayName,
   activeView,
   projects,
   activeProjectId,
@@ -86,8 +84,6 @@ export default function Sidebar({
   onForward
 }: SidebarProps) {
   const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set(projects.map((project) => project.id)));
-  const shownName = displayName?.trim() || "Local user";
-  const initials = shownName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "L";
   const visibleSessions = (allSessions?.length ? allSessions : sessions).filter((session) => !session.archived);
   const unassignedSessions = visibleSessions.filter((session) => !session.projectId);
   const projectSessions = (projectId: string) => visibleSessions.filter((session) => session.projectId === projectId);
@@ -219,12 +215,10 @@ export default function Sidebar({
       </div>
       <div className="task-list" />
       <footer className="sidebar-footer">
-        <div className="avatar">{initials}</div>
-        <div className="user-copy">
-          <span>{shownName}</span>
-          <span>{accountId ? "OpenAI connected" : "local account"}</span>
-        </div>
-        <button className={`settings ${activeView === "settings" ? "active" : ""}`} onClick={onSettings} aria-label="settings" title="Settings"><Icon name="gear" /></button>
+        <button className={`parameters-button ${activeView === "settings" ? "active" : ""}`} onClick={onSettings} aria-label="Parameters" title="Parameters">
+          <span className="parameters-icon"><Icon name="gear" /></span>
+          <span>Parameters</span>
+        </button>
       </footer>
     </aside>
   );

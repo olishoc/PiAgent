@@ -117,6 +117,8 @@ const wss = new WebSocketServer({
   }
 });
 
+let sharedAgentSession: PiSession | null = null;
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.some((pattern) => pattern.test(origin))) {
@@ -671,12 +673,14 @@ wss.on("connection", async (ws) => {
         }));
       }
     };
-    const initialSession = await startSession();
+    const initialSession = sharedAgentSession?.isAlive() ? sharedAgentSession : await startSession();
     if (!initialSession) {
       ws.close();
       return;
     }
+    sharedAgentSession = initialSession;
     let session = initialSession;
+    wireSession(session);
     sendReady();
 
     ws.on("message", async (raw) => {
@@ -691,6 +695,7 @@ wss.on("connection", async (ws) => {
           session.onEvent = () => {};
           session.kill();
           session = nextSession;
+          sharedAgentSession = nextSession;
           sendReady();
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: true }));
           return;
@@ -703,6 +708,7 @@ wss.on("connection", async (ws) => {
           }
           session.onEvent = () => {};
           session = nextSession;
+          sharedAgentSession = nextSession;
           sendReady();
         }
         let outbound = cmd;
@@ -783,7 +789,9 @@ wss.on("connection", async (ws) => {
       }
     });
 
-    ws.on("close", () => session.kill());
+    ws.on("close", () => {
+      if (sharedAgentSession !== session) session.kill();
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unable to start Pi session";
     ws.send(JSON.stringify({ type: "error", message }));

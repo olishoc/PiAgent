@@ -53,7 +53,7 @@
 .sidebar.collapsed .folder-chats,
 .sidebar.collapsed .task-copy,
 .sidebar.collapsed .task-actions,
-.sidebar.collapsed .user-copy {
+.sidebar.collapsed .parameters-button > span:not(.parameters-icon) {
   display: none;
 }
 
@@ -432,43 +432,60 @@
 .sidebar-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
   min-height: 58px;
   padding: 10px;
   border-top: 0.5px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 36%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 34%, transparent), color-mix(in srgb, var(--bg-sidebar) 26%, transparent)),
+    radial-gradient(circle at 24% 0%, color-mix(in srgb, #ffffff 9%, transparent), transparent 42%);
 }
 
-.avatar {
+.parameters-button {
+  display: flex;
+  width: 100%;
+  height: 36px;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 0 10px;
+  border: 0.5px solid color-mix(in srgb, var(--border-hover) 70%, transparent);
+  border-radius: 999px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 46%, transparent), color-mix(in srgb, var(--bg-input) 36%, transparent));
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--neon-cyan) 10%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
+  text-shadow: var(--text-glow-strong);
+}
+
+.parameters-button:hover,
+.parameters-button.active {
+  border-color: color-mix(in srgb, var(--accent) 46%, var(--border-hover));
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--selected-bg) 70%, var(--surface)), color-mix(in srgb, var(--surface) 48%, transparent)),
+    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--neon-cyan) 14%, transparent), transparent 42%);
+  box-shadow:
+    0 0 32px color-mix(in srgb, var(--neon-cyan) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 16%, transparent);
+}
+
+.parameters-icon {
   display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   place-items: center;
   border-radius: 50%;
-  background: var(--surface-hover);
   color: var(--text-primary);
-  font-size: 10px;
 }
 
-.user-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.user-copy span {
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.user-copy span + span {
-  color: var(--text-tertiary);
+.sidebar.collapsed .parameters-button {
+  justify-content: center;
+  padding: 0;
 }
 
 @media (max-width: 860px) {
@@ -487,7 +504,7 @@
   .sidebar-label.inline,
   .folder-chats,
   .task-copy,
-  .user-copy {
+  .parameters-button > span:not(.parameters-icon) {
     display: none;
   }
 

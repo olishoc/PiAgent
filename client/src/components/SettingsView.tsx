@@ -219,8 +219,11 @@ const approvalOptions: Array<SettingSelectOption<AppSettings["approvalPolicy"]>>
 ];
 
 const animatedBackgroundOptions: Array<SettingSelectOption<AppSettings["animatedBackground"]>> = [
+  { value: "aurora-glass", label: "Aurora glass", note: "default" },
+  { value: "lunar-waves", label: "Lunar waves", note: "night sea" },
+  { value: "sci-fi-grid", label: "Sci-fi grid", note: "reactive" },
+  { value: "cartoon-beach", label: "Cartoon beach", note: "lights" },
   { value: "midnight-ocean", label: "Midnight ocean", note: "deep" },
-  { value: "aurora-glass", label: "Aurora glass", note: "active" },
   { value: "liquid-prism", label: "Liquid prism", note: "bright" },
   { value: "solar-frost", label: "Solar frost", note: "light" }
 ];
@@ -235,6 +238,11 @@ const cursorLightOptions: Array<SettingSelectOption<AppSettings["cursorLight"]>>
   { value: "subtle", label: "Subtle cursor light", note: "native" },
   { value: "strong", label: "Strong cursor light", note: "reactive" },
   { value: "off", label: "Off" }
+];
+
+const answerSurfaceOptions: Array<SettingSelectOption<AppSettings["answerSurface"]>> = [
+  { value: "glass", label: "Glass answer box", note: "readable" },
+  { value: "open", label: "Open text", note: "minimal" }
 ];
 
 export default function SettingsView({ settings, models, onBack, onChange }: SettingsViewProps) {
@@ -525,6 +533,12 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
                 value={settings.cursorLight}
                 onChange={(value) => onChange({ cursorLight: value })}
                 options={cursorLightOptions}
+              />
+              <span>Reponses IA</span>
+              <SettingSelect
+                value={settings.answerSurface}
+                onChange={(value) => onChange({ answerSurface: value })}
+                options={answerSurfaceOptions}
               />
               <span>Accent</span>
               <input type="color" value={settings.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />

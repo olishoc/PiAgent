@@ -1,6 +1,6 @@
 [package]
 name = "piagent"
-version = "0.1.40"
+version = "0.1.41"
 description = "PiAgent desktop shell"
 authors = ["PiAgent"]
 edition = "2021"
