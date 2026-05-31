@@ -29,6 +29,7 @@ export class PiSession {
   private buffer = "";
   private decoder = new StringDecoder("utf8");
   private pendingRequests: Map<string, (r: any) => void> = new Map();
+  private alive = true;
   public onEvent: (event: any) => void = () => {};
 
   constructor(sessionDir: string, accessToken: string, options: PiSessionOptions = {}) {
@@ -65,10 +66,12 @@ export class PiSession {
     this.proc.stdout.on("data", (chunk) => this._onData(chunk));
     this.proc.stderr.on("data", (d) => console.error("[pi stderr]", d.toString()));
     this.proc.on("error", (err) => {
+      this.alive = false;
       this.rejectPending({ type: "response", success: false, error: err.message });
       this.onEvent({ type: "process_error", message: err.message });
     });
     this.proc.on("exit", (code, signal) => {
+      this.alive = false;
       this.rejectPending({ type: "response", success: false, error: "Pi process exited", code, signal });
       this.onEvent({ type: "process_exit", code, signal });
     });
@@ -103,7 +106,7 @@ export class PiSession {
 
   send(cmd: Record<string, unknown> & { id?: string }): Promise<any> {
     return new Promise((resolve, reject) => {
-      if (!this.proc.stdin.writable) {
+      if (!this.alive || !this.proc.stdin.writable) {
         reject(new Error("Pi process stdin is closed"));
         return;
       }
@@ -148,7 +151,12 @@ export class PiSession {
     return this.send({ type: "get_messages" });
   }
 
+  isAlive() {
+    return this.alive;
+  }
+
   kill() {
+    if (!this.alive) return;
     this.proc.kill();
   }
 }

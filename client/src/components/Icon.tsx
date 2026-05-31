@@ -28,6 +28,8 @@ export type IconName =
   | "spark"
   | "stop"
   | "terminal"
+  | "thumbDown"
+  | "thumbUp"
   | "x";
 
 interface IconProps {
@@ -65,6 +67,8 @@ const paths: Record<IconName, string> = {
   spark: "M12 2l1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16",
   stop: "M7 7h10v10H7z",
   terminal: "M4 17l6-5-6-5M12 19h8",
+  thumbDown: "M10 14H5a2 2 0 01-2-2v-1a2 2 0 012-2h2l2-5h7a2 2 0 012 2v7l-4 7h-2l1-6h-3zM17 5h3v8h-3",
+  thumbUp: "M10 10H5a2 2 0 00-2 2v1a2 2 0 002 2h2l2 5h7a2 2 0 002-2v-7l-4-7h-2l1 6h-3zM17 11h3v8h-3",
   x: "M6 6l12 12M18 6L6 18"
 };
 

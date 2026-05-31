@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Icon from "./Icon";
 import type { ProjectInfo } from "../App";
 import { sessionDisplayName } from "../lib/sessionNames";
@@ -84,11 +85,28 @@ export default function Sidebar({
   onBack,
   onForward
 }: SidebarProps) {
+  const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set(projects.map((project) => project.id)));
   const shownName = displayName?.trim() || "Local user";
   const initials = shownName.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "L";
   const visibleSessions = (allSessions?.length ? allSessions : sessions).filter((session) => !session.archived);
   const unassignedSessions = visibleSessions.filter((session) => !session.projectId);
   const projectSessions = (projectId: string) => visibleSessions.filter((session) => session.projectId === projectId);
+  useEffect(() => {
+    if (!activeProjectId) return;
+    setExpandedProjectIds((current) => new Set([...current, activeProjectId]));
+  }, [activeProjectId]);
+  const toggleProject = (project: ProjectInfo) => {
+    setExpandedProjectIds((current) => {
+      const next = new Set(current);
+      if (next.has(project.id)) {
+        next.delete(project.id);
+      } else {
+        next.add(project.id);
+        onSelectProject(project);
+      }
+      return next;
+    });
+  };
   const renderSession = (session: Session) => {
     const status = session.status ?? "done";
     const displayName = sessionDisplayName(session.name);
@@ -155,12 +173,14 @@ export default function Sidebar({
       <div className="project-list folder-list">
         {projects.map((project) => {
           const nested = projectSessions(project.id);
+          const expanded = expandedProjectIds.has(project.id);
           return (
-            <div key={project.id} className={`project-folder ${project.id === activeProjectId ? "active" : ""}`}>
+            <div key={project.id} className={`project-folder ${project.id === activeProjectId ? "active" : ""} ${expanded ? "expanded" : "collapsed"}`}>
               <div className="project-row-shell">
                 <button
                   className={`project-row ${project.id === activeProjectId ? "active" : ""}`}
-                  onClick={() => onSelectProject(project)}
+                  onClick={() => toggleProject(project)}
+                  aria-expanded={expanded}
                   title={project.rootPath}
                 >
                   <Icon name="folder" /> <span>{visibleProjectName(project.name)}</span><em>{nested.length}</em>
@@ -174,9 +194,7 @@ export default function Sidebar({
                   <Icon name="archive" size={12} />
                 </button>
               </div>
-              <div className="folder-chats">
-                {nested.map(renderSession)}
-              </div>
+              {expanded ? <div className="folder-chats">{nested.map(renderSession)}</div> : null}
             </div>
           );
         })}

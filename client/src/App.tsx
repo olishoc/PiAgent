@@ -322,7 +322,7 @@ export default function App() {
   const protectedActiveSessionRef = useRef("");
   const runtimeSessionRef = useRef("");
   const sessionOpenRequestRef = useRef(0);
-  const agent = useAgent(auth.loggedIn, settings.thinkingLevel !== "off");
+  const agent = useAgent(auth.loggedIn, settings.thinkingLevel !== "off", activeId);
   const [projects, setProjects] = useState<ProjectInfo[]>([]);
   const [activeProjectId, setActiveProjectId] = useState("");
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
@@ -345,6 +345,7 @@ export default function App() {
   );
 
   const reloadAgentRuntime = async () => {
+    if (agent.isStreaming) return { success: false, error: "Pi is still working in another chat." };
     loadedSessionRef.current = "";
     runtimeSessionRef.current = "";
     return agent.sendCommand({ type: "reload_agent" });
@@ -354,6 +355,7 @@ export default function App() {
     if (!isCurrentSessionOpen(session.id, requestId)) return false;
     if (session.messageCount === 0) {
       if (!isCurrentSessionOpen(session.id, requestId)) return false;
+      agent.clearVisibleRunState();
       agent.replaceMessages([]);
       return true;
     }
@@ -364,9 +366,14 @@ export default function App() {
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: data.error ?? "Pi could not read this chat from disk." }]);
       return false;
     }
+    agent.clearVisibleRunState();
     agent.loadMessages(data.messages);
     return true;
   };
+
+  const canSwitchAgentRuntime = (sessionId?: string) => (
+    !agent.isStreaming || !agent.runningSessionId || agent.runningSessionId === sessionId
+  );
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -497,7 +504,7 @@ export default function App() {
   }, [agent.connectionState]);
 
   useEffect(() => {
-    if (agent.connectionState !== "ready" || agent.isStreaming || !activeId) return;
+    if (agent.connectionState !== "ready" || !canSwitchAgentRuntime(activeId) || !activeId) return;
     if (loadedSessionRef.current === activeId) return;
     const session = sessions.find((item) => item.id === activeId);
     if (!session?.path) return;
@@ -516,6 +523,7 @@ export default function App() {
         loadedSessionRef.current = "";
         return;
       }
+      if (!canSwitchAgentRuntime(session.id)) return;
       void agent.sendCommand({ type: "switch_session", sessionPath: session.path }).then((switchResult) => {
         if (!isCurrentSessionOpen(activeId, requestId)) return;
         if (switchResult?.success === false) {
@@ -530,7 +538,7 @@ export default function App() {
       cancelled = true;
       setOpeningSessionId((current) => current === activeId ? "" : current);
     };
-  }, [agent.connectionState, agent.isStreaming, activeId, sessions, agent.sendCommand, agent.replaceMessages]);
+  }, [agent.connectionState, agent.isStreaming, agent.runningSessionId, activeId, sessions, agent.sendCommand, agent.replaceMessages]);
 
   if (backendError) {
     return (
@@ -679,7 +687,7 @@ export default function App() {
         if (!messagesLoaded) {
           loadedSessionRef.current = "";
           setActiveSessionId("");
-        } else {
+        } else if (canSwitchAgentRuntime(nextSession.id)) {
           void agent.sendCommand({ type: "switch_session", sessionPath: nextSession.path }).then((result) => {
             if (!isCurrentSessionOpen(nextSession.id, openRequestId)) return;
             if (result?.success !== false) runtimeSessionRef.current = nextSession.id;
@@ -722,14 +730,16 @@ export default function App() {
     const allItems = await fetchSessions(undefined, true).catch(() => allSessions);
     if (!isCurrentSessionOpen(session.id, requestId)) return "";
     setAllSessions(allItems);
-    const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
-    if (!isCurrentSessionOpen(session.id, requestId)) return "";
-    if (switchResult?.success === false) {
-      setOpeningSessionId("");
-      agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open the new thread." }]);
-      return "";
+    if (canSwitchAgentRuntime(session.id)) {
+      const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
+      if (!isCurrentSessionOpen(session.id, requestId)) return "";
+      if (switchResult?.success === false) {
+        setOpeningSessionId("");
+        agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: switchResult.error ?? "Pi could not open the new thread." }]);
+        return "";
+      }
+      runtimeSessionRef.current = session.id;
     }
-    runtimeSessionRef.current = session.id;
     setOpeningSessionId("");
     return session.id;
   };
@@ -746,8 +756,10 @@ export default function App() {
     applySettings(data.settings ?? { workspacePath: data.project.rootPath });
     await refreshProjects();
     navigate("chat");
-    await reloadAgentRuntime();
-    void agent.sendCommand({ type: "get_state" });
+    if (canSwitchAgentRuntime(data.project.id)) {
+      await reloadAgentRuntime();
+      void agent.sendCommand({ type: "get_state" });
+    }
     await createScopedSession(data.project.id);
   };
 
@@ -762,9 +774,11 @@ export default function App() {
     setActiveSessionId("");
     navigate(destination);
     agent.replaceMessages([]);
-    await reloadAgentRuntime();
-    if (!isCurrentSessionRequest(requestId)) return;
-    void agent.sendCommand({ type: "get_state" });
+    if (canSwitchAgentRuntime()) {
+      await reloadAgentRuntime();
+      if (!isCurrentSessionRequest(requestId)) return;
+      void agent.sendCommand({ type: "get_state" });
+    }
     const items = await fetchSessions(project.id);
     if (!isCurrentSessionRequest(requestId)) return;
     setSessions(items);
@@ -785,7 +799,7 @@ export default function App() {
       if (!messagesLoaded) {
         loadedSessionRef.current = "";
         setActiveSessionId("");
-      } else {
+      } else if (canSwitchAgentRuntime(items[0].id)) {
         void agent.sendCommand({ type: "switch_session", sessionPath: items[0].path }).then((result) => {
           if (!isCurrentSessionOpen(items[0].id, requestId)) return;
           if (result?.success !== false) runtimeSessionRef.current = items[0].id;
@@ -835,7 +849,7 @@ export default function App() {
         if (!messagesLoaded) {
           loadedSessionRef.current = "";
           setActiveSessionId("");
-        } else {
+        } else if (canSwitchAgentRuntime(items[0].id)) {
           void agent.sendCommand({ type: "switch_session", sessionPath: items[0].path }).then((result) => {
             if (!isCurrentSessionOpen(items[0].id, requestId)) return;
             if (result?.success !== false) runtimeSessionRef.current = items[0].id;
@@ -923,8 +937,12 @@ export default function App() {
           if (data.settings) applySettings(data.settings);
           setActiveProjectId(project.id);
           setSessions(await fetchSessions(project.id));
-          await reloadAgentRuntime();
-          void agent.sendCommand({ type: "get_state" });
+          if (canSwitchAgentRuntime(session.id)) {
+            if (canSwitchAgentRuntime(session.id)) {
+              await reloadAgentRuntime();
+              void agent.sendCommand({ type: "get_state" });
+            }
+          }
         }
       } else {
         setActiveProjectId("");
@@ -932,6 +950,8 @@ export default function App() {
       }
     }
     if (!isCurrentSessionOpen(session.id, requestId)) return;
+    if (!canSwitchAgentRuntime(session.id)) return;
+    if (!canSwitchAgentRuntime(session.id)) return;
     void agent.sendCommand({ type: "switch_session", sessionPath: session.path }).then((switchResult) => {
       if (!isCurrentSessionOpen(session.id, requestId)) return;
       if (switchResult?.success === false) {
@@ -1027,6 +1047,14 @@ export default function App() {
     loadedSessionRef.current = targetSessionId;
     if (activeScopedSession?.path && runtimeSessionRef.current !== targetSessionId) {
       setOpeningSessionId(targetSessionId);
+      if (!canSwitchAgentRuntime(targetSessionId)) {
+        setOpeningSessionId((current) => current === targetSessionId ? "" : current);
+        agent.replaceMessages([
+          ...agent.messages,
+          { id: crypto.randomUUID(), kind: "status", text: "Pi is still working in another chat. Open that chat to follow the run, or wait for it to finish." }
+        ]);
+        return false;
+      }
       const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: activeScopedSession.path });
       setOpeningSessionId((current) => current === targetSessionId ? "" : current);
       if (activeIdRef.current !== targetSessionId) return false;
@@ -1100,6 +1128,7 @@ export default function App() {
   const projectViewProjectId = activeProjectId || projects[0]?.id || "";
   const projectViewSessions = allSessions.filter((session) => session.projectId === projectViewProjectId);
   const activeSession = sessions.find((session) => session.id === activeId) ?? allSessions.find((session) => session.id === activeId);
+  const visibleStreaming = agent.isStreaming && (!agent.runningSessionId || agent.runningSessionId === activeId);
   const thinkingCount = visibleMessages.filter((message) => message.kind === "thinking").length;
   const runningToolCount = visibleMessages.reduce((count, message) => {
     if (message.kind === "tool" && message.status === "running") return count + 1;
@@ -1120,11 +1149,11 @@ export default function App() {
     ? "Opening"
     : hasRunError
       ? "Issue"
-      : agent.isStreaming && runningToolCount > 0
+      : visibleStreaming && runningToolCount > 0
         ? "Tools"
-        : agent.isStreaming && thinkingCount > 0
+        : visibleStreaming && thinkingCount > 0
           ? "Thinking"
-          : agent.isStreaming
+          : visibleStreaming
             ? "Writing"
             : "";
   const toolbarDetail = [
@@ -1135,7 +1164,7 @@ export default function App() {
   const appTitle = "Pi Agent";
   const activeSessionName = activeSession ? sessionDisplayName(activeSession.name) : "";
   const hasOnlyOpeningStatus = Boolean(openingSessionId) && visibleMessages.every((message) => message.kind === "status");
-  const composerCentered = (visibleMessages.length === 0 || hasOnlyOpeningStatus) && !agent.isStreaming;
+  const composerCentered = (visibleMessages.length === 0 || hasOnlyOpeningStatus) && !visibleStreaming;
   const updateCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
     event.currentTarget.style.setProperty("--cursor-x", `${event.clientX}px`);
     event.currentTarget.style.setProperty("--cursor-y", `${event.clientY}px`);
@@ -1265,10 +1294,11 @@ export default function App() {
             <div className={`chat-column ${composerCentered ? "empty-start" : "has-thread"}`}>
               <ThreadView
                 messages={visibleMessages}
-                isStreaming={agent.isStreaming}
+                isStreaming={visibleStreaming}
                 footerStatus={agent.footerStatus}
                 connectionState={agent.connectionState}
                 sessionName={activeSessionName}
+                sessionId={activeId}
                 contextUsage={agent.contextUsage}
                 displayName={settings.displayName}
                 onAbort={agent.abort}
@@ -1279,7 +1309,7 @@ export default function App() {
                 onCommand={runComposerCommand}
                 onAbort={agent.abort}
                 disabled={agent.connectionState !== "ready"}
-                isStreaming={agent.isStreaming}
+                isStreaming={visibleStreaming}
                 settings={settings ?? undefined}
                 models={models}
                 extensionCommands={extensionCommands}

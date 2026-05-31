@@ -25,7 +25,7 @@
 }
 
 .composer.streaming {
-  border-color: rgba(63,185,80,0.25);
+  border-color: color-mix(in srgb, var(--accent-green) 14%, var(--border));
 }
 
 .composer.streaming::before {
@@ -36,15 +36,16 @@
   background: repeating-linear-gradient(
     90deg,
     rgba(63,185,80,0) 0%,
-    rgba(63,185,80,0) 12%,
-    rgba(63,185,80,0.26) 24%,
-    color-mix(in srgb, var(--neon-cyan) 20%, rgba(63,185,80,0.28)) 32%,
-    rgba(63,185,80,0.26) 40%,
-    rgba(63,185,80,0) 50%
+    rgba(63,185,80,0) 18%,
+    rgba(63,185,80,0.045) 30%,
+    color-mix(in srgb, var(--neon-cyan) 8%, rgba(63,185,80,0.07)) 42%,
+    rgba(63,185,80,0.045) 54%,
+    rgba(63,185,80,0) 72%
   );
-  background-size: 50% 100%;
+  background-size: 160% 100%;
   content: "";
-  animation: composerWorking 1.85s linear infinite;
+  opacity: 0.62;
+  animation: composerWorking 8.5s linear infinite;
   will-change: background-position;
 }
 
@@ -461,6 +462,6 @@
 @media (prefers-reduced-motion: reduce) {
   .composer.streaming::before {
     animation: none;
-    opacity: 0.74;
+    opacity: 0.18;
   }
 }

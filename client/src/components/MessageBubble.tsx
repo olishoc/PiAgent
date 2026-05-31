@@ -1,9 +1,95 @@
-import { useState } from "react";
+import { Fragment, ReactNode, useEffect, useState } from "react";
+import "katex/dist/katex.min.css";
 import { TextMessage } from "../hooks/useAgent";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
 
-function renderCodeAware(text: string) {
+type MathSegment = {
+  close?: string;
+  display?: boolean;
+  open?: string;
+  text: string;
+  type: "text" | "math";
+};
+
+const mathDelimiters = [
+  { open: "\\[", close: "\\]", display: true },
+  { open: "\\(", close: "\\)", display: false },
+  { open: "$$", close: "$$", display: true }
+];
+
+function splitMath(text: string): MathSegment[] {
+  const segments: MathSegment[] = [];
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const next = mathDelimiters
+      .map((delimiter) => ({ ...delimiter, start: text.indexOf(delimiter.open, cursor) }))
+      .filter((match) => match.start >= 0)
+      .sort((a, b) => a.start - b.start)[0];
+
+    if (!next) {
+      segments.push({ type: "text", text: text.slice(cursor) });
+      break;
+    }
+
+    if (next.start > cursor) {
+      segments.push({ type: "text", text: text.slice(cursor, next.start) });
+    }
+
+    const mathStart = next.start + next.open.length;
+    const mathEnd = text.indexOf(next.close, mathStart);
+    if (mathEnd < 0) {
+      segments.push({ type: "text", text: text.slice(next.start) });
+      break;
+    }
+
+    segments.push({ type: "math", text: text.slice(mathStart, mathEnd), display: next.display, open: next.open, close: next.close });
+    cursor = mathEnd + next.close.length;
+  }
+
+  return segments;
+}
+
+function MathNode({ closeDelimiter, displayMode = false, expression, openDelimiter }: { closeDelimiter?: string; displayMode?: boolean; expression: string; openDelimiter?: string }) {
+  const [html, setHtml] = useState("");
+  const fallback = `${openDelimiter ?? (displayMode ? "\\[" : "\\(")}${expression}${closeDelimiter ?? (displayMode ? "\\]" : "\\)")}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    void import("katex").then((katexModule) => {
+      const next = katexModule.renderToString(expression, {
+        displayMode,
+        output: "html",
+        strict: false,
+        throwOnError: false,
+        trust: false
+      });
+      if (!cancelled) setHtml(next);
+    }).catch(() => {
+      if (!cancelled) setHtml("");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [displayMode, expression]);
+
+  const className = displayMode ? "math-block" : "math-inline";
+  const Tag = displayMode ? "div" : "span";
+  if (!html) return <code className={`${className} math-pending`}>{fallback}</code>;
+  return <Tag className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+}
+
+function renderTextWithMath(text: string) {
+  return splitMath(text).map((segment, index) => {
+    if (segment.type === "math") {
+      return <MathNode key={index} expression={segment.text} displayMode={Boolean(segment.display)} openDelimiter={segment.open} closeDelimiter={segment.close} />;
+    }
+    return <Fragment key={index}>{segment.text}</Fragment>;
+  });
+}
+
+function renderCodeAware(text: string): ReactNode[] {
   const chunks = text.split(/```/g);
   return chunks.map((chunk, index) => {
     if (index % 2 === 1) {
@@ -15,7 +101,7 @@ function renderCodeAware(text: string) {
         </div>
       );
     }
-    return <span key={index}>{chunk}</span>;
+    return <Fragment key={index}>{renderTextWithMath(chunk)}</Fragment>;
   });
 }
 
@@ -24,8 +110,44 @@ function timeLabel(timestamp?: number) {
   return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
 }
 
-export default function MessageBubble({ message }: { message: TextMessage }) {
+function textHash(text: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+export default function MessageBubble({ message, sessionId = "" }: { message: TextMessage; sessionId?: string }) {
   const [expanded, setExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState<"up" | "down" | "">("");
+  const feedbackKey = `piagent.feedback.${sessionId || "session"}.${message.kind}.${message.id}.${textHash(message.detail ?? message.text)}`;
+
+  useEffect(() => {
+    if (!["agent", "advisor", "subagent"].includes(message.kind)) return;
+    const saved = window.localStorage.getItem(feedbackKey);
+    if (saved === "up" || saved === "down") setFeedback(saved);
+    if (!saved) setFeedback("");
+  }, [feedbackKey, message.kind]);
+
+  const recordFeedback = async (rating: "up" | "down" | "") => {
+    setFeedback(rating);
+    if (rating) window.localStorage.setItem(feedbackKey, rating);
+    else window.localStorage.removeItem(feedbackKey);
+    await fetch(apiUrl("/api/feedback"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messageId: message.id,
+        sessionId,
+        kind: message.kind,
+        rating,
+        textHash: textHash(message.detail ?? message.text)
+      })
+    }).catch(() => {});
+  };
   const openAttachment = async (path?: string) => {
     if (!path) return;
     await fetch(apiUrl("/api/open-file"), {
@@ -42,13 +164,36 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
       body: JSON.stringify({ text })
     }).catch(() => navigator.clipboard?.writeText(text));
   };
+  const copyMessage = async () => {
+    const text = message.detail && expanded ? message.detail : message.text;
+    await fetch(apiUrl("/api/clipboard/write"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text })
+    }).catch(() => navigator.clipboard?.writeText(text));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  };
+  const responseActions = (
+    <div className="message-actions">
+      <button onClick={() => void copyMessage()} title="Copy answer" aria-label="Copy answer">
+        <Icon name={copied ? "check" : "copy"} size={13} />
+      </button>
+      <button className={feedback === "up" ? "selected" : ""} onClick={() => void recordFeedback(feedback === "up" ? "" : "up")} title="Good response" aria-label="Good response">
+        <Icon name="thumbUp" size={13} />
+      </button>
+      <button className={feedback === "down" ? "selected" : ""} onClick={() => void recordFeedback(feedback === "down" ? "" : "down")} title="Bad response" aria-label="Bad response">
+        <Icon name="thumbDown" size={13} />
+      </button>
+    </div>
+  );
 
   if (message.kind === "user") {
     return (
       <article className="message user-message">
         <div className="message-label">you</div>
         <div className="message-time">{timeLabel(message.createdAt)}</div>
-        <div className="message-text">{message.text}</div>
+        <div className="message-text">{renderCodeAware(message.text)}</div>
         {message.attachments?.length ? (
           <div className="message-attachments">
             {message.attachments.map((file) => (
@@ -72,15 +217,15 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
   }
 
   if (message.kind === "thinking") {
+    const label = message.phase?.startsWith("model") ? "Thinking / En réflexion" : "Thinking / En réflexion";
     return (
       <article className={`message thinking-message ${expanded ? "expanded" : ""}`}>
-        <div className="thinking-pulse"><Icon name="spark" size={14} /></div>
         <div className="thinking-body">
           <button className="thinking-head" onClick={() => setExpanded((current) => !current)}>
-            <span>{message.phase ?? "thinking"}</span>
-            <em>{expanded ? "hide full thought" : "show full thought"}</em>
+            <span>{label}</span>
+            <em>{expanded ? "Hide" : "Show"}</em>
           </button>
-          <div className="message-text">{expanded ? message.detail ?? message.text : message.text}</div>
+          {expanded ? <div className="message-text">{message.detail ?? message.text}</div> : null}
         </div>
       </article>
     );
@@ -99,6 +244,7 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
             <em>{message.model ? `${message.model}${usage}` : message.phase ?? "pi-advisor"}</em>
           </button>
           <div className="advisor-text">{renderCodeAware(expanded ? message.detail ?? message.text : message.text)}</div>
+          {responseActions}
         </div>
       </article>
     );
@@ -114,6 +260,7 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
             <em>{message.model ? `${message.phase ?? "run"} ${message.model}` : message.phase ?? "pi-subagents"}</em>
           </button>
           <div className="advisor-text">{renderCodeAware(expanded ? message.detail ?? message.text : message.text)}</div>
+          {responseActions}
         </div>
       </article>
     );
@@ -121,8 +268,9 @@ export default function MessageBubble({ message }: { message: TextMessage }) {
 
   return (
     <article className="message agent-message">
-      <div className="agent-label"><span className="mini-mark app-icon-mark" aria-hidden="true" /> assistant <span>{timeLabel(message.createdAt)}</span></div>
+      <div className="agent-label">assistant <span>{timeLabel(message.createdAt)}</span></div>
       <div className="agent-text">{renderCodeAware(message.text)}</div>
+      {responseActions}
     </article>
   );
 }

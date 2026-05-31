@@ -448,9 +448,9 @@ button:active {
 }
 
 .chat-column.empty-start .composer {
-  margin-top: 12px;
+  margin-top: 22px;
   margin-bottom: clamp(82px, 15vh, 150px);
-  transform: translateY(-48px);
+  transform: translateY(-40px);
 }
 
 .chat-column.has-thread .composer {

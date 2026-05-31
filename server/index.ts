@@ -24,6 +24,8 @@ const app = express();
 const server = createServer(app);
 const clientDist = path.resolve(__dirname, "../../client/dist");
 const clientIndex = path.join(clientDist, "index.html");
+const FEEDBACK_DIR = path.join(APP_CONFIG_DIR, "feedback");
+const FEEDBACK_PATH = path.join(FEEDBACK_DIR, "response-feedback.jsonl");
 const BACKEND_VERSION = process.env.PIAGENT_VERSION ?? "dev";
 const BACKEND_FEATURES = {
   subagents: true,
@@ -153,6 +155,25 @@ app.delete("/api/provider-auth/:provider", (req, res) => {
     res.json({ ok: true, providers: readProviderAuthStatus() });
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : "Unable to remove API key." });
+  }
+});
+app.post("/api/feedback", (req, res) => {
+  try {
+    const rating = req.body?.rating === "up" || req.body?.rating === "down" ? req.body.rating : "";
+    const entry = {
+      type: "response_feedback",
+      timestamp: new Date().toISOString(),
+      sessionId: typeof req.body?.sessionId === "string" ? req.body.sessionId.slice(0, 200) : "",
+      messageId: typeof req.body?.messageId === "string" ? req.body.messageId.slice(0, 200) : "",
+      kind: ["agent", "advisor", "subagent"].includes(String(req.body?.kind ?? "")) ? req.body.kind : "agent",
+      rating,
+      textHash: typeof req.body?.textHash === "string" ? req.body.textHash.slice(0, 80) : ""
+    };
+    fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
+    fs.appendFileSync(FEEDBACK_PATH, `${JSON.stringify(entry)}\n`, "utf8");
+    res.json({ ok: true, feedbackPath: FEEDBACK_PATH });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err instanceof Error ? err.message : "Unable to record feedback." });
   }
 });
 app.get("/api/settings", (_req, res) => {
@@ -569,6 +590,16 @@ wss.on("connection", async (ws) => {
           sendReady();
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: true }));
           return;
+        }
+        if (!session.isAlive()) {
+          const nextSession = await startSession();
+          if (!nextSession) {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: false, error: "Provider is not connected." }));
+            return;
+          }
+          session.onEvent = () => {};
+          session = nextSession;
+          sendReady();
         }
         let outbound = cmd;
         if (cmd.type === "prompt" && typeof cmd.message === "string") {

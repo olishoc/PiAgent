@@ -10,13 +10,14 @@ interface ThreadViewProps {
   footerStatus?: string;
   connectionState?: string;
   sessionName?: string;
+  sessionId?: string;
   displayName?: string;
   contextUsage?: ContextUsage | null;
   onAbort: () => void;
   compactHeader?: boolean;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, displayName, onAbort, compactHeader }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, sessionId, displayName, onAbort, compactHeader }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -122,7 +123,7 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
           message.kind === "tool"
           || message.kind === "tool_group"
             ? <ToolCallRow key={message.id} message={message} />
-            : <MessageBubble key={message.id} message={message} />
+            : <MessageBubble key={message.id} message={message} sessionId={sessionId} />
         ))}
         <div ref={endRef} />
       </div>

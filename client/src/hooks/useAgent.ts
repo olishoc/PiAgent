@@ -681,7 +681,10 @@ export function handlePiEvent(
 
   if (event.type === "process_exit") {
     setIsStreaming(false);
-    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: `Pi stopped with code ${event.code ?? "unknown"}` }]);
+    if ((typeof event.code === "number" && event.code !== 0) || event.signal) {
+      const reason = event.signal ? `signal ${event.signal}` : `code ${event.code}`;
+      setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: `Pi process stopped unexpectedly with ${reason}` }]);
+    }
   }
 }
 
@@ -790,13 +793,12 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
         }
         if (partType === "toolcall" || partType === "tool_call" || partType === "tool_use") {
           const name = part.name ?? part.toolName ?? "tool";
+          if (name === "subagent" || name === "advisor") return innerAcc;
           const event = {
             id: part.id ?? part.toolCallId ?? part.tool_call_id,
             name,
             args: part.arguments ?? part.args ?? part.input
           };
-          if (name === "subagent") return upsertSubagentMessage(innerAcc, event, "done", "Subagent call recorded in this session.");
-          if (name === "advisor") return upsertAdvisorMessage(innerAcc, event, "done", "Advisor call recorded in this session.");
           return addToolMessage(innerAcc, {
             id: event.id ?? crypto.randomUUID(),
             kind: "tool",
@@ -839,15 +841,22 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
   }, []);
 }
 
-export function useAgent(enabled = true, showThinking = true) {
+const noopMessages: Dispatch<SetStateAction<DisplayMessage[]>> = () => {};
+const noopString: Dispatch<SetStateAction<string>> = () => {};
+const noopContext: Dispatch<SetStateAction<ContextUsage | null>> = () => {};
+
+export function useAgent(enabled = true, showThinking = true, activeSessionId = "") {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [runningSessionId, setRunningSessionId] = useState("");
   const [footerStatus, setFooterStatus] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const activeSessionIdRef = useRef(activeSessionId);
+  const runningSessionIdRef = useRef("");
   const pendingRef = useRef(new Map<string, (value: any) => void>());
-  const pendingPromptRef = useRef(new Map<string, { message: TextMessage; resolve: (accepted: boolean) => void; timeout: number; timedOut: boolean; clientPromptId?: string }>());
+  const pendingPromptRef = useRef(new Map<string, { message: TextMessage; resolve: (accepted: boolean) => void; sessionId?: string; timeout: number; timedOut: boolean; clientPromptId?: string }>());
   const showThinkingRef = useRef(showThinking);
 
   const settlePrompt = useCallback((id: string, accepted: boolean, error?: string) => {
@@ -856,7 +865,9 @@ export function useAgent(enabled = true, showThinking = true) {
     window.clearTimeout(pending.timeout);
     pendingPromptRef.current.delete(id);
     if (accepted) {
-      setMessages((items) => [...items, pending.message]);
+      if (!pending.sessionId || pending.sessionId === activeSessionIdRef.current) {
+        setMessages((items) => [...items, pending.message]);
+      }
       if (pending.timedOut) {
         window.dispatchEvent(new CustomEvent("piagent:prompt-accepted", { detail: { clientPromptId: pending.clientPromptId, text: pending.message.text } }));
       }
@@ -884,6 +895,10 @@ export function useAgent(enabled = true, showThinking = true) {
   }, [showThinking]);
 
   useEffect(() => {
+    activeSessionIdRef.current = activeSessionId;
+  }, [activeSessionId]);
+
+  useEffect(() => {
     if (!enabled) return;
     setConnectionState("connecting");
     setFooterStatus("connecting to local agent...");
@@ -895,6 +910,7 @@ export function useAgent(enabled = true, showThinking = true) {
     };
     ws.onmessage = (e) => {
       const event = JSON.parse(e.data);
+      const visibleRun = !runningSessionIdRef.current || runningSessionIdRef.current === activeSessionIdRef.current;
       if (event.type === "agent_start") settleAllPrompts(true);
       if (event.type === "response" && event.id && pendingPromptRef.current.has(event.id)) {
         settlePrompt(event.id, event.success !== false, event.error ?? "Pi rejected this prompt.");
@@ -903,7 +919,20 @@ export function useAgent(enabled = true, showThinking = true) {
         pendingRef.current.get(event.id)?.(event);
         pendingRef.current.delete(event.id);
       }
-      handlePiEvent(event, setMessages, setIsStreaming, setFooterStatus, setContextUsage, showThinkingRef.current);
+      if (event.type === "agent_start") setIsStreaming(true);
+      if (event.type === "agent_end" || event.type === "process_exit") {
+        setIsStreaming(false);
+        runningSessionIdRef.current = "";
+        setRunningSessionId("");
+      }
+      handlePiEvent(
+        event,
+        visibleRun ? setMessages : noopMessages,
+        setIsStreaming,
+        visibleRun ? setFooterStatus : noopString,
+        visibleRun ? setContextUsage : noopContext,
+        showThinkingRef.current
+      );
     };
     ws.onerror = () => {
       setConnectionState("error");
@@ -911,6 +940,8 @@ export function useAgent(enabled = true, showThinking = true) {
     };
     ws.onclose = () => {
       setIsStreaming(false);
+      runningSessionIdRef.current = "";
+      setRunningSessionId("");
       setConnectionState((current) => current === "error" ? "error" : "closed");
       setFooterStatus("agent disconnected");
       settleAllPrompts(false, "Pi disconnected before it accepted this message.");
@@ -946,6 +977,9 @@ export function useAgent(enabled = true, showThinking = true) {
     }
     clearPendingPrompts();
     const id = crypto.randomUUID();
+    const sessionId = meta?.sessionId;
+    runningSessionIdRef.current = sessionId ?? "";
+    setRunningSessionId(sessionId ?? "");
     const userMessage: TextMessage = { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() };
     const isSlashCommand = text.trimStart().startsWith("/");
     const attachmentContext = attachments.length
@@ -968,7 +1002,7 @@ export function useAgent(enabled = true, showThinking = true) {
           setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is taking longer than expected to start this message. The draft was kept unless the run starts." }]);
           resolve(false);
         }, 45_000);
-        pendingPromptRef.current.set(id, { message: userMessage, resolve, timeout, timedOut: false, clientPromptId: options?.clientPromptId });
+        pendingPromptRef.current.set(id, { message: userMessage, resolve, sessionId, timeout, timedOut: false, clientPromptId: options?.clientPromptId });
       });
       wsRef.current.send(JSON.stringify({ type: "prompt", id, message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
       return accepted;
@@ -989,9 +1023,13 @@ export function useAgent(enabled = true, showThinking = true) {
   }, []);
 
   const replaceMessages = useCallback((next: DisplayMessage[]) => setMessages(next), []);
+  const clearVisibleRunState = useCallback(() => {
+    setFooterStatus("");
+    setContextUsage(null);
+  }, []);
   const loadMessages = useCallback((rawMessages: unknown[]) => {
     setMessages(normalizeMessages(rawMessages, showThinkingRef.current));
   }, []);
 
-  return { messages, isStreaming, footerStatus, connectionState, contextUsage, sendPrompt, abort, sendCommand, replaceMessages, loadMessages };
+  return { messages, isStreaming, runningSessionId, footerStatus, connectionState, contextUsage, sendPrompt, abort, sendCommand, replaceMessages, clearVisibleRunState, loadMessages };
 }
