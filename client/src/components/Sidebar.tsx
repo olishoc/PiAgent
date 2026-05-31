@@ -1,5 +1,6 @@
 import Icon from "./Icon";
 import type { ProjectInfo } from "../App";
+import { sessionDisplayName } from "../lib/sessionNames";
 
 export interface Session {
   id: string;
@@ -90,16 +91,17 @@ export default function Sidebar({
   const projectSessions = (projectId: string) => visibleSessions.filter((session) => session.projectId === projectId);
   const renderSession = (session: Session) => {
     const status = session.status ?? "done";
+    const displayName = sessionDisplayName(session.name);
     return (
       <button
         key={session.id}
         className={`task-row folder-chat ${session.id === activeId ? "active" : ""}`}
         onClick={() => onSelect(session)}
-        title={session.name}
+        title={displayName}
       >
         <span className={`status-dot ${status}`} />
         <span className="task-copy">
-          <span className="task-name">{session.name}</span>
+          <span className="task-name">{displayName}</span>
           <span className="task-time">{ageLabel({ ...session, status })}</span>
         </span>
         <span className="task-actions">

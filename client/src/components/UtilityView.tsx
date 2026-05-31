@@ -3,6 +3,7 @@ import { AppSettings } from "../App";
 import { Session } from "./Sidebar";
 import Icon from "./Icon";
 import { apiUrl } from "../lib/api";
+import { sessionDisplayName } from "../lib/sessionNames";
 
 interface UtilityViewProps {
   view: "search" | "extensions" | "automations";
@@ -43,7 +44,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
   const filteredSessions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return sessions;
-    return sessions.filter((session) => session.name.toLowerCase().includes(needle));
+    return sessions.filter((session) => `${sessionDisplayName(session.name)} ${session.name}`.toLowerCase().includes(needle));
   }, [query, sessions]);
 
   useEffect(() => {
@@ -66,7 +67,7 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
           {filteredSessions.map((session) => (
             <button key={session.id} onClick={() => onSelectSession(session)}>
               <Icon name="archive" />
-              <strong>{session.name}</strong>
+              <strong>{sessionDisplayName(session.name)}</strong>
               <span>{session.messageCount} messages</span>
             </button>
           ))}
@@ -202,10 +203,10 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
     <section className="utility-view">
       <header>
         <h1>Automatisations</h1>
-        <button onClick={onNew}><Icon name="plus" /> Nouvelle tache</button>
+        <button onClick={() => onRunCommand("Create a local automation plan for PiAgent. Ask me for any missing schedule, trigger, and safety constraints, then propose the exact implementation path before making changes.")}><Icon name="plus" /> Nouvelle tache</button>
       </header>
       <div className="utility-grid">
-        <button onClick={onNew}><Icon name="clock" /><strong>Planifier une tache</strong><span>Ouvre un nouveau chat pour decrire l'automatisation.</span></button>
+        <button onClick={() => onRunCommand("Plan a local PiAgent automation. Identify the trigger, schedule, action, safety checks, storage location, and verification steps. Do not claim an automation exists until it is implemented.")}><Icon name="clock" /><strong>Planifier une tache</strong><span>Ouvre un chat avec un prompt de planification explicite.</span></button>
         <button onClick={onOpenSettings}><Icon name="search" /><strong>Verifier l'environnement</strong><span>Ouvre les diagnostics et chemins locaux.</span></button>
       </div>
     </section>

@@ -69,6 +69,13 @@ function isApiKeyProvider(provider: string): provider is ApiKeyProviderId {
   return (API_KEY_PROVIDER_IDS as readonly string[]).includes(provider);
 }
 
+function apiKeyFromCredential(provider: string, credential: PiAuthCredential | undefined): string | null {
+  if (!isApiKeyProvider(provider)) return null;
+  if (credential?.type === "api_key" && typeof credential.key === "string" && credential.key.trim()) return credential.key.trim();
+  const envKey = process.env[API_KEY_ENV[provider]];
+  return envKey?.trim() || null;
+}
+
 export function readTokens(): OAuthTokens | null {
   try {
     if (!fs.existsSync(TOKEN_PATH)) return null;
@@ -103,6 +110,18 @@ export function readProviderAuthStatus(providers: string[] = ["openai-codex", ..
   });
 }
 
+export function hasProviderCredential(provider: string): boolean {
+  const auth = readPiAuthFile();
+  if (provider === "openai-codex") return Boolean(auth["openai-codex"] || readTokens());
+  return Boolean(apiKeyFromCredential(provider, auth[provider]));
+}
+
+export function providerEnvironment(provider: string): Record<string, string> {
+  if (!isApiKeyProvider(provider)) return {};
+  const key = apiKeyFromCredential(provider, readPiAuthFile()[provider]);
+  return key ? { [API_KEY_ENV[provider]]: key } : {};
+}
+
 export function writeApiKeyCredential(provider: string, apiKey: string) {
   const key = apiKey.trim();
   if (!isApiKeyProvider(provider)) throw new Error(`Unsupported API key provider: ${provider}`);
@@ -116,5 +135,11 @@ export function removeApiKeyCredential(provider: string) {
   if (!isApiKeyProvider(provider)) throw new Error(`Unsupported API key provider: ${provider}`);
   const auth = readPiAuthFile();
   delete auth[provider];
+  writePiAuthFile(auth);
+}
+
+export function removeOAuthCredential() {
+  const auth = readPiAuthFile();
+  delete auth["openai-codex"];
   writePiAuthFile(auth);
 }

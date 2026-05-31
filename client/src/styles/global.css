@@ -238,8 +238,17 @@ button:active {
 }
 
 .toolbar-title {
+  min-width: 0;
+  flex: 1 1 auto;
   font-weight: 600;
   letter-spacing: 0;
+}
+
+.toolbar-title strong {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 680;
 }
 
 .brand-mark,
@@ -290,10 +299,99 @@ button:active {
   font-size: 9px;
 }
 
-.toolbar-title em {
+.toolbar-title em,
+.toolbar-thread,
+.toolbar-activity,
+.toolbar-detail {
+  min-width: 0;
+  border: 0.5px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 999px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface) 64%, transparent), color-mix(in srgb, var(--bg-input) 54%, transparent));
   color: var(--text-tertiary);
   font-style: normal;
   font-size: 11px;
+  font-weight: 400;
+}
+
+.toolbar-title em,
+.toolbar-activity,
+.toolbar-detail {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+}
+
+.toolbar-ready.ready {
+  border-color: color-mix(in srgb, var(--accent-green) 24%, var(--border));
+  color: color-mix(in srgb, var(--accent-green) 82%, var(--text-secondary));
+}
+
+.toolbar-ready.error,
+.toolbar-activity.issue {
+  border-color: color-mix(in srgb, var(--accent-red) 32%, var(--border));
+  color: var(--accent-red);
+}
+
+.toolbar-activity.opening,
+.toolbar-activity.thinking,
+.toolbar-activity.writing,
+.toolbar-activity.tools {
+  border-color: color-mix(in srgb, var(--accent-green) 28%, var(--border));
+  color: var(--accent-green);
+}
+
+.toolbar-thread {
+  overflow: hidden;
+  flex: 1 1 auto;
+  max-width: min(48vw, 560px);
+  padding: 2px 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar-detail {
+  overflow: hidden;
+  flex: 0 1 240px;
+  max-width: min(24vw, 260px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 760px) {
+  .app-toolbar {
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .toolbar-title {
+    gap: 5px;
+  }
+
+  .toolbar-title strong {
+    font-size: 12px;
+  }
+
+  .toolbar-thread {
+    max-width: 96px;
+  }
+
+  .toolbar-detail {
+    max-width: 90px;
+  }
+
+  .toolbar-actions {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 520px) {
+  .toolbar-thread {
+    display: none;
+  }
+
+  .toolbar-detail {
+    display: none;
+  }
 }
 
 .toolbar-actions button {
@@ -346,13 +444,13 @@ button:active {
 
 .chat-column.empty-start .thread-shell {
   flex: 0 1 auto;
-  min-height: min(54vh, 520px);
+  min-height: min(22vh, 220px);
 }
 
 .chat-column.empty-start .composer {
   margin-top: 12px;
-  margin-bottom: clamp(28px, 10vh, 92px);
-  transform: translateY(-2px);
+  margin-bottom: clamp(82px, 15vh, 150px);
+  transform: translateY(-48px);
 }
 
 .chat-column.has-thread .composer {

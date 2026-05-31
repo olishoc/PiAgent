@@ -24,6 +24,18 @@ interface SessionMeta {
   projectId?: string | null;
 }
 
+interface CachedSessionSummary {
+  mtimeMs: number;
+  size: number;
+  id: string;
+  name: string;
+  lastModified: number;
+  messageCount: number;
+  path: string;
+}
+
+const sessionSummaryCache = new Map<string, CachedSessionSummary>();
+
 function readSessionMeta(): Record<string, SessionMeta> {
   try {
     if (!fs.existsSync(SESSION_META_PATH)) return {};
@@ -67,6 +79,54 @@ export function createSession(projectId?: string | null): SessionInfo {
     pinned: false,
     archived: false
   };
+}
+
+function readSessionSummary(file: string): CachedSessionSummary {
+  const filePath = path.join(SESSION_DIR, file);
+  const stat = fs.statSync(filePath);
+  const cached = sessionSummaryCache.get(filePath);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached;
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean);
+  let name = path.basename(file, ".jsonl");
+  let generatedName: string | null = null;
+  let messageCount = 0;
+  for (const line of lines) {
+    const parsedName = parseSessionName(line);
+    if (parsedName) name = parsedName;
+    if (!generatedName) generatedName = parseFirstUserTitle(line);
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === "message" || entry.type === "user_message" || entry.type === "assistant_message") messageCount += 1;
+    } catch {}
+  }
+  if (name === path.basename(file, ".jsonl") && generatedName) name = generatedName;
+  const summary = {
+    mtimeMs: stat.mtimeMs,
+    size: stat.size,
+    id: path.basename(file, ".jsonl"),
+    name,
+    lastModified: stat.mtimeMs,
+    messageCount,
+    path: filePath
+  };
+  sessionSummaryCache.set(filePath, summary);
+  return summary;
+}
+
+function readSessionRecords(id: string) {
+  const safeId = path.basename(id);
+  if (safeId !== id || !safeId || safeId.includes("..")) throw new Error("Invalid session id");
+  const filePath = path.join(SESSION_DIR, `${safeId}.jsonl`);
+  if (!fs.existsSync(filePath)) throw new Error("Session not found");
+  const records: unknown[] = [];
+  for (const line of fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean)) {
+    try {
+      records.push(JSON.parse(line));
+    } catch {
+      // Keep opening the usable part of a chat if one JSONL record is damaged.
+    }
+  }
+  return records;
 }
 
 function parseSessionName(line: string): string | null {
@@ -118,32 +178,16 @@ export function listSessions(options: { projectId?: string | null; unassignedOnl
   const sessions = fs.readdirSync(SESSION_DIR)
     .filter((file) => file.endsWith(".jsonl"))
     .map((file) => {
-      const filePath = path.join(SESSION_DIR, file);
-      const stat = fs.statSync(filePath);
-      const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean);
-      let name = path.basename(file, ".jsonl");
-      let generatedName: string | null = null;
-      let messageCount = 0;
-      for (const line of lines) {
-        const parsedName = parseSessionName(line);
-        if (parsedName) name = parsedName;
-        if (!generatedName) generatedName = parseFirstUserTitle(line);
-        try {
-          const entry = JSON.parse(line);
-          if (entry.type === "message" || entry.type === "user_message" || entry.type === "assistant_message") messageCount += 1;
-        } catch {}
-      }
-      if (name === path.basename(file, ".jsonl") && generatedName) name = generatedName;
-      const id = path.basename(file, ".jsonl");
+      const summary = readSessionSummary(file);
       return {
-        id,
-        name,
-        lastModified: stat.mtimeMs,
-        messageCount,
-        path: filePath,
-        projectId: meta[id]?.projectId ?? null,
-        pinned: Boolean(meta[id]?.pinned),
-        archived: Boolean(meta[id]?.archived)
+        id: summary.id,
+        name: summary.name,
+        lastModified: summary.lastModified,
+        messageCount: summary.messageCount,
+        path: summary.path,
+        projectId: meta[summary.id]?.projectId ?? null,
+        pinned: Boolean(meta[summary.id]?.pinned),
+        archived: Boolean(meta[summary.id]?.archived)
       };
     })
     .filter((session) => options.includeArchived || !session.archived)
@@ -173,6 +217,14 @@ sessionsRouter.post("/", (req, res, next) => {
   try {
     const projectId = typeof req.body?.projectId === "string" ? req.body.projectId : req.body?.projectId === null ? null : undefined;
     res.status(201).json({ ok: true, session: createSession(projectId) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+sessionsRouter.get("/:id/messages", (req, res, next) => {
+  try {
+    res.json({ ok: true, messages: readSessionRecords(req.params.id) });
   } catch (err) {
     next(err);
   }

@@ -2,7 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import path from "node:path";
-import { APP_CONFIG_DIR } from "./tokenStore.js";
+import { APP_CONFIG_DIR, providerEnvironment } from "./tokenStore.js";
 
 function piCommand(): { command: string; argsPrefix: string[] } {
   if (process.env.PI_BIN) return { command: process.env.PI_BIN, argsPrefix: [] };
@@ -53,7 +53,8 @@ export class PiSession {
     this.proc = spawn(pi.command, args, {
       env: {
         ...process.env,
-        OPENAI_ACCESS_TOKEN: accessToken,
+        ...(accessToken ? { OPENAI_ACCESS_TOKEN: accessToken } : {}),
+        ...providerEnvironment(options.provider || "openai-codex"),
         PI_CODING_AGENT_DIR: APP_CONFIG_DIR,
         PIAGENT_WORKSPACE: cwd
       },

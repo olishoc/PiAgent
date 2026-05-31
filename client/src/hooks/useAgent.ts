@@ -66,6 +66,7 @@ export interface PromptOptions {
   subagentsEnabled?: boolean;
   subagentRoutingMode?: "manual" | "assistive" | "automatic";
   subagentMaxParallel?: number;
+  clientPromptId?: string;
 }
 
 export interface PromptMeta {
@@ -240,6 +241,15 @@ function extractTextContent(content: unknown): string {
     })
     .filter(Boolean)
     .join("\n")
+    .trim();
+}
+
+function cleanDisplayText(text: string, role?: string) {
+  if (role !== "user") return text;
+  return text
+    .replace(/\n\nPiAgent UI options:[\s\S]*?(?=\n\nPiAgent Global Memory|\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Global Memory \([\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Automatic Subagent Delegation Contract:[\s\S]*$/, "")
     .trim();
 }
 
@@ -548,11 +558,16 @@ export function handlePiEvent(
     setIsStreaming(false);
     const lastAssistant = Array.isArray(event.messages) ? [...event.messages].reverse().find((message) => message.role === "assistant") : null;
     if (lastAssistant) setContextUsage((current) => usageFromMessage(lastAssistant, current));
+    if (lastAssistant?.stopReason === "error" && typeof lastAssistant.errorMessage === "string") {
+      setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: lastAssistant.errorMessage }]);
+    }
     return;
   }
 
   if (event.type === "auth_required") {
-    setFooterStatus("authentication required");
+    const message = event.message ?? "authentication required";
+    setFooterStatus(message);
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: message }]);
     return;
   }
 
@@ -646,6 +661,16 @@ export function handlePiEvent(
 
   if (event.type === "response" && event.command === "get_available_models" && event.data?.models) {
     setFooterStatus(`${event.data.models.length} models available`);
+    return;
+  }
+
+  if (event.type === "response" && event.success === false) {
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: event.error ?? "Pi command failed." }]);
+    return;
+  }
+
+  if (event.type === "message" && event.message?.role === "assistant" && typeof event.message.errorMessage === "string") {
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: event.message.errorMessage }]);
     return;
   }
 
@@ -789,8 +814,21 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
       }, acc);
     }
 
-    const text = Array.isArray(content) ? extractTextContent(content) : String(content ?? "");
-    if (!text.trim()) return acc;
+    const text = cleanDisplayText(Array.isArray(content) ? extractTextContent(content) : String(content ?? ""), role);
+    if (!text.trim()) {
+      const errorText = typeof payload?.errorMessage === "string"
+        ? payload.errorMessage
+        : typeof message?.errorMessage === "string" ? message.errorMessage : "";
+      if (errorText && role !== "user") {
+        return [...acc, {
+          id: message?.id ?? payload?.id ?? crypto.randomUUID(),
+          kind: "status",
+          text: errorText,
+          createdAt
+        }];
+      }
+      return acc;
+    }
     const kind = role === "user" ? "user" : role === "system" ? "status" : "agent";
     return [...acc, {
       id: payload?.id ?? message?.id ?? crypto.randomUUID(),
@@ -809,7 +847,36 @@ export function useAgent(enabled = true, showThinking = true) {
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const pendingRef = useRef(new Map<string, (value: any) => void>());
+  const pendingPromptRef = useRef(new Map<string, { message: TextMessage; resolve: (accepted: boolean) => void; timeout: number; timedOut: boolean; clientPromptId?: string }>());
   const showThinkingRef = useRef(showThinking);
+
+  const settlePrompt = useCallback((id: string, accepted: boolean, error?: string) => {
+    const pending = pendingPromptRef.current.get(id);
+    if (!pending) return;
+    window.clearTimeout(pending.timeout);
+    pendingPromptRef.current.delete(id);
+    if (accepted) {
+      setMessages((items) => [...items, pending.message]);
+      if (pending.timedOut) {
+        window.dispatchEvent(new CustomEvent("piagent:prompt-accepted", { detail: { clientPromptId: pending.clientPromptId, text: pending.message.text } }));
+      }
+    } else if (error) {
+      setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: error }]);
+    }
+    if (!pending.timedOut) pending.resolve(accepted);
+  }, []);
+
+  const settleAllPrompts = useCallback((accepted: boolean, error?: string) => {
+    for (const id of Array.from(pendingPromptRef.current.keys())) settlePrompt(id, accepted, error);
+  }, [settlePrompt]);
+
+  const clearPendingPrompts = useCallback(() => {
+    for (const [id, pending] of Array.from(pendingPromptRef.current.entries())) {
+      window.clearTimeout(pending.timeout);
+      pendingPromptRef.current.delete(id);
+      if (!pending.timedOut) pending.resolve(false);
+    }
+  }, []);
 
   useEffect(() => {
     showThinkingRef.current = showThinking;
@@ -828,6 +895,10 @@ export function useAgent(enabled = true, showThinking = true) {
     };
     ws.onmessage = (e) => {
       const event = JSON.parse(e.data);
+      if (event.type === "agent_start") settleAllPrompts(true);
+      if (event.type === "response" && event.id && pendingPromptRef.current.has(event.id)) {
+        settlePrompt(event.id, event.success !== false, event.error ?? "Pi rejected this prompt.");
+      }
       if (event.type === "response" && event.id && pendingRef.current.has(event.id)) {
         pendingRef.current.get(event.id)?.(event);
         pendingRef.current.delete(event.id);
@@ -842,9 +913,10 @@ export function useAgent(enabled = true, showThinking = true) {
       setIsStreaming(false);
       setConnectionState((current) => current === "error" ? "error" : "closed");
       setFooterStatus("agent disconnected");
+      settleAllPrompts(false, "Pi disconnected before it accepted this message.");
     };
     return () => ws.close();
-  }, [enabled]);
+  }, [enabled, settleAllPrompts, settlePrompt]);
 
   const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -868,11 +940,13 @@ export function useAgent(enabled = true, showThinking = true) {
   }, []);
 
   const sendPrompt = useCallback((text: string, attachments: Attachment[] = [], options?: PromptOptions, meta?: PromptMeta) => {
-    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() }]);
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is still connecting. Wait for the connected status, then send again." }]);
-      return;
+      return Promise.resolve(false);
     }
+    clearPendingPrompts();
+    const id = crypto.randomUUID();
+    const userMessage: TextMessage = { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() };
     const isSlashCommand = text.trimStart().startsWith("/");
     const attachmentContext = attachments.length
       ? "\n\nAttached files:\n" + attachments.map((file) => {
@@ -882,16 +956,42 @@ export function useAgent(enabled = true, showThinking = true) {
       }).join("\n")
       : "";
     const optionContext = options && !isSlashCommand
-      ? `\n\nPiAgent UI options:\n- web guidance: ${options.web ? "enabled; use browsing/search tools only if this runtime exposes them, otherwise state that web access is unavailable" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- subagents: ${options.subagentsEnabled === false ? "disabled" : options.autoLaunchSubagents ? `automatic via real pi-subagents, routing=${options.subagentRoutingMode ?? "automatic"}, maxParallel=${options.subagentMaxParallel ?? 3}` : "manual; use pi-subagents only when explicitly asked"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- clipboard: system clipboard tools are available for explicit copy/paste workflows and exact reuse of non-secret unchanged text\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}`
+      ? `\n\nPiAgent UI options:\n- web guidance: ${options.web ? "enabled; use browsing/search tools only if this runtime exposes them, otherwise state that web access is unavailable" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- auto review: ${options.autoReview ? "enabled; run a compact review pass before final answers for non-trivial code, UX, security, or deployment work when advisor/review tools are available" : "disabled"}\n- subagents: ${options.subagentsEnabled === false ? "disabled" : options.autoLaunchSubagents ? `automatic via real pi-subagents, routing=${options.subagentRoutingMode ?? "automatic"}, maxParallel=${options.subagentMaxParallel ?? 3}` : "manual; use pi-subagents only when explicitly asked"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- clipboard: system clipboard tools are available for explicit copy/paste workflows and exact reuse of non-secret unchanged text\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}`
       : "";
-    wsRef.current.send(JSON.stringify({ type: "prompt", message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
-  }, []);
+    try {
+      const accepted = new Promise<boolean>((resolve) => {
+        const timeout = window.setTimeout(() => {
+          const pending = pendingPromptRef.current.get(id);
+          if (!pending) return;
+          pendingPromptRef.current.delete(id);
+          pending.timedOut = true;
+          setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is taking longer than expected to start this message. The draft was kept unless the run starts." }]);
+          resolve(false);
+        }, 45_000);
+        pendingPromptRef.current.set(id, { message: userMessage, resolve, timeout, timedOut: false, clientPromptId: options?.clientPromptId });
+      });
+      wsRef.current.send(JSON.stringify({ type: "prompt", id, message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
+      return accepted;
+    } catch (error) {
+      const pending = pendingPromptRef.current.get(id);
+      if (pending) {
+        window.clearTimeout(pending.timeout);
+        pending.resolve(false);
+      }
+      pendingPromptRef.current.delete(id);
+      setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: error instanceof Error ? error.message : "Pi could not send this message." }]);
+      return Promise.resolve(false);
+    }
+  }, [clearPendingPrompts]);
 
   const abort = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: "abort" }));
   }, []);
 
   const replaceMessages = useCallback((next: DisplayMessage[]) => setMessages(next), []);
+  const loadMessages = useCallback((rawMessages: unknown[]) => {
+    setMessages(normalizeMessages(rawMessages, showThinkingRef.current));
+  }, []);
 
-  return { messages, isStreaming, footerStatus, connectionState, contextUsage, sendPrompt, abort, sendCommand, replaceMessages };
+  return { messages, isStreaming, footerStatus, connectionState, contextUsage, sendPrompt, abort, sendCommand, replaceMessages, loadMessages };
 }

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AppSettings, ProviderOption } from "../App";
 import { apiUrl } from "../lib/api";
 import { checkAndInstallUpdate, UpdateStatus } from "../lib/updater";
@@ -59,38 +60,94 @@ function SettingSelect<T extends string>({ value, options, onChange, disabled, t
   title?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({});
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const selected = options.find((option) => option.value === value) ?? options[0];
+  const syncMenuPosition = useCallback(() => {
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const gap = 8;
+    const edge = 12;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const menuWidth = Math.min(Math.max(rect.width, 220), Math.max(220, viewportWidth - edge * 2));
+    const left = Math.min(Math.max(edge, rect.left), Math.max(edge, viewportWidth - menuWidth - edge));
+    const spaceBelow = viewportHeight - rect.bottom - gap - edge;
+    const spaceAbove = rect.top - gap - edge;
+    const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(120, openUp ? spaceAbove : spaceBelow);
+    const maxHeight = Math.min(360, availableHeight);
+    const desiredTop = openUp ? rect.top - gap - maxHeight : rect.bottom + gap;
+    const top = Math.min(Math.max(edge, desiredTop), Math.max(edge, viewportHeight - maxHeight - edge));
+    setMenuStyle({
+      position: "fixed",
+      left,
+      top,
+      right: "auto",
+      bottom: "auto",
+      width: menuWidth,
+      maxHeight,
+      overflowY: "auto"
+    });
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    syncMenuPosition();
+    const closeOnPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("resize", syncMenuPosition);
+    window.addEventListener("scroll", syncMenuPosition, true);
+    document.addEventListener("pointerdown", closeOnPointerDown, true);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.removeEventListener("resize", syncMenuPosition);
+      window.removeEventListener("scroll", syncMenuPosition, true);
+      document.removeEventListener("pointerdown", closeOnPointerDown, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open, syncMenuPosition]);
+  const menu = open && !disabled ? (
+    <div ref={menuRef} className="setting-select-menu" role="listbox" style={menuStyle}>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={option.value === value ? "active" : ""}
+          role="option"
+          aria-selected={option.value === value}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onChange(option.value);
+            setOpen(false);
+          }}
+        >
+          <Icon name={option.value === value ? "check" : "circle"} size={13} />
+          <span>{option.label}</span>
+          {option.note ? <em>{option.note}</em> : null}
+        </button>
+      ))}
+    </div>
+  ) : null;
+  const portalTarget = typeof document === "undefined" ? null : document.querySelector(".app-shell") ?? document.body;
   return (
-    <div className={`setting-select ${open ? "open" : ""} ${disabled ? "disabled" : ""}`} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false);
-    }}>
-      <button type="button" disabled={disabled} title={title} onClick={() => setOpen((current) => !current)}>
+    <div ref={rootRef} className={`setting-select ${open ? "open" : ""} ${disabled ? "disabled" : ""}`}>
+      <button type="button" disabled={disabled} title={title} onClick={() => {
+        setOpen((current) => !current);
+        window.requestAnimationFrame(syncMenuPosition);
+      }}>
         <span>{selected?.label ?? value}</span>
         {selected?.note ? <em>{selected.note}</em> : null}
         <Icon name="chevronDown" size={13} />
       </button>
-      {open && !disabled ? (
-        <div className="setting-select-menu" role="listbox">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={option.value === value ? "active" : ""}
-              role="option"
-              aria-selected={option.value === value}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-            >
-              <Icon name={option.value === value ? "check" : "circle"} size={13} />
-              <span>{option.label}</span>
-              {option.note ? <em>{option.note}</em> : null}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      {menu && portalTarget ? createPortal(menu, portalTarget) : null}
     </div>
   );
 }
@@ -271,7 +328,7 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
     }
     setProviderKeys((current) => ({ ...current, [provider]: "" }));
     if (Array.isArray(data.providers)) setProviderAuth(Object.fromEntries(data.providers.map((item: ProviderAuthState) => [item.provider, item])));
-    setActionStatus(`${provider} connected and selected.`);
+    setActionStatus(`${provider} key saved. Selecting it now; runtime verification follows in the top status bar.`);
     onChange({ provider, modelLabel: firstModelForProvider(provider, settings.modelLabel) });
     window.setTimeout(() => void refreshProviderAuth(), 300);
   };

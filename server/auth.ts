@@ -3,7 +3,8 @@ import fs from "node:fs";
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { Router } from "express";
-import { PI_AUTH_PATH, TOKEN_PATH, OAuthTokens, readTokens, writeTokens } from "./tokenStore.js";
+import { PI_AUTH_PATH, TOKEN_PATH, OAuthTokens, readProviderAuthStatus, readTokens, removeOAuthCredential, writeTokens } from "./tokenStore.js";
+import { readSettings } from "./settings.js";
 
 const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const REDIRECT_URI = "http://localhost:1455/auth/callback";
@@ -200,12 +201,26 @@ export const authRouter = Router();
 
 authRouter.get("/status", async (_req, res, next) => {
   try {
-    const tokens = await maybeRefresh();
-    if (!tokens) {
-      res.json({ loggedIn: false });
+    const activeProvider = readSettings().provider || "openai-codex";
+    if (activeProvider !== "openai-codex") {
+      const activeProviderStatus = readProviderAuthStatus([activeProvider])[0];
+      const configured = Boolean(activeProviderStatus?.configured);
+      res.json({
+        loggedIn: true,
+        accountId: configured ? `${activeProvider} API key` : "Provider setup required",
+        authType: "api_key",
+        provider: activeProvider,
+        providerConnected: configured,
+        setupRequired: !configured
+      });
       return;
     }
-    res.json({ loggedIn: true, accountId: tokens.accountId });
+    const tokens = await maybeRefresh();
+    if (!tokens) {
+      res.json({ loggedIn: false, provider: activeProvider });
+      return;
+    }
+    res.json({ loggedIn: true, accountId: tokens.accountId, provider: activeProvider });
   } catch (err) {
     next(err);
   }
@@ -237,7 +252,7 @@ authRouter.get("/login", async (req, res, next) => {
 authRouter.post("/logout", (_req, res, next) => {
   try {
     if (fs.existsSync(TOKEN_PATH)) fs.unlinkSync(TOKEN_PATH);
-    if (fs.existsSync(PI_AUTH_PATH)) fs.unlinkSync(PI_AUTH_PATH);
+    removeOAuthCredential();
     res.json({ ok: true });
   } catch (err) {
     next(err);

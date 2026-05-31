@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppSettings, ProjectInfo, ProjectTreeEntry } from "../App";
 import { apiUrl } from "../lib/api";
+import { sessionDisplayName } from "../lib/sessionNames";
 import Icon from "./Icon";
 import type { Session } from "./Sidebar";
 
@@ -38,7 +39,7 @@ interface ProjectsViewProps {
   settings: AppSettings;
   sessions: Session[];
   onBackToChat: () => void;
-  onNewChat: () => Promise<void>;
+  onNewChat: (projectId?: string | null) => Promise<void>;
   onCreate: (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => Promise<void>;
   onSelect: (project: ProjectInfo) => Promise<void>;
   onSelectSession: (session: Session) => void;
@@ -295,7 +296,7 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
                     <div className="tree-folder-label">
                       <Icon name="archive" size={13} />
                       <span>Chats</span>
-                      <button onClick={() => void onNewChat()}><Icon name="plus" size={12} /> New</button>
+                      <button onClick={() => void onNewChat(activeProject.id)}><Icon name="plus" size={12} /> New</button>
                     </div>
                     <div className="project-chat-list embedded">
                       {sessions.map((session) => (
@@ -306,7 +307,7 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
                           title={session.path}
                         >
                           <Icon name="file" size={13} />
-                          <span>{session.name}</span>
+                          <span>{sessionDisplayName(session.name)}</span>
                           <em>{session.messageCount}</em>
                         </button>
                       ))}

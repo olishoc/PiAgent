@@ -104,6 +104,10 @@
   padding: 28px min(7vw, 82px) 18px;
 }
 
+.thread-shell.compact-header .thread-feed {
+  padding-top: clamp(18px, 4vh, 34px);
+}
+
 .jump-latest {
   position: absolute;
   left: 50%;

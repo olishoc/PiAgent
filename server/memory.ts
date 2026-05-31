@@ -127,6 +127,7 @@ export interface MemorySearchOptions {
   limit?: number;
   episodeLimit?: number;
   minConfidence?: number;
+  touch?: boolean;
 }
 
 export interface ObserveMemoryInput {
@@ -976,7 +977,7 @@ export function searchMemories(options: MemorySearchOptions = {}) {
     .sort((a, b) => b.score - a.score || Number(b.record.pinned) - Number(a.record.pinned) || b.record.updatedAt - a.record.updatedAt)
     .slice(0, limit);
 
-  if (items.length) {
+  if (items.length && options.touch !== false) {
     const touched = new Set(items.map((item) => item.record.id));
     const now = Date.now();
     writeJsonl(MEMORY_PATH, readAllMemory().map((record) => touched.has(record.id) ? { ...record, lastAccessedAt: now } : record));
@@ -1027,10 +1028,10 @@ export function recallMemory(options: MemorySearchOptions = {}): MemoryRecallHit
   const touchedRecordIds = new Set(hits.flatMap((hit) => hit.record ? [hit.record.id] : []));
   const touchedEpisodeIds = new Set(hits.flatMap((hit) => hit.episode ? [hit.episode.id] : []));
   const now = Date.now();
-  if (touchedRecordIds.size) {
+  if (touchedRecordIds.size && options.touch !== false) {
     writeJsonl(MEMORY_PATH, readAllMemory().map((record) => touchedRecordIds.has(record.id) ? { ...record, lastAccessedAt: now } : record));
   }
-  if (touchedEpisodeIds.size) {
+  if (touchedEpisodeIds.size && options.touch !== false) {
     writeEpisodes(readAllEpisodes().map((episode) => touchedEpisodeIds.has(episode.id) ? { ...episode, lastAccessedAt: now } : episode));
   }
   return hits;
@@ -1453,7 +1454,8 @@ memoryRouter.get("/search", (req, res, next) => {
       includeArchived: req.query.includeArchived === "1",
       limit: Number(req.query.limit ?? 30),
       kinds,
-      tiers
+      tiers,
+      touch: req.query.touch !== "0"
     });
     res.json({ ok: true, records });
   } catch (err) {
@@ -1475,7 +1477,8 @@ memoryRouter.get("/recall", (req, res, next) => {
       includeArchived: req.query.includeArchived === "1",
       limit: Number(req.query.limit ?? 30),
       episodeLimit: Number(req.query.episodeLimit ?? MAX_CONTEXT_EPISODES),
-      minConfidence: req.query.minConfidence === undefined ? undefined : Number(req.query.minConfidence)
+      minConfidence: req.query.minConfidence === undefined ? undefined : Number(req.query.minConfidence),
+      touch: req.query.touch !== "0"
     });
     res.json({ ok: true, hits });
   } catch (err) {
@@ -1494,7 +1497,8 @@ memoryRouter.get("/context", (req, res, next) => {
       includeCorrections: req.query.corrections !== "0",
       minConfidence: req.query.minConfidence === undefined ? undefined : Number(req.query.minConfidence),
       episodeLimit: Number(req.query.episodeLimit ?? MAX_CONTEXT_EPISODES),
-      budgetTokens: Number(req.query.budgetTokens ?? 900)
+      budgetTokens: Number(req.query.budgetTokens ?? 900),
+      touch: req.query.touch !== "0"
     });
     res.json({ ok: true, ...context });
   } catch (err) {
@@ -1515,7 +1519,8 @@ memoryRouter.get("/skills", (req, res) => {
     query: String(req.query.q ?? "tool skill workflow"),
     includeGlobal: true,
     tiers: ["procedural"],
-    limit: Number(req.query.limit ?? 40)
+    limit: Number(req.query.limit ?? 40),
+    touch: req.query.touch !== "0"
   });
   res.json({ ok: true, skills: records });
 });

@@ -1,11 +1,12 @@
-import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode, RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AppSettings, ProviderOption } from "../App";
 import { Attachment, PromptOptions } from "../hooks/useAgent";
 import { apiUrl } from "../lib/api";
 import Icon from "./Icon";
 
 interface ComposerProps {
-  onSend: (text: string, attachments?: Attachment[], options?: PromptOptions) => void;
+  onSend: (text: string, attachments?: Attachment[], options?: PromptOptions) => boolean | void | Promise<boolean | void>;
   onCommand: (command: string) => void;
   onAbort: () => void;
   disabled?: boolean;
@@ -14,7 +15,6 @@ interface ComposerProps {
   models?: ProviderOption[];
   extensionCommands?: Array<{ name: string; description?: string; source?: string }>;
   onSettingsChange: (patch: Partial<AppSettings>) => void;
-  onAgentCommand: (cmd: Record<string, unknown>) => Promise<any>;
   onOpenContextPanel: () => void;
 }
 
@@ -36,6 +36,8 @@ const slashCommands = [
   { command: "/sessions", label: "Open session search" },
   { command: "/settings", label: "Open settings" }
 ];
+
+type ComposerMenuKey = "add" | "permissions" | "model";
 
 function formatBytes(size?: number) {
   if (!size) return "";
@@ -60,7 +62,7 @@ function thinkingModeLabel(level?: AppSettings["thinkingLevel"]) {
   return `${level[0].toUpperCase()}${level.slice(1)}`;
 }
 
-export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onAgentCommand, onOpenContextPanel }: ComposerProps) {
+export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onOpenContextPanel }: ComposerProps) {
   const [text, setText] = useState("");
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -68,11 +70,24 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   const [addOpen, setAddOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const ref = useRef<HTMLTextAreaElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const permissionsRef = useRef<HTMLDivElement | null>(null);
   const modelRef = useRef<HTMLDivElement | null>(null);
+  const addPortalRef = useRef<HTMLDivElement | null>(null);
+  const permissionsPortalRef = useRef<HTMLDivElement | null>(null);
+  const modelPortalRef = useRef<HTMLDivElement | null>(null);
+  const attachmentsRef = useRef<Attachment[]>([]);
+  const pendingDraftRef = useRef<{ clientPromptId: string; text: string; attachmentSignature: string } | null>(null);
+  const [menuStyles, setMenuStyles] = useState<Record<ComposerMenuKey, CSSProperties>>({
+    add: {},
+    permissions: {},
+    model: {}
+  });
+
+  const attachmentSignature = (items: Attachment[]) => items.map((item) => `${item.id}:${item.name}:${item.size ?? 0}`).join("|");
 
   const filteredCommands = useMemo(() => {
     const dynamicCommands = extensionCommands.slice(0, 40).map((item) => ({
@@ -99,15 +114,101 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   }, [settings?.advisorEnabled, settings?.contextEnabled, settings?.webEnabled]);
 
   useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
+  useEffect(() => {
+    const onLateAccepted = (event: Event) => {
+      const detail = (event as CustomEvent<{ clientPromptId?: string; text?: string }>).detail;
+      const acceptedText = detail?.text?.trim();
+      const pendingDraft = pendingDraftRef.current;
+      if (!acceptedText || !pendingDraft || detail?.clientPromptId !== pendingDraft.clientPromptId) return;
+      if (ref.current?.value.trim() === pendingDraft.text && attachmentSignature(attachmentsRef.current) === pendingDraft.attachmentSignature) {
+        setText("");
+        setAttachments([]);
+        pendingDraftRef.current = null;
+      }
+    };
+    window.addEventListener("piagent:prompt-accepted", onLateAccepted);
+    return () => window.removeEventListener("piagent:prompt-accepted", onLateAccepted);
+  }, []);
+
+  const syncMenuPosition = useCallback((menu: ComposerMenuKey) => {
+    const anchor = menu === "add" ? addMenuRef.current : menu === "permissions" ? permissionsRef.current : modelRef.current;
+    const rect = anchor?.getBoundingClientRect();
+    if (!rect) return;
+    const edge = 12;
+    const gap = 8;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const preferredWidth = menu === "add" ? 316 : menu === "model" ? 300 : 238;
+    const menuWidth = Math.min(preferredWidth, Math.max(220, viewportWidth - edge * 2));
+    const preferredLeft = menu === "model" ? rect.right - menuWidth : rect.left;
+    const left = Math.min(Math.max(edge, preferredLeft), Math.max(edge, viewportWidth - menuWidth - edge));
+    const spaceAbove = rect.top - gap - edge;
+    const spaceBelow = viewportHeight - rect.bottom - gap - edge;
+    const openUp = spaceAbove >= Math.min(260, Math.max(spaceBelow, 0));
+    const availableHeight = Math.max(120, openUp ? spaceAbove : spaceBelow);
+    const maxHeight = Math.min(menu === "add" ? 560 : menu === "model" ? 420 : 300, availableHeight);
+    const desiredTop = openUp ? rect.top - gap - maxHeight : rect.bottom + gap;
+    const top = Math.min(Math.max(edge, desiredTop), Math.max(edge, viewportHeight - maxHeight - edge));
+    setMenuStyles((current) => ({
+      ...current,
+      [menu]: {
+        position: "fixed",
+        left,
+        top,
+        right: "auto",
+        bottom: "auto",
+        width: menuWidth,
+        maxHeight,
+        overflowY: "auto"
+      }
+    }));
+  }, []);
+
+  const syncOpenMenus = useCallback(() => {
+    if (addOpen) syncMenuPosition("add");
+    if (permissionsOpen) syncMenuPosition("permissions");
+    if (modelOpen) syncMenuPosition("model");
+  }, [addOpen, modelOpen, permissionsOpen, syncMenuPosition]);
+
+  useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
-      if (addOpen && addMenuRef.current && !addMenuRef.current.contains(target)) setAddOpen(false);
-      if (permissionsOpen && permissionsRef.current && !permissionsRef.current.contains(target)) setPermissionsOpen(false);
-      if (modelOpen && modelRef.current && !modelRef.current.contains(target)) setModelOpen(false);
+      if (addOpen && addMenuRef.current && addPortalRef.current && !addMenuRef.current.contains(target) && !addPortalRef.current.contains(target)) setAddOpen(false);
+      if (permissionsOpen && permissionsRef.current && permissionsPortalRef.current && !permissionsRef.current.contains(target) && !permissionsPortalRef.current.contains(target)) setPermissionsOpen(false);
+      if (modelOpen && modelRef.current && modelPortalRef.current && !modelRef.current.contains(target) && !modelPortalRef.current.contains(target)) setModelOpen(false);
     };
-    document.addEventListener("pointerdown", onPointerDown);
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [addOpen, modelOpen, permissionsOpen]);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setAddOpen(false);
+      setPermissionsOpen(false);
+      setModelOpen(false);
+    };
+    syncOpenMenus();
+    window.addEventListener("resize", syncOpenMenus);
+    window.addEventListener("scroll", syncOpenMenus, true);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("resize", syncOpenMenus);
+      window.removeEventListener("scroll", syncOpenMenus, true);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [addOpen, modelOpen, permissionsOpen, syncOpenMenus]);
+
+  const portalTarget = typeof document === "undefined" ? null : document.querySelector(".app-shell") ?? document.body;
+
+  const renderMenu = (menu: ComposerMenuKey, className: string, ref: RefObject<HTMLDivElement | null>, children: ReactNode) => (
+    portalTarget ? createPortal(
+      <div ref={ref} className={className} style={menuStyles[menu]}>
+        {children}
+      </div>,
+      portalTarget
+    ) : null
+  );
 
   const toggleTool = (tool: "web" | "advisor" | "context") => {
     const next = !tools[tool];
@@ -201,7 +302,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     window.requestAnimationFrame(() => ref.current?.focus());
   };
 
-  const runCommand = (command: string) => {
+  const runCommand = async (command: string) => {
     setShowCommands(false);
     if (command === "/attach") {
       void pickFiles();
@@ -209,33 +310,53 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       return;
     }
     if (!slashCommands.some((item) => item.command === command || command.startsWith(`${item.command} `))) {
-      onSend(command, attachments, promptOptions());
-      setAttachments([]);
-      setText("");
+      setSubmitting(true);
+      try {
+        const clientPromptId = crypto.randomUUID();
+        pendingDraftRef.current = { clientPromptId, text: command.trim(), attachmentSignature: attachmentSignature(attachments) };
+        const accepted = await onSend(command, attachments, { ...promptOptions(), clientPromptId });
+        if (accepted !== false) {
+          setAttachments([]);
+          setText("");
+          pendingDraftRef.current = null;
+        }
+      } finally {
+        setSubmitting(false);
+      }
       return;
     }
     onCommand(command);
     setText("");
   };
 
-  const submit = () => {
+  const submit = async () => {
     const trimmed = text.trim();
-    if (!trimmed || disabled) return;
+    if (!trimmed || disabled || submitting) return;
     const exactCommand = slashCommands.find((item) => item.command === trimmed || trimmed.startsWith(`${item.command} `));
     if (exactCommand) {
-      runCommand(trimmed);
+      await runCommand(trimmed);
       return;
     }
-    onSend(trimmed, attachments, promptOptions());
-    setText("");
-    setAttachments([]);
-    setShowCommands(false);
+    setSubmitting(true);
+    try {
+      const clientPromptId = crypto.randomUUID();
+      pendingDraftRef.current = { clientPromptId, text: trimmed, attachmentSignature: attachmentSignature(attachments) };
+      const accepted = await onSend(trimmed, attachments, { ...promptOptions(), clientPromptId });
+      if (accepted !== false) {
+        setText("");
+        setAttachments([]);
+        setShowCommands(false);
+        pendingDraftRef.current = null;
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const keyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const keyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      submit();
+      void submit();
     }
     if (event.key === "Escape") setShowCommands(false);
   };
@@ -245,7 +366,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       {showCommands ? (
         <div className="command-palette">
           {filteredCommands.map((item) => (
-            <button key={item.command} onClick={() => runCommand(item.command)}>
+            <button key={item.command} onClick={() => void runCommand(item.command)}>
               <strong>{item.command}</strong><span>{item.label}</span>
             </button>
           ))}
@@ -276,11 +397,21 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       />
       <div className="composer-actions">
         <div className="pill-menu-wrap add-menu-wrap" ref={addMenuRef}>
-          <button className="round-button" onClick={() => setAddOpen((current) => !current)} aria-label="add tools and files" title="Add tools and files">
+          <button className="round-button" onClick={() => {
+            setAddOpen((current) => {
+              const next = !current;
+              if (next) {
+                setPermissionsOpen(false);
+                setModelOpen(false);
+              }
+              return next;
+            });
+            window.requestAnimationFrame(() => syncMenuPosition("add"));
+          }} aria-label="add tools and files" title="Add tools and files">
             <Icon name="plus" />
           </button>
-          {addOpen ? (
-            <div className="pill-menu add-menu">
+          {addOpen ? renderMenu("add", "pill-menu add-menu", addPortalRef, (
+            <>
               <strong className="menu-heading">Files</strong>
               <button onClick={() => { void pickFiles(); setAddOpen(false); }}><Icon name="paperclip" size={13} /> Add files</button>
               <button onClick={() => { void pickFolders(); setAddOpen(false); }}><Icon name="folder" size={13} /> Add folders</button>
@@ -299,18 +430,28 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               </button>
               <strong className="menu-heading">Workflows</strong>
               <button onClick={() => { insertCommandDraft("/beautiful-ui"); setAddOpen(false); }}><Icon name="layout" size={13} /> Beautiful UI mode</button>
-            </div>
-          ) : null}
+            </>
+          )) : null}
         </div>
         <div className="tool-pills">
           <div className="pill-menu-wrap" ref={permissionsRef}>
-            <button className="access-pill enabled" onClick={() => setPermissionsOpen((current) => !current)}>
+            <button className="access-pill enabled" onClick={() => {
+              setPermissionsOpen((current) => {
+                const next = !current;
+                if (next) {
+                  setAddOpen(false);
+                  setModelOpen(false);
+                }
+                return next;
+              });
+              window.requestAnimationFrame(() => syncMenuPosition("permissions"));
+            }}>
               <Icon name="shield" size={13} />
               {settings?.accessMode === "full" ? "Full access" : settings?.accessMode === "read-only" ? "Read only" : "Limited"}
               <Icon name="chevronDown" size={12} />
             </button>
-            {permissionsOpen ? (
-              <div className="pill-menu">
+            {permissionsOpen ? renderMenu("permissions", "pill-menu permissions-menu", permissionsPortalRef, (
+              <>
                 {(["full", "limited", "read-only"] as const).map((mode) => (
                   <button key={mode} onClick={() => { onSettingsChange({ accessMode: mode }); setPermissionsOpen(false); }}>
                     <Icon name={settings?.accessMode === mode ? "check" : "circle"} size={13} />
@@ -325,24 +466,33 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
                   <Icon name="shield" size={13} />
                   Approval: {settings?.approvalPolicy ?? "on-request"}
                 </button>
-              </div>
-            ) : null}
+              </>
+            )) : null}
           </div>
         </div>
         <div className="composer-meta">
           <div className="pill-menu-wrap" ref={modelRef}>
-            <button className="model-pill" onClick={() => setModelOpen((current) => !current)}>
+            <button className="model-pill" onClick={() => {
+              setModelOpen((current) => {
+                const next = !current;
+                if (next) {
+                  setAddOpen(false);
+                  setPermissionsOpen(false);
+                }
+                return next;
+              });
+              window.requestAnimationFrame(() => syncMenuPosition("model"));
+            }}>
               {shortModelLabel(settings?.modelLabel)} {thinkingModeLabel(settings?.thinkingLevel)} <Icon name="chevronDown" size={12} />
             </button>
-            {modelOpen ? (
-              <div className="pill-menu model-menu">
+            {modelOpen ? renderMenu("model", "pill-menu model-menu", modelPortalRef, (
+              <>
                 {models.map((provider) => (
                   <div key={provider.id} className="model-group">
                     <strong>{provider.name}</strong>
                     {provider.models.map((model) => (
                       <button key={`${provider.id}/${model.id}`} onClick={() => {
                         onSettingsChange({ provider: provider.id as AppSettings["provider"], modelLabel: model.id });
-                        void onAgentCommand({ type: "set_model", provider: provider.id, modelId: model.id });
                         setModelOpen(false);
                       }}>
                         <Icon name={settings?.provider === provider.id && settings?.modelLabel === model.id ? "check" : "circle"} size={13} />
@@ -357,22 +507,21 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
                   {(["off", "minimal", "low", "medium", "high", "xhigh"] as const).map((level) => (
                     <button key={level} onClick={() => {
                       onSettingsChange({ thinkingLevel: level });
-                      void onAgentCommand({ type: "set_thinking_level", level });
                     }}>
                       <Icon name={settings?.thinkingLevel === level ? "check" : "circle"} size={13} />
                       {level}
                     </button>
                   ))}
                 </div>
-              </div>
-            ) : null}
+              </>
+            )) : null}
           </div>
           {isStreaming ? (
             <button className="round-button stop" onClick={onAbort} aria-label="stop generation" title="Stop">
               <Icon name="stop" />
             </button>
           ) : null}
-          <button className="send-button" onClick={submit} disabled={!text.trim() || disabled} aria-label="send" title={isStreaming ? "Steer" : "Send"}>
+          <button className="send-button" onClick={() => void submit()} disabled={!text.trim() || disabled || submitting} aria-label="send" title={isStreaming ? "Steer" : "Send"}>
             <Icon name="arrowUp" size={15} />
           </button>
         </div>

@@ -8,7 +8,7 @@ import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
 import { authRouter, maybeRefresh } from "./auth.js";
 import { PiSession } from "./piProcess.js";
-import { APP_CONFIG_DIR, API_KEY_PROVIDER_IDS, PI_AUTH_PATH, TOKEN_PATH, readProviderAuthStatus, readTokens, removeApiKeyCredential, writeApiKeyCredential } from "./tokenStore.js";
+import { APP_CONFIG_DIR, API_KEY_PROVIDER_IDS, PI_AUTH_PATH, TOKEN_PATH, hasProviderCredential, readProviderAuthStatus, removeApiKeyCredential, writeApiKeyCredential } from "./tokenStore.js";
 import { SESSION_DIR, listSessions, sessionsRouter } from "./sessions.js";
 import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, sanitizeSettingsPatch, writeSettings } from "./settings.js";
 import { listProjects, projectsRouter } from "./projects.js";
@@ -22,7 +22,6 @@ import { clipboardExtensionArgs, clipboardRouter, clipboardStatus } from "./clip
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const server = createServer(app);
-const wss = new WebSocketServer({ server });
 const clientDist = path.resolve(__dirname, "../../client/dist");
 const clientIndex = path.join(clientDist, "index.html");
 const BACKEND_VERSION = process.env.PIAGENT_VERSION ?? "dev";
@@ -53,11 +52,13 @@ const BACKEND_FEATURES = {
   clipboardTools: true,
   beautifulUiMode: true
 };
+const devServerPort = String(process.env.PIAGENT_DEV_PORT ?? "").replace(/[^\d]/g, "");
+const devServerPorts = [...new Set(["5173", "5174", devServerPort].filter(Boolean))];
 const devServerOrigins = BACKEND_VERSION === "dev" || process.env.NODE_ENV !== "production"
-  ? [
-      /^http:\/\/127\.0\.0\.1:(517[3-9]|5180)$/,
-      /^http:\/\/localhost:(517[3-9]|5180)$/
-    ]
+  ? devServerPorts.flatMap((port) => [
+      new RegExp(`^http://127\\.0\\.0\\.1:${port}$`),
+      new RegExp(`^http://localhost:${port}$`)
+    ])
   : [];
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:1456$/,
@@ -66,6 +67,44 @@ const allowedOrigins = [
   /^https?:\/\/tauri\.localhost(?::\d+)?$/,
   /^tauri:\/\/localhost$/
 ];
+
+function isAllowedOrigin(origin?: string) {
+  return Boolean(origin && allowedOrigins.some((pattern) => pattern.test(origin)));
+}
+
+function allowedLocalRoots(includeConfig = false) {
+  const settings = readSettings();
+  const roots = [
+    settings.workspacePath,
+    ...listProjects({ includeArchived: true }).map((project) => project.rootPath),
+    includeConfig ? APP_CONFIG_DIR : ""
+  ]
+    .filter((root): root is string => Boolean(root && path.isAbsolute(root) && fs.existsSync(root)))
+    .map((root) => fs.realpathSync.native(path.resolve(root)));
+  return [...new Set(roots)];
+}
+
+function isPathInAllowedRoot(filePath: string, includeConfig = false) {
+  if (!fs.existsSync(filePath)) return false;
+  const resolved = fs.realpathSync.native(path.resolve(filePath));
+  return allowedLocalRoots(includeConfig).some((root) => {
+    const relative = path.relative(root, resolved);
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  });
+}
+
+function resolveAllowedDirectory(raw: unknown, fallback: string) {
+  const resolved = path.resolve(String(raw ?? fallback));
+  if (!isPathInAllowedRoot(resolved) || !fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) return null;
+  return fs.realpathSync.native(resolved);
+}
+
+const wss = new WebSocketServer({
+  server,
+  verifyClient(info, done) {
+    done(isAllowedOrigin(info.origin), isAllowedOrigin(info.origin) ? undefined : 403, "Origin not allowed");
+  }
+});
 
 app.use(cors({
   origin(origin, callback) {
@@ -169,10 +208,17 @@ app.get("/api/models", (_req, res) => {
     ]
   });
 });
-app.get("/api/diagnostics", async (_req, res, next) => {
+app.get("/api/diagnostics", async (req, res, next) => {
   try {
-    await maybeRefresh();
     const settings = readSettings();
+    let oauthRefreshError = "";
+    if ((settings.provider || "openai-codex") === "openai-codex" && req.query.refreshOAuth !== "0") {
+      try {
+        await maybeRefresh();
+      } catch (error) {
+        oauthRefreshError = error instanceof Error ? error.message : String(error);
+      }
+    }
     res.json({
       ok: true,
       configDir: APP_CONFIG_DIR,
@@ -191,14 +237,20 @@ app.get("/api/diagnostics", async (_req, res, next) => {
       clipboard: clipboardStatus(),
       beautifulUi: beautifulUiStatus(),
       provider: settings.provider,
-      model: settings.modelLabel || "gpt-5.5"
+      model: settings.modelLabel || "gpt-5.5",
+      providerConnected: settings.provider === "openai-codex" ? fs.existsSync(TOKEN_PATH) : hasProviderCredential(settings.provider),
+      oauthRefreshError: oauthRefreshError || undefined
     });
   } catch (err) {
     next(err);
   }
 });
 app.get("/api/git/status", (req, res) => {
-  const cwd = path.resolve(String(req.query.cwd ?? readSettings().workspacePath ?? process.cwd()));
+  const cwd = resolveAllowedDirectory(req.query.cwd, readSettings().workspacePath ?? process.cwd());
+  if (!cwd) {
+    res.status(403).json({ ok: false, error: "Git status is limited to the active workspace and project roots." });
+    return;
+  }
   execFile("git", ["status", "--short", "--branch"], { cwd, windowsHide: true }, (statusError, stdout) => {
     execFile("git", ["remote", "-v"], { cwd, windowsHide: true }, (_remoteError, remoteOut) => {
       res.json({
@@ -212,7 +264,11 @@ app.get("/api/git/status", (req, res) => {
   });
 });
 app.post("/api/git/config", async (req, res) => {
-  const cwd = path.resolve(String(req.body?.cwd ?? readSettings().workspacePath ?? process.cwd()));
+  const cwd = resolveAllowedDirectory(req.body?.cwd, readSettings().workspacePath ?? process.cwd());
+  if (!cwd) {
+    res.status(403).json({ ok: false, error: "Git config is limited to the active workspace and project roots." });
+    return;
+  }
   const scope = req.body?.scope === "local" ? "--local" : "--global";
   const entries: Array<[string, string]> = [
     ["user.name", String(req.body?.name ?? "").trim()],
@@ -293,7 +349,11 @@ app.post("/api/github/connect", (_req, res) => {
 });
 app.get("/api/workspace/files", (req, res, next) => {
   try {
-    const root = path.resolve(String(req.query.cwd ?? readSettings().workspacePath ?? process.cwd()));
+    const root = resolveAllowedDirectory(req.query.cwd, readSettings().workspacePath ?? process.cwd());
+    if (!root) {
+      res.status(403).json({ ok: false, error: "Workspace file listing is limited to the active workspace and project roots." });
+      return;
+    }
     const maxFiles = Math.min(250, Number(req.query.limit ?? 80));
     const skip = new Set(["node_modules", ".git", "dist", "target", ".next", ".vite", "src-tauri\\target"]);
     const files: Array<{ name: string; path: string; size: number; modified: number; ext: string }> = [];
@@ -302,8 +362,10 @@ app.get("/api/workspace/files", (req, res, next) => {
       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (files.length >= maxFiles) break;
         if (skip.has(entry.name)) continue;
+        if (entry.isSymbolicLink()) continue;
         const full = path.join(dir, entry.name);
-        if (!full.startsWith(root)) continue;
+        const relative = path.relative(root, full);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) continue;
         if (entry.isDirectory()) {
           visit(full, depth + 1);
           continue;
@@ -355,6 +417,10 @@ app.post("/api/open-file", (req, res, next) => {
       res.status(400).json({ ok: false, error: "File does not exist" });
       return;
     }
+    if (!isPathInAllowedRoot(filePath)) {
+      res.status(403).json({ ok: false, error: "File is outside the active workspace and project roots." });
+      return;
+    }
     const command = process.platform === "win32" ? "powershell.exe" : process.platform === "darwin" ? "open" : "xdg-open";
     const args = process.platform === "win32" ? ["-NoProfile", "-Command", "Invoke-Item", "-LiteralPath", filePath] : [filePath];
     execFile(command, args, { windowsHide: true }, (error) => {
@@ -373,6 +439,10 @@ app.post("/api/file-preview", (req, res, next) => {
     const filePath = String(req.body?.path ?? "");
     if (!filePath || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) {
       res.status(400).json({ ok: false, error: "File does not exist" });
+      return;
+    }
+    if (!isPathInAllowedRoot(filePath)) {
+      res.status(403).json({ ok: false, error: "File is outside the active workspace and project roots." });
       return;
     }
     const stat = fs.statSync(filePath);
@@ -396,21 +466,26 @@ app.get("*", (_req, res) => {
 
 wss.on("connection", async (ws) => {
   try {
-    const tokens = readTokens();
-    if (!tokens) {
-      ws.send(JSON.stringify({ type: "auth_required" }));
-      ws.close();
-      return;
-    }
-
-    const freshToken = await maybeRefresh(tokens);
-    if (!freshToken) {
-      ws.send(JSON.stringify({ type: "auth_required" }));
-      ws.close();
-      return;
-    }
-
     let settings = readSettings();
+    const sendAuthRequired = (provider: string, message?: string) => {
+      ws.send(JSON.stringify({
+        type: "auth_required",
+        provider,
+        message: message ?? (provider === "openai-codex"
+          ? "OpenAI Codex OAuth is required. Sign in again from Settings > Connexions."
+          : `Provider ${provider} is not connected. Add its API key in Settings > Connexions.`)
+      }));
+    };
+    const providerAccessToken = async (provider: string) => {
+      if (provider === "openai-codex") {
+        const freshToken = await maybeRefresh();
+        if (!freshToken) return null;
+        return freshToken.access;
+      }
+      if (!hasProviderCredential(provider)) return null;
+      return "";
+    };
+
     let activeProjectId: string | null = null;
     let activeSessionId: string | null = null;
     const wireSession = (session: PiSession) => {
@@ -439,14 +514,20 @@ wss.on("connection", async (ws) => {
         if (subagentTrace && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(subagentTrace));
       };
     };
-    const startSession = () => {
+    const startSession = async () => {
       settings = readSettings();
+      const provider = settings.provider || "openai-codex";
+      const accessToken = await providerAccessToken(provider);
+      if (accessToken === null) {
+        sendAuthRequired(provider);
+        return null;
+      }
       ensureAdvisorConfig(settings);
       ensureSubagentConfig(settings);
       ensureBeautifulUiPackage();
-      const nextSession = new PiSession(SESSION_DIR, freshToken.access, {
+      const nextSession = new PiSession(SESSION_DIR, accessToken, {
         extraArgs: [...advisorExtensionArgs(), ...subagentExtensionArgs(settings), ...clipboardExtensionArgs(), ...beautifulUiArgs(), ...piArgsForAccess(settings)],
-        provider: settings.provider || "openai-codex",
+        provider,
         model: settings.modelLabel || "gpt-5.5",
         thinkingLevel: settings.thinkingLevel || "medium",
         workspacePath: settings.workspacePath
@@ -465,16 +546,26 @@ wss.on("connection", async (ws) => {
         }));
       }
     };
-    let session = startSession();
+    const initialSession = await startSession();
+    if (!initialSession) {
+      ws.close();
+      return;
+    }
+    let session = initialSession;
     sendReady();
 
     ws.on("message", async (raw) => {
       try {
         const cmd = JSON.parse(raw.toString());
         if (cmd.type === "reload_agent" || cmd.type === "set_workspace") {
+          const nextSession = await startSession();
+          if (!nextSession) {
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: false, error: "Provider is not connected." }));
+            return;
+          }
           session.onEvent = () => {};
           session.kill();
-          session = startSession();
+          session = nextSession;
           sendReady();
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: true }));
           return;

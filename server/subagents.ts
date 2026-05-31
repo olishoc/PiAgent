@@ -390,6 +390,10 @@ function scoreMessage(message: string) {
   return score;
 }
 
+function userMessageForRouting(message: string) {
+  return message.split(/\n\nPiAgent UI options:/i)[0].trim();
+}
+
 function taskId(prefix = "task") {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -493,9 +497,10 @@ export function buildSubagentPromptContext(input: {
   if (!settings.subagentsEnabled || !settings.autoLaunchSubagents || settings.subagentRoutingMode === "manual") return null;
   const info = subagentPackageInfo();
   const project = findProject(input.projectId);
-  const score = scoreMessage(input.message);
+  const routingMessage = userMessageForRouting(input.message);
+  const score = scoreMessage(routingMessage);
   if (settings.subagentRoutingMode === "assistive" && score < 4) return null;
-  const tasks = selectSuggestedTasks(input.message, project, settings);
+  const tasks = selectSuggestedTasks(routingMessage, project, settings);
   if (!tasks.length) return null;
   saveSuggestedTasks(input.projectId ?? null, tasks);
 

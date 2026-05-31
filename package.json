@@ -17,6 +17,7 @@
     "desktop:latest-json": "node scripts/write-latest-json.mjs",
     "desktop:update-local": "npm run desktop:build && node scripts/install-latest.mjs",
     "build": "npm run build -w client && npm run build -w server",
+    "smoke:backend": "npm run build -w server && node server/dist/smoke.js",
     "start": "node server/dist/index.js"
   },
   "devDependencies": {

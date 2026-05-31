@@ -13,9 +13,10 @@ interface ThreadViewProps {
   displayName?: string;
   contextUsage?: ContextUsage | null;
   onAbort: () => void;
+  compactHeader?: boolean;
 }
 
-export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, displayName, onAbort }: ThreadViewProps) {
+export default function ThreadView({ messages, isStreaming, footerStatus, connectionState, contextUsage, sessionName, displayName, onAbort, compactHeader }: ThreadViewProps) {
   const endRef = useRef<HTMLDivElement | null>(null);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stickToBottomRef = useRef(true);
@@ -88,23 +89,25 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   };
 
   return (
-    <section className="thread-shell">
-      <header className="thread-header">
-        <div>
-          <strong>{sessionName || "New chat"}</strong>
-          <div className="thread-badges">
-            <span className={`state-badge ${runState.replace(/\s+/g, "-")}`}>{runState}</span>
-            {connectionState && connectionState !== runState ? <span>{connectionState}</span> : null}
-            {toolCount > 0 ? <span>{toolCount} tools</span> : null}
-            {thinkingCount > 0 ? <span>{thinkingCount} thoughts</span> : null}
-            {advisorCount > 0 ? <span>{advisorCount} advisor</span> : null}
-            {(contextUsage?.percent ?? 0) > 0 ? <span>{contextUsage?.percent}% used</span> : null}
+    <section className={`thread-shell ${compactHeader ? "compact-header" : ""}`}>
+      {!compactHeader ? (
+        <header className="thread-header">
+          <div>
+            <strong>{sessionName || "New chat"}</strong>
+            <div className="thread-badges">
+              <span className={`state-badge ${runState.replace(/\s+/g, "-")}`}>{runState}</span>
+              {connectionState && connectionState !== runState ? <span>{connectionState}</span> : null}
+              {toolCount > 0 ? <span>{toolCount} tools</span> : null}
+              {thinkingCount > 0 ? <span>{thinkingCount} thoughts</span> : null}
+              {advisorCount > 0 ? <span>{advisorCount} advisor</span> : null}
+              {(contextUsage?.percent ?? 0) > 0 ? <span>{contextUsage?.percent}% used</span> : null}
+            </div>
           </div>
-        </div>
-        <div className="thread-actions">
-          {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}
-        </div>
-      </header>
+          <div className="thread-actions">
+            {isStreaming ? <button onClick={onAbort}><Icon name="stop" /> Stop</button> : null}
+          </div>
+        </header>
+      ) : null}
       <div className="thread-feed" ref={feedRef} onScroll={onScroll}>
         {messages.length === 0 ? (
           <div className="empty-thread">
@@ -128,10 +131,12 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
           <Icon name="arrowDown" size={13} /> latest
         </button>
       ) : null}
-      <div className="thread-footer">
-        {isStreaming ? <span className="live-dot" /> : null}
-        {footerStatus}
-      </div>
+      {!compactHeader ? (
+        <div className="thread-footer">
+          {isStreaming ? <span className="live-dot" /> : null}
+          {footerStatus}
+        </div>
+      ) : null}
     </section>
   );
 }
