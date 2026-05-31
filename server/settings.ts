@@ -8,6 +8,9 @@ export type ProviderId = string;
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ThemePreset = "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
 export type TextDensity = "compact" | "codex" | "comfortable" | "custom";
+export type AnimatedBackground = "midnight-ocean" | "aurora-glass" | "liquid-prism" | "solar-frost";
+export type LightDeflection = "balanced" | "strong" | "extreme";
+export type CursorLight = "off" | "subtle" | "strong";
 export type MemoryMode = "off" | "manual" | "assistive" | "deep";
 export type SubagentRoutingMode = "manual" | "assistive" | "automatic";
 export type SubagentIntercomMode = "off" | "fork-only" | "always";
@@ -49,6 +52,9 @@ export interface AppSettings {
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
   themePreset: ThemePreset;
+  animatedBackground: AnimatedBackground;
+  lightDeflection: LightDeflection;
+  cursorLight: CursorLight;
   accentColor: string;
   density: "comfortable" | "compact";
   textDensity: TextDensity;
@@ -112,6 +118,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memoryMinConfidence: 0.35,
   theme: "dark",
   themePreset: "codex",
+  animatedBackground: "midnight-ocean",
+  lightDeflection: "strong",
+  cursorLight: "subtle",
   accentColor: "#58a6ff",
   density: "comfortable",
   textDensity: "codex",
@@ -136,6 +145,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const THEME_PRESETS: ThemePreset[] = ["codex", "graphite", "midnight", "ember", "absolute", "paper", "dawn", "contrast"];
+const ANIMATED_BACKGROUNDS: AnimatedBackground[] = ["midnight-ocean", "aurora-glass", "liquid-prism", "solar-frost"];
+const LIGHT_DEFLECTIONS: LightDeflection[] = ["balanced", "strong", "extreme"];
+const CURSOR_LIGHTS: CursorLight[] = ["off", "subtle", "strong"];
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high", "xhigh"];
 const TEXT_DENSITIES: TextDensity[] = ["compact", "codex", "comfortable", "custom"];
 const ACCESS_MODES: AccessMode[] = ["read-only", "limited", "full"];
@@ -207,6 +219,9 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   subagentThinking: THINKING_LEVELS,
   theme: THEMES,
   themePreset: THEME_PRESETS,
+  animatedBackground: ANIMATED_BACKGROUNDS,
+  lightDeflection: LIGHT_DEFLECTIONS,
+  cursorLight: CURSOR_LIGHTS,
   density: DENSITIES,
   textDensity: TEXT_DENSITIES
 };
@@ -228,6 +243,9 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   if (!loaded.advisorProvider) loaded.advisorProvider = loaded.provider || "openai-codex";
   if (!loaded.advisorModel) loaded.advisorModel = loaded.modelLabel || "gpt-5.5";
   if (!THEME_PRESETS.includes(loaded.themePreset as ThemePreset)) loaded.themePreset = "codex";
+  if (!ANIMATED_BACKGROUNDS.includes(loaded.animatedBackground as AnimatedBackground)) loaded.animatedBackground = "midnight-ocean";
+  if (!LIGHT_DEFLECTIONS.includes(loaded.lightDeflection as LightDeflection)) loaded.lightDeflection = "strong";
+  if (!CURSOR_LIGHTS.includes(loaded.cursorLight as CursorLight)) loaded.cursorLight = "subtle";
   if (!THINKING_LEVELS.includes(loaded.thinkingLevel as ThinkingLevel)) loaded.thinkingLevel = "medium";
   if (!THINKING_LEVELS.includes(loaded.advisorReasoning as ThinkingLevel) || loaded.advisorReasoning === "off") loaded.advisorReasoning = "high";
   if (!TEXT_DENSITIES.includes(loaded.textDensity as TextDensity)) loaded.textDensity = "codex";

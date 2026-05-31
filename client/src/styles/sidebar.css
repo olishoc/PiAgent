@@ -1,12 +1,40 @@
 .sidebar {
+  position: relative;
+  isolation: isolate;
   display: flex;
   width: 236px;
   min-width: 236px;
   height: 100vh;
   flex-direction: column;
-  background: color-mix(in srgb, var(--bg-sidebar) 88%, transparent);
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-sidebar) 58%, transparent), color-mix(in srgb, var(--bg-sidebar) 38%, transparent)),
+    radial-gradient(circle at 30% 0%, color-mix(in srgb, #ffffff 8%, transparent), transparent 35%);
   border-right: 0.5px solid var(--border);
-  backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+  backdrop-filter: var(--glass-refraction-filter);
+  -webkit-backdrop-filter: var(--glass-refraction-filter);
+}
+
+.sidebar::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--cursor-x) var(--cursor-y), color-mix(in srgb, #ffffff var(--cursor-surface-light), transparent), transparent var(--cursor-light-field)),
+    linear-gradient(130deg, color-mix(in srgb, #ffffff 8%, transparent), transparent 36%, color-mix(in srgb, var(--neon-violet) 5%, transparent)),
+    radial-gradient(circle at 0% 18%, color-mix(in srgb, var(--neon-cyan) 8%, transparent), transparent 34%);
+  background-attachment: fixed, local, local;
+  filter: url("#piagent-glass-distortion");
+  content: "";
+  opacity: 0.74;
+  pointer-events: none;
+}
+
+.sidebar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .sidebar.collapsed {

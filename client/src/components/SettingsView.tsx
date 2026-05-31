@@ -75,11 +75,13 @@ function SettingSelect<T extends string>({ value, options, onChange, disabled, t
     const left = Math.min(Math.max(edge, rect.left), Math.max(edge, viewportWidth - menuWidth - edge));
     const spaceBelow = viewportHeight - rect.bottom - gap - edge;
     const spaceAbove = rect.top - gap - edge;
-    const openUp = spaceBelow < 180 && spaceAbove > spaceBelow;
+    const openUp = spaceAbove > spaceBelow;
     const availableHeight = Math.max(120, openUp ? spaceAbove : spaceBelow);
     const maxHeight = Math.min(360, availableHeight);
-    const desiredTop = openUp ? rect.top - gap - maxHeight : rect.bottom + gap;
-    const top = Math.min(Math.max(edge, desiredTop), Math.max(edge, viewportHeight - maxHeight - edge));
+    const measuredHeight = menuRef.current ? Math.ceil(Math.min(menuRef.current.scrollHeight || maxHeight, maxHeight)) : Math.min(maxHeight, 220);
+    const desiredTop = openUp ? rect.top - gap - measuredHeight : rect.bottom + gap;
+    const top = Math.min(Math.max(edge, desiredTop), Math.max(edge, viewportHeight - measuredHeight - edge));
+    const anchorX = Math.min(Math.max(rect.left + (rect.width / 2) - left, 16), menuWidth - 16);
     setMenuStyle({
       position: "fixed",
       left,
@@ -88,8 +90,13 @@ function SettingSelect<T extends string>({ value, options, onChange, disabled, t
       bottom: "auto",
       width: menuWidth,
       maxHeight,
-      overflowY: "auto"
-    });
+      overflowY: "auto",
+      transformOrigin: `${anchorX}px ${openUp ? "bottom" : "top"}`,
+      "--menu-anchor-x": `${anchorX}px`,
+      "--menu-arrow-top": openUp ? "auto" : "-5px",
+      "--menu-arrow-bottom": openUp ? "-5px" : "auto",
+      "--menu-arrow-rotate": openUp ? "45deg" : "225deg"
+    } as CSSProperties);
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -209,6 +216,25 @@ const approvalOptions: Array<SettingSelectOption<AppSettings["approvalPolicy"]>>
   { value: "on-request", label: "On request", note: "safer" },
   { value: "on-failure", label: "On failure", note: "faster" },
   { value: "never", label: "Never", note: "autonomous" }
+];
+
+const animatedBackgroundOptions: Array<SettingSelectOption<AppSettings["animatedBackground"]>> = [
+  { value: "midnight-ocean", label: "Midnight ocean", note: "deep" },
+  { value: "aurora-glass", label: "Aurora glass", note: "active" },
+  { value: "liquid-prism", label: "Liquid prism", note: "bright" },
+  { value: "solar-frost", label: "Solar frost", note: "light" }
+];
+
+const lightDeflectionOptions: Array<SettingSelectOption<AppSettings["lightDeflection"]>> = [
+  { value: "strong", label: "Strong glass", note: "default" },
+  { value: "extreme", label: "Extreme refraction", note: "visible" },
+  { value: "balanced", label: "Balanced", note: "calm" }
+];
+
+const cursorLightOptions: Array<SettingSelectOption<AppSettings["cursorLight"]>> = [
+  { value: "subtle", label: "Subtle cursor light", note: "native" },
+  { value: "strong", label: "Strong cursor light", note: "reactive" },
+  { value: "off", label: "Off" }
 ];
 
 export default function SettingsView({ settings, models, onBack, onChange }: SettingsViewProps) {
@@ -481,6 +507,24 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
                   { value: "dawn", label: "Dawn light" },
                   { value: "contrast", label: "High contrast" }
                 ]}
+              />
+              <span>Background anime</span>
+              <SettingSelect
+                value={settings.animatedBackground}
+                onChange={(value) => onChange({ animatedBackground: value })}
+                options={animatedBackgroundOptions}
+              />
+              <span>Deflection lumiere</span>
+              <SettingSelect
+                value={settings.lightDeflection}
+                onChange={(value) => onChange({ lightDeflection: value })}
+                options={lightDeflectionOptions}
+              />
+              <span>Lumiere curseur</span>
+              <SettingSelect
+                value={settings.cursorLight}
+                onChange={(value) => onChange({ cursorLight: value })}
+                options={cursorLightOptions}
               />
               <span>Accent</span>
               <input type="color" value={settings.accentColor} onChange={(e) => onChange({ accentColor: e.target.value })} />

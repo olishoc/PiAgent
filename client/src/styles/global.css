@@ -48,6 +48,16 @@
   --cursor-x: 50vw;
   --cursor-y: 50vh;
   --cursor-react: 1;
+  --cursor-default: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2224%22%20height=%2224%22%20viewBox=%220%200%2024%2024%22%3E%3Cpath%20d=%22M4%203L17%2014L10.2%2015.1L7.2%2021L4%203Z%22%20fill=%22rgba(255,255,255,0.96)%22%20stroke=%22%2345f0ff%22%20stroke-width=%221.25%22%20stroke-linejoin=%22round%22/%3E%3Cpath%20d=%22M7.2%207.1L12.8%2012.8L9%2013.5Z%22%20fill=%22%23ff3b30%22%20opacity=%220.95%22/%3E%3C/svg%3E") 4 3, auto;
+  --cursor-pointer: url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2224%22%20height=%2224%22%20viewBox=%220%200%2024%2024%22%3E%3Ccircle%20cx=%2210%22%20cy=%2210%22%20r=%225.5%22%20fill=%22rgba(255,255,255,0.92)%22%20stroke=%22%2345f0ff%22%20stroke-width=%221.3%22/%3E%3Cpath%20d=%22M14%2014L20%2020%22%20stroke=%22%23ff3b30%22%20stroke-width=%222.2%22%20stroke-linecap=%22round%22/%3E%3C/svg%3E") 10 10, pointer;
+  --glass-backdrop-filter: blur(30px) saturate(1.55) contrast(1.1);
+  --glass-refraction-filter: url("#piagent-glass-refraction-strong") blur(30px) saturate(1.55) contrast(1.1);
+  --glass-overlay-opacity: 0.82;
+  --background-energy: 1;
+  --cursor-light-alpha: 0.18;
+  --cursor-light-size: 24px;
+  --cursor-light-field: 92px;
+  --cursor-surface-light: 6%;
 }
 
 * { box-sizing: border-box; }
@@ -115,6 +125,22 @@ button {
   color: inherit;
 }
 
+.app-shell a,
+.app-shell button:not(:disabled),
+.app-shell select,
+.app-shell [role="button"] {
+  cursor: var(--cursor-pointer);
+}
+
+.app-shell input:not([type="color"]),
+.app-shell textarea {
+  cursor: text;
+}
+
+.app-shell button:disabled {
+  cursor: not-allowed;
+}
+
 button,
 select {
   transition: border-color 160ms ease, background 160ms ease, color 160ms ease, opacity 160ms ease, transform 160ms ease;
@@ -151,27 +177,21 @@ button:active {
   overflow: hidden;
   background: var(--bg-app);
   color: var(--text-primary);
+  cursor: var(--cursor-default);
 }
 
 .app-shell::before {
-  position: fixed;
-  z-index: 6;
-  width: 330px;
-  height: 330px;
-  left: calc(var(--cursor-x) - 165px);
-  top: calc(var(--cursor-y) - 165px);
-  border-radius: 50%;
-  background:
-    radial-gradient(circle, rgba(255,255,255,0.9) 0 1px, color-mix(in srgb, var(--neon-cyan) 88%, #ffffff) 2px, transparent 5px),
-    radial-gradient(circle, color-mix(in srgb, var(--neon-cyan) 36%, transparent) 0 13%, color-mix(in srgb, var(--neon-violet) 21%, transparent) 28%, color-mix(in srgb, var(--neon-rose) 10%, transparent) 44%, transparent 68%);
   content: "";
+  display: none;
+}
+
+.glass-distortion-map {
+  position: fixed;
+  width: 0;
+  height: 0;
+  overflow: hidden;
   opacity: 0;
   pointer-events: none;
-  filter: blur(13px) saturate(1.55);
-  mix-blend-mode: screen;
-  transform: translate3d(0, 0, 0) scale(var(--cursor-react));
-  transition: opacity 120ms ease, transform 120ms ease;
-  will-change: left, top, opacity, transform;
 }
 
 .app-shell::after {
@@ -185,18 +205,51 @@ button:active {
   content: "";
   pointer-events: none;
   animation: ambientSweep 14s ease-in-out infinite alternate;
-}
-
-.app-shell.cursor-active::before {
-  opacity: 0.72;
+  mix-blend-mode: screen;
 }
 
 .app-shell.cursor-interactive {
-  --cursor-react: 1.2;
+  --cursor-react: 1.12;
 }
 
-.app-shell.cursor-interactive::before {
-  opacity: 0.95;
+.app-shell[data-refraction="balanced"] {
+  --glass-backdrop-filter: blur(22px) saturate(1.28) contrast(1.04);
+  --glass-refraction-filter: url("#piagent-glass-refraction-soft") blur(22px) saturate(1.28) contrast(1.04);
+  --glass-overlay-opacity: 0.58;
+}
+
+.app-shell[data-refraction="strong"] {
+  --glass-backdrop-filter: blur(32px) saturate(1.58) contrast(1.12);
+  --glass-refraction-filter: url("#piagent-glass-refraction-strong") blur(32px) saturate(1.58) contrast(1.12);
+  --glass-overlay-opacity: 0.84;
+}
+
+.app-shell[data-refraction="extreme"] {
+  --glass-backdrop-filter: blur(40px) saturate(1.85) contrast(1.22) brightness(1.08);
+  --glass-refraction-filter: url("#piagent-glass-refraction-extreme") blur(40px) saturate(1.85) contrast(1.22) brightness(1.08);
+  --glass-overlay-opacity: 1;
+  --background-energy: 1.2;
+}
+
+.app-shell[data-cursor-light="off"] {
+  --cursor-light-alpha: 0;
+  --cursor-light-size: 0px;
+  --cursor-light-field: 0px;
+  --cursor-surface-light: 0%;
+}
+
+.app-shell[data-cursor-light="subtle"] {
+  --cursor-light-alpha: 0.18;
+  --cursor-light-size: 24px;
+  --cursor-light-field: 92px;
+  --cursor-surface-light: 6%;
+}
+
+.app-shell[data-cursor-light="strong"] {
+  --cursor-light-alpha: 0.36;
+  --cursor-light-size: 44px;
+  --cursor-light-field: 150px;
+  --cursor-surface-light: 13%;
 }
 
 .neon-cursor {
@@ -204,40 +257,31 @@ button:active {
   z-index: 120;
   left: var(--cursor-x);
   top: var(--cursor-y);
-  width: 17px;
-  height: 17px;
-  border: 1px solid color-mix(in srgb, var(--neon-cyan) 78%, #ffffff);
+  width: var(--cursor-light-size);
+  height: var(--cursor-light-size);
+  border: 0;
   border-radius: 999px;
+  background:
+    radial-gradient(circle, color-mix(in srgb, #ffffff 72%, transparent) 0 1px, color-mix(in srgb, var(--neon-cyan) 28%, transparent) 2px 10px, color-mix(in srgb, var(--neon-violet) 10%, transparent) 11px 20px, transparent 72%);
   opacity: 0;
   pointer-events: none;
   transform: translate(-50%, -50%) scale(var(--cursor-react));
-  transition: opacity 110ms ease, transform 110ms ease, border-color 110ms ease;
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, #ffffff 14%, transparent),
-    0 0 14px color-mix(in srgb, var(--neon-cyan) 62%, transparent),
-    0 0 36px color-mix(in srgb, var(--neon-violet) 36%, transparent);
+  transition: opacity 70ms linear, transform 120ms ease, filter 120ms ease;
+  filter: blur(0.2px) saturate(1.3);
   mix-blend-mode: screen;
 }
 
 .neon-cursor::after {
-  position: absolute;
-  inset: 5px;
-  border-radius: inherit;
-  background: color-mix(in srgb, #ffffff 72%, var(--neon-cyan));
-  box-shadow: 0 0 18px color-mix(in srgb, var(--neon-cyan) 86%, transparent);
-  content: "";
+  content: none;
 }
 
 .app-shell.cursor-active .neon-cursor {
-  opacity: 0.95;
+  opacity: var(--cursor-light-alpha);
 }
 
 .app-shell.cursor-interactive .neon-cursor {
-  border-color: color-mix(in srgb, var(--neon-rose) 62%, #ffffff);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, #ffffff 22%, transparent),
-    0 0 18px color-mix(in srgb, var(--neon-cyan) 74%, transparent),
-    0 0 48px color-mix(in srgb, var(--neon-rose) 44%, transparent);
+  opacity: calc(var(--cursor-light-alpha) + 0.08);
+  filter: blur(0.1px) brightness(1.16) saturate(1.45);
 }
 
 .environment-backdrop {
@@ -247,9 +291,86 @@ button:active {
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--neon-violet) 15%, transparent), transparent 32%),
-    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--neon-cyan) 13%, transparent), transparent 28%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-app) 76%, #071a2a) 0%, var(--bg-app) 62%, #020304 100%);
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--neon-violet) 20%, transparent), transparent 34%),
+    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--neon-cyan) 18%, transparent), transparent 30%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-app) 66%, #071f34) 0%, color-mix(in srgb, var(--bg-app) 80%, #03111f) 52%, #010203 100%);
+}
+
+.app-shell[data-background="aurora-glass"] .environment-backdrop {
+  background:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, #42ffe6 22%, transparent), transparent 32%),
+    radial-gradient(circle at 82% 8%, color-mix(in srgb, #b174ff 24%, transparent), transparent 32%),
+    linear-gradient(180deg, #06151d 0%, #05060a 62%, #010204 100%);
+}
+
+.app-shell[data-background="aurora-glass"] .sky-layer {
+  background:
+    linear-gradient(112deg, transparent 0 18%, color-mix(in srgb, #4cffdd 28%, transparent) 32%, transparent 48%, color-mix(in srgb, #b78aff 26%, transparent) 64%, transparent 82%),
+    linear-gradient(74deg, transparent 0 22%, color-mix(in srgb, #ffffff 9%, transparent) 46%, transparent 72%),
+    radial-gradient(circle at 20% 18%, rgba(255,255,255,0.62) 0 1px, transparent 1.7px);
+  background-size: 220% 100%, 180% 100%, 100% 100%;
+  opacity: 0.92;
+  animation: auroraRibbon 12s linear infinite, skyDrift 18s ease-in-out infinite alternate;
+}
+
+.app-shell[data-background="liquid-prism"] .environment-backdrop {
+  background:
+    conic-gradient(from 180deg at 50% 42%, color-mix(in srgb, #39f5ff 24%, #050608), color-mix(in srgb, #ad7cff 22%, #050608), color-mix(in srgb, #ff6fb1 18%, #050608), color-mix(in srgb, #39f5ff 24%, #050608)),
+    radial-gradient(circle at 50% 95%, #020207, #000 68%);
+}
+
+.app-shell[data-background="liquid-prism"] .sky-layer {
+  background:
+    repeating-conic-gradient(from 0deg at 50% 50%, color-mix(in srgb, #ffffff 9%, transparent) 0 8deg, transparent 9deg 28deg),
+    radial-gradient(circle at 50% 44%, color-mix(in srgb, #ffffff 12%, transparent), transparent 42%);
+  opacity: 0.55;
+  filter: blur(0.5px) url("#piagent-glass-distortion");
+  animation: prismRotate 22s linear infinite;
+}
+
+.app-shell[data-background="solar-frost"] .environment-backdrop {
+  background:
+    radial-gradient(circle at 24% 4%, rgba(255,255,255,0.86), transparent 30%),
+    radial-gradient(circle at 82% 12%, rgba(110,204,255,0.34), transparent 32%),
+    linear-gradient(180deg, #dff7ff 0%, #eefbff 42%, #d5f2f5 100%);
+}
+
+.app-shell[data-background="solar-frost"] .sky-layer {
+  background:
+    linear-gradient(115deg, transparent 0 22%, rgba(255,255,255,0.58) 44%, transparent 66%),
+    radial-gradient(ellipse at 72% 20%, rgba(255,255,255,0.48), transparent 26%);
+  background-size: 190% 100%, 100% 100%;
+  opacity: 0.82;
+  animation: frostSweep 13s linear infinite;
+}
+
+.environment-backdrop::before,
+.environment-backdrop::after {
+  position: absolute;
+  inset: -10%;
+  content: "";
+  pointer-events: none;
+  will-change: transform, background-position, opacity;
+}
+
+.environment-backdrop::before {
+  background:
+    repeating-linear-gradient(108deg, transparent 0 24px, color-mix(in srgb, var(--neon-cyan) 17%, transparent) 25px 27px, transparent 28px 56px),
+    repeating-linear-gradient(78deg, transparent 0 30px, color-mix(in srgb, #ffffff 11%, transparent) 31px 33px, transparent 34px 70px);
+  opacity: 0.62;
+  filter: blur(0.2px) url("#piagent-glass-distortion");
+  mix-blend-mode: screen;
+  animation: causticSwim 10s linear infinite;
+}
+
+.environment-backdrop::after {
+  background:
+    radial-gradient(ellipse at 34% 54%, color-mix(in srgb, var(--neon-cyan) 12%, transparent), transparent 30%),
+    radial-gradient(ellipse at 72% 62%, color-mix(in srgb, var(--neon-violet) 10%, transparent), transparent 34%),
+    linear-gradient(90deg, transparent 0%, color-mix(in srgb, #ffffff 5%, transparent) 50%, transparent 100%);
+  opacity: 0.58;
+  mix-blend-mode: screen;
+  animation: tideLight 9s ease-in-out infinite alternate;
 }
 
 .sky-layer,
@@ -266,48 +387,54 @@ button:active {
     radial-gradient(circle at 68% 12%, rgba(255,255,255,0.48) 0 1px, transparent 1.7px),
     radial-gradient(circle at 82% 30%, rgba(255,255,255,0.42) 0 1px, transparent 1.8px),
     radial-gradient(circle at 37% 35%, rgba(255,255,255,0.32) 0 1px, transparent 1.7px),
-    radial-gradient(circle at 58% 24%, color-mix(in srgb, var(--neon-cyan) 22%, transparent), transparent 20%);
-  opacity: 0.52;
-  animation: skyDrift 42s linear infinite alternate;
+    radial-gradient(circle at 58% 24%, color-mix(in srgb, var(--neon-cyan) 26%, transparent), transparent 20%),
+    linear-gradient(110deg, transparent 0 30%, color-mix(in srgb, var(--neon-violet) 8%, transparent) 48%, transparent 66%);
+  background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%, 110% 110%, 180% 100%;
+  opacity: 0.64;
+  animation: skyDrift 18s linear infinite alternate, auroraSlide 12s linear infinite;
 }
 
 .horizon-glow {
   background:
-    radial-gradient(ellipse at 50% 51%, color-mix(in srgb, var(--neon-cyan) 18%, transparent) 0%, transparent 32%),
-    linear-gradient(180deg, transparent 0 43%, color-mix(in srgb, #ffffff 5%, transparent) 49%, transparent 57%);
-  opacity: 0.78;
+    radial-gradient(ellipse at 50% 51%, color-mix(in srgb, var(--neon-cyan) 28%, transparent) 0%, transparent 33%),
+    linear-gradient(180deg, transparent 0 43%, color-mix(in srgb, #ffffff 9%, transparent) 49%, transparent 57%);
+  opacity: 0.9;
+  animation: horizonPulse 7.5s ease-in-out infinite alternate;
 }
 
 .sea-layer {
   top: 42%;
   background:
-    repeating-radial-gradient(ellipse at 50% 90%, color-mix(in srgb, #ffffff 10%, transparent) 0 1px, transparent 1px 18px),
+    repeating-radial-gradient(ellipse at 50% 90%, color-mix(in srgb, #ffffff 17%, transparent) 0 1px, transparent 1px 15px),
     linear-gradient(180deg, color-mix(in srgb, #0e3953 30%, transparent), color-mix(in srgb, #02040b 86%, transparent));
+  background-size: 160% 150%, 100% 100%;
   transform-origin: 50% 100%;
-  filter: blur(0.2px);
+  filter: blur(0.1px);
   mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 100%);
 }
 
 .sea-layer-a {
-  opacity: 0.58;
-  animation: seaFlowA 18s ease-in-out infinite alternate;
+  opacity: 0.72;
+  animation: seaFlowA 8.5s ease-in-out infinite alternate;
 }
 
 .sea-layer-b {
-  opacity: 0.35;
+  opacity: 0.52;
   background:
-    repeating-linear-gradient(173deg, transparent 0 16px, color-mix(in srgb, var(--neon-cyan) 14%, transparent) 17px 18px, transparent 19px 44px),
+    repeating-linear-gradient(173deg, transparent 0 14px, color-mix(in srgb, var(--neon-cyan) 22%, transparent) 15px 17px, transparent 18px 38px),
     linear-gradient(180deg, transparent, color-mix(in srgb, #030816 78%, transparent));
-  animation: seaFlowB 26s ease-in-out infinite alternate;
+  animation: seaFlowB 11s ease-in-out infinite alternate;
 }
 
 .light-rain {
   background:
-    linear-gradient(105deg, transparent 0 30%, color-mix(in srgb, #ffffff 7%, transparent) 47%, transparent 63%),
-    radial-gradient(circle at var(--cursor-x) var(--cursor-y), color-mix(in srgb, var(--neon-cyan) 15%, transparent), transparent 18%);
-  opacity: 0.42;
+    linear-gradient(105deg, transparent 0 24%, color-mix(in srgb, #ffffff 12%, transparent) 43%, transparent 62%),
+    repeating-linear-gradient(92deg, transparent 0 34px, color-mix(in srgb, var(--neon-cyan) 9%, transparent) 35px 36px, transparent 37px 76px),
+    radial-gradient(circle at var(--cursor-x) var(--cursor-y), color-mix(in srgb, #ffffff var(--cursor-surface-light), transparent) 0 2px, color-mix(in srgb, var(--neon-cyan) var(--cursor-surface-light), transparent) 4px 72px, transparent var(--cursor-light-field));
+  background-size: 170% 100%, 150% 100%;
+  opacity: 0.5;
   mix-blend-mode: screen;
-  animation: lightBreath 8s ease-in-out infinite alternate;
+  animation: lightBreath 8s ease-in-out infinite alternate, lightScan 10s linear infinite;
 }
 
 .app-shell[data-theme="light"] .environment-backdrop {
@@ -354,8 +481,12 @@ button:active {
   min-width: 0;
   flex-direction: column;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 58%, transparent), color-mix(in srgb, var(--bg-main) 76%, transparent)),
-    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 42%);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 22%, transparent), color-mix(in srgb, var(--bg-main) 40%, transparent)),
+    radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 44%);
+  backdrop-filter: var(--glass-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+  backdrop-filter: var(--glass-refraction-filter);
+  -webkit-backdrop-filter: var(--glass-refraction-filter);
 }
 
 .update-notice {
@@ -368,6 +499,9 @@ button:active {
 }
 
 .app-toolbar {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   display: flex;
   min-height: 38px;
   align-items: center;
@@ -376,11 +510,33 @@ button:active {
   padding: 0 14px 0 18px;
   border-bottom: 0.5px solid var(--border);
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--bg-sidebar) 76%, transparent), color-mix(in srgb, var(--bg-elevated) 56%, transparent)),
-    color-mix(in srgb, var(--bg-sidebar) 82%, transparent);
-  backdrop-filter: var(--glass-blur);
+    linear-gradient(90deg, color-mix(in srgb, var(--bg-sidebar) 46%, transparent), color-mix(in srgb, var(--bg-elevated) 30%, transparent)),
+    color-mix(in srgb, var(--bg-sidebar) 42%, transparent);
+  backdrop-filter: var(--glass-backdrop-filter);
+  -webkit-backdrop-filter: var(--glass-backdrop-filter);
+  backdrop-filter: var(--glass-refraction-filter);
+  -webkit-backdrop-filter: var(--glass-refraction-filter);
   color: var(--text-primary);
   font-size: 12px;
+}
+
+.app-toolbar::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background:
+    radial-gradient(circle at var(--cursor-x) var(--cursor-y), color-mix(in srgb, #ffffff var(--cursor-surface-light), transparent), transparent var(--cursor-light-field)),
+    linear-gradient(115deg, color-mix(in srgb, #ffffff 9%, transparent), transparent 32%, color-mix(in srgb, var(--neon-cyan) 6%, transparent)),
+    radial-gradient(circle at 14% 0%, color-mix(in srgb, var(--neon-rose) 9%, transparent), transparent 36%);
+  filter: url("#piagent-glass-distortion");
+  content: "";
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.app-toolbar > * {
+  position: relative;
+  z-index: 1;
 }
 
 .toolbar-title,
@@ -585,8 +741,8 @@ button:active {
   min-width: 0;
   overflow: hidden;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 24%, transparent), color-mix(in srgb, var(--bg-main) 54%, transparent)),
-    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--neon-cyan) 7%, transparent), transparent 42%);
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 8%, transparent), color-mix(in srgb, var(--bg-main) 22%, transparent)),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--neon-cyan) 10%, transparent), transparent 44%);
 }
 
 .chat-column {
@@ -1639,23 +1795,63 @@ button:active {
 }
 
 @keyframes skyDrift {
-  from { transform: translate3d(-1.5%, -0.8%, 0) scale(1.02); }
-  to { transform: translate3d(1.5%, 0.8%, 0) scale(1.04); }
+  from { transform: translate3d(-2.4%, -1.1%, 0) scale(1.03); }
+  to { transform: translate3d(2.4%, 1.1%, 0) scale(1.055); }
+}
+
+@keyframes auroraSlide {
+  from { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, -70% 0; }
+  to { background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 120% 0; }
+}
+
+@keyframes horizonPulse {
+  from { opacity: 0.62; transform: translate3d(-1.2%, 0, 0) scaleX(1.02); }
+  to { opacity: 0.96; transform: translate3d(1.2%, -0.4%, 0) scaleX(1.08); }
 }
 
 @keyframes seaFlowA {
-  from { transform: translate3d(-1.5%, 0, 0) skewY(-1deg) scale(1.03); }
-  to { transform: translate3d(1.5%, -1.2%, 0) skewY(1deg) scale(1.05); }
+  from { background-position: 0% 0%, 0 0; transform: translate3d(-3.6%, 0.4%, 0) skewY(-1.6deg) scale(1.04); }
+  to { background-position: 95% 56%, 0 0; transform: translate3d(3.2%, -1.8%, 0) skewY(1.4deg) scale(1.09); }
 }
 
 @keyframes seaFlowB {
-  from { transform: translate3d(1.5%, 1%, 0) skewY(1deg) scale(1.04); }
-  to { transform: translate3d(-1.5%, -0.5%, 0) skewY(-1deg) scale(1.06); }
+  from { background-position: 0% 0%, 0 0; transform: translate3d(3%, 1.2%, 0) skewY(1.4deg) scale(1.045); }
+  to { background-position: -90% 0%, 0 0; transform: translate3d(-3%, -1%, 0) skewY(-1.3deg) scale(1.09); }
 }
 
 @keyframes lightBreath {
   from { opacity: 0.26; transform: translate3d(-10px, 0, 0); }
   to { opacity: 0.52; transform: translate3d(10px, -6px, 0); }
+}
+
+@keyframes causticSwim {
+  from { background-position: 0% 0%, 100% 0%; transform: translate3d(-3%, 1.4%, 0) rotate(-0.8deg) scale(1.04); }
+  to { background-position: 160% 60%, -70% 26%; transform: translate3d(3%, -1.4%, 0) rotate(0.8deg) scale(1.1); }
+}
+
+@keyframes auroraRibbon {
+  from { background-position: -80% 0, 0 0, 0 0; filter: hue-rotate(0deg); }
+  to { background-position: 130% 0, -120% 0, 0 0; filter: hue-rotate(22deg); }
+}
+
+@keyframes prismRotate {
+  from { transform: rotate(0deg) scale(1.18); background-position: 0 0, 0 0; }
+  to { transform: rotate(360deg) scale(1.18); background-position: 120% 0, 0 0; }
+}
+
+@keyframes frostSweep {
+  from { background-position: -70% 0, 0 0; transform: translate3d(-1%, 0, 0); }
+  to { background-position: 140% 0, 0 0; transform: translate3d(1%, -0.6%, 0); }
+}
+
+@keyframes tideLight {
+  from { transform: translate3d(-5%, 0, 0) scale(1.03); opacity: 0.34; }
+  to { transform: translate3d(5%, -1.6%, 0) scale(1.12); opacity: 0.62; }
+}
+
+@keyframes lightScan {
+  from { background-position: 0% 0%, 0% 0%; }
+  to { background-position: 160% 0%, -140% 0%; }
 }
 
 @keyframes iconGlow {

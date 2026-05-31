@@ -89,6 +89,31 @@ function renderTextWithMath(text: string) {
   });
 }
 
+function renderTextWithImagesAndMath(text: string) {
+  const nodes: ReactNode[] = [];
+  const imagePattern = /!\[([^\]]*)\]\((data:image\/[^)\s]+|https?:\/\/[^)\s]+|\/api\/images\/generated\/[^)\s]+)\)/g;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+  while ((match = imagePattern.exec(text)) !== null) {
+    if (match.index > cursor) {
+      nodes.push(<Fragment key={`text-${cursor}`}>{renderTextWithMath(text.slice(cursor, match.index))}</Fragment>);
+    }
+    const alt = match[1]?.trim() || "Generated image";
+    const src = match[2];
+    nodes.push(
+      <figure className="generated-image-card" key={`image-${match.index}`}>
+        <img src={src} alt={alt} loading="lazy" />
+        <figcaption>{alt}</figcaption>
+      </figure>
+    );
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) {
+    nodes.push(<Fragment key={`text-${cursor}`}>{renderTextWithMath(text.slice(cursor))}</Fragment>);
+  }
+  return nodes.length ? nodes : renderTextWithMath(text);
+}
+
 function renderCodeAware(text: string): ReactNode[] {
   const chunks = text.split(/```/g);
   return chunks.map((chunk, index) => {
@@ -101,7 +126,7 @@ function renderCodeAware(text: string): ReactNode[] {
         </div>
       );
     }
-    return <Fragment key={index}>{renderTextWithMath(chunk)}</Fragment>;
+    return <Fragment key={index}>{renderTextWithImagesAndMath(chunk)}</Fragment>;
   });
 }
 

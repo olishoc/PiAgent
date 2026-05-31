@@ -4,7 +4,7 @@ import Composer from "./components/Composer";
 import LoginScreen from "./components/LoginScreen";
 import Sidebar, { Session } from "./components/Sidebar";
 import ThreadView from "./components/ThreadView";
-import { type Attachment, type PromptOptions, useAgent } from "./hooks/useAgent";
+import { type Attachment, type DisplayMessage, type PromptOptions, useAgent } from "./hooks/useAgent";
 import { useAuth } from "./hooks/useAuth";
 import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
 import SettingsView from "./components/SettingsView";
@@ -25,6 +25,56 @@ async function fetchProjects(includeArchived = false): Promise<ProjectInfo[]> {
   const response = await fetch(apiUrl(`/api/projects${includeArchived ? "?includeArchived=1" : ""}`));
   const data = await response.json();
   return data.projects ?? [];
+}
+
+const LOCAL_CHAT_MESSAGES_PREFIX = "piagent.localChatMessages.";
+
+function localChatMessagesKey(sessionId: string) {
+  return `${LOCAL_CHAT_MESSAGES_PREFIX}${sessionId}`;
+}
+
+function readLocalChatMessages(sessionId: string): DisplayMessage[] {
+  if (!sessionId) return [];
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(localChatMessagesKey(sessionId)) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((message) => (
+      message
+      && typeof message.id === "string"
+      && typeof message.kind === "string"
+      && ["user", "agent", "status", "thinking", "advisor", "subagent"].includes(message.kind)
+      && typeof message.text === "string"
+    )) as DisplayMessage[];
+  } catch {
+    return [];
+  }
+}
+
+function mergeLocalChatMessages(messages: DisplayMessage[], sessionId: string): DisplayMessage[] {
+  const local = readLocalChatMessages(sessionId);
+  if (!local.length) return messages;
+  const ids = new Set(messages.map((message) => message.id));
+  return [...messages, ...local.filter((message) => !ids.has(message.id))];
+}
+
+function appendLocalChatMessages(sessionId: string, messages: DisplayMessage[]) {
+  if (!sessionId || !messages.length) return;
+  const current = readLocalChatMessages(sessionId);
+  const ids = new Set(messages.map((message) => message.id));
+  const next = [...current.filter((message) => !ids.has(message.id)), ...messages].slice(-60);
+  try {
+    window.localStorage.setItem(localChatMessagesKey(sessionId), JSON.stringify(next));
+  } catch {
+    try {
+      window.localStorage.setItem(localChatMessagesKey(sessionId), JSON.stringify(next.map((message) => (
+        message.kind === "agent" && /!\[[^\]]*\]\((data:image\/[^)]+)\)/.test(message.text)
+          ? { ...message, text: message.text.replace(/!\[([^\]]*)\]\(data:image\/[^)]+\)/g, "![$1](image saved locally)") }
+          : message
+      ))));
+    } catch {
+      // Local image metadata is best-effort; the generated PNG is still stored by the backend.
+    }
+  }
 }
 
 function normalizeProviders(rawProviders: any[]): ProviderOption[] {
@@ -107,6 +157,9 @@ export interface AppSettings {
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
+  animatedBackground: "midnight-ocean" | "aurora-glass" | "liquid-prism" | "solar-frost";
+  lightDeflection: "balanced" | "strong" | "extreme";
+  cursorLight: "off" | "subtle" | "strong";
   accentColor: string;
   density: "comfortable" | "compact";
   textDensity: "compact" | "codex" | "comfortable" | "custom";
@@ -303,6 +356,9 @@ export default function App() {
     memoryMinConfidence: 0.35,
     theme: "dark",
     themePreset: "codex",
+    animatedBackground: "midnight-ocean",
+    lightDeflection: "strong",
+    cursorLight: "subtle",
     accentColor: "#58a6ff",
     density: "comfortable",
     textDensity: "codex",
@@ -368,7 +424,7 @@ export default function App() {
     if (session.messageCount === 0) {
       if (!isCurrentSessionOpen(session.id, requestId)) return false;
       agent.clearVisibleRunState();
-      agent.replaceMessages([]);
+      agent.replaceMessages(readLocalChatMessages(session.id));
       return true;
     }
     const response = await fetch(apiUrl(`/api/sessions/${encodeURIComponent(session.id)}/messages`));
@@ -379,7 +435,7 @@ export default function App() {
       return false;
     }
     agent.clearVisibleRunState();
-    agent.loadMessages(data.messages);
+    agent.loadMessages(mergeLocalChatMessages(data.messages, session.id));
     return true;
   };
 
@@ -998,6 +1054,12 @@ export default function App() {
       void sendScopedPrompt(`/skill:beautiful-ui${args ? ` ${args}` : ""}`);
       return;
     }
+    if (command === "/image" || command.startsWith("/image ")) {
+      navigate("chat");
+      const prompt = command.replace(/^\/image\s*/i, "").trim();
+      void generateImageInChat(prompt);
+      return;
+    }
     if (command === "/subagents-doctor" || command === "/parallel-review" || command === "/review-loop" || command.startsWith("/run ") || command.startsWith("/chain ") || command.startsWith("/parallel ")) {
       navigate("chat");
       void sendScopedPrompt(command);
@@ -1016,8 +1078,58 @@ export default function App() {
         {
           id: crypto.randomUUID(),
           kind: "status",
-          text: "Commands: /new, /attach, /compact, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /beautiful-ui, /permissions, /projects, /sessions, /settings."
+          text: "Commands: /new, /attach, /compact, /image, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /beautiful-ui, /permissions, /projects, /sessions, /settings."
         }
+      ]);
+    }
+  };
+
+  const generateImageInChat = async (prompt: string) => {
+    if (!prompt) {
+      agent.replaceMessages([
+        ...agent.messages,
+        { id: crypto.randomUUID(), kind: "status", text: "Use /image followed by a prompt." }
+      ]);
+      return;
+    }
+    let targetSessionId = activeIdRef.current || activeId;
+    if (!targetSessionId) {
+      targetSessionId = await createScopedSession(activeProjectId || null);
+      if (!targetSessionId) return;
+    }
+    const userMessage = { id: crypto.randomUUID(), kind: "user" as const, text: `/image ${prompt}`, createdAt: Date.now() };
+    const pendingMessage = { id: crypto.randomUUID(), kind: "status" as const, text: "Generating image...", createdAt: Date.now() };
+    const baseMessages = [...agent.messages, userMessage, pendingMessage];
+    agent.replaceMessages(baseMessages);
+    try {
+      const response = await fetch(apiUrl("/api/images/generate"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok || !data?.image?.src) {
+        throw new Error(typeof data?.error === "string" ? data.error : "Image generation failed.");
+      }
+      const alt = prompt.replace(/[\]\r\n]+/g, " ").slice(0, 160);
+      const revised = typeof data.image.revisedPrompt === "string" && data.image.revisedPrompt.trim()
+        ? `\n\nPrompt refined: ${data.image.revisedPrompt.trim()}`
+        : "";
+      const agentMessage = {
+        id: crypto.randomUUID(),
+        kind: "agent" as const,
+        text: `Generated image\n\n![${alt}](${data.image.src})${revised}`,
+        createdAt: Date.now()
+      };
+      appendLocalChatMessages(targetSessionId, [userMessage, agentMessage]);
+      agent.replaceMessages([
+        ...baseMessages.filter((message) => message.id !== pendingMessage.id),
+        agentMessage
+      ]);
+    } catch (err) {
+      agent.replaceMessages([
+        ...baseMessages.filter((message) => message.id !== pendingMessage.id),
+        { id: crypto.randomUUID(), kind: "status", text: err instanceof Error ? err.message : "Image generation failed." }
       ]);
     }
   };
@@ -1248,6 +1360,9 @@ export default function App() {
     <div
       className={`app-shell density-${settings?.density ?? "comfortable"}`}
       data-theme={resolvedTheme}
+      data-background={settings?.animatedBackground ?? "midnight-ocean"}
+      data-refraction={settings?.lightDeflection ?? "strong"}
+      data-cursor-light={settings?.cursorLight ?? "subtle"}
       onPointerMove={updateCursorGlow}
       onPointerEnter={updateCursorGlow}
       onPointerLeave={hideCursorGlow}
@@ -1293,6 +1408,42 @@ export default function App() {
         <div className="sea-layer sea-layer-b" />
         <div className="light-rain" />
       </div>
+      <svg className="glass-distortion-map" aria-hidden="true" focusable="false">
+        <filter id="piagent-glass-distortion" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.034" numOctaves="2" seed="7" result="noise">
+            <animate attributeName="baseFrequency" dur="16s" values="0.010 0.026;0.018 0.042;0.010 0.026" repeatCount="indefinite" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="noise" scale="9" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        <filter id="piagent-glass-refraction" x="-30%" y="-30%" width="160%" height="160%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.018 0.042" numOctaves="3" seed="13" result="refractNoise">
+            <animate attributeName="baseFrequency" dur="11s" values="0.014 0.034;0.026 0.052;0.014 0.034" repeatCount="indefinite" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="refractNoise" scale="18" xChannelSelector="R" yChannelSelector="G" result="bentGlass" />
+          <feColorMatrix in="bentGlass" type="matrix" values="1.05 0 0 0 0  0 1.05 0 0 0  0 0 1.08 0 0  0 0 0 1 0" />
+        </filter>
+        <filter id="piagent-glass-refraction-soft" x="-30%" y="-30%" width="160%" height="160%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012 0.028" numOctaves="2" seed="17" result="refractNoiseSoft">
+            <animate attributeName="baseFrequency" dur="15s" values="0.010 0.024;0.016 0.034;0.010 0.024" repeatCount="indefinite" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="refractNoiseSoft" scale="8" xChannelSelector="R" yChannelSelector="G" result="bentGlassSoft" />
+          <feColorMatrix in="bentGlassSoft" type="matrix" values="1.02 0 0 0 0  0 1.02 0 0 0  0 0 1.04 0 0  0 0 0 1 0" />
+        </filter>
+        <filter id="piagent-glass-refraction-strong" x="-30%" y="-30%" width="160%" height="160%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.018 0.042" numOctaves="3" seed="19" result="refractNoiseStrong">
+            <animate attributeName="baseFrequency" dur="11s" values="0.014 0.034;0.026 0.052;0.014 0.034" repeatCount="indefinite" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="refractNoiseStrong" scale="18" xChannelSelector="R" yChannelSelector="G" result="bentGlassStrong" />
+          <feColorMatrix in="bentGlassStrong" type="matrix" values="1.05 0 0 0 0  0 1.05 0 0 0  0 0 1.08 0 0  0 0 0 1 0" />
+        </filter>
+        <filter id="piagent-glass-refraction-extreme" x="-40%" y="-40%" width="180%" height="180%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.026 0.062" numOctaves="4" seed="23" result="refractNoiseExtreme">
+            <animate attributeName="baseFrequency" dur="7s" values="0.020 0.052;0.038 0.078;0.020 0.052" repeatCount="indefinite" />
+          </feTurbulence>
+          <feDisplacementMap in="SourceGraphic" in2="refractNoiseExtreme" scale="32" xChannelSelector="R" yChannelSelector="G" result="bentGlassExtreme" />
+          <feColorMatrix in="bentGlassExtreme" type="matrix" values="1.1 0 0 0 0  0 1.1 0 0 0  0 0 1.16 0 0  0 0 0 1 0" />
+        </filter>
+      </svg>
       <div className="neon-cursor" aria-hidden="true" />
       <Sidebar
         sessions={sessions}

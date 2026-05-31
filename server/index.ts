@@ -6,9 +6,10 @@ import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "node:http";
 import { execFile, spawn } from "node:child_process";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { authRouter, maybeRefresh } from "./auth.js";
 import { PiSession } from "./piProcess.js";
-import { APP_CONFIG_DIR, API_KEY_PROVIDER_IDS, PI_AUTH_PATH, TOKEN_PATH, hasProviderCredential, readProviderAuthStatus, removeApiKeyCredential, writeApiKeyCredential } from "./tokenStore.js";
+import { APP_CONFIG_DIR, API_KEY_PROVIDER_IDS, PI_AUTH_PATH, TOKEN_PATH, hasProviderCredential, providerApiKey, readProviderAuthStatus, removeApiKeyCredential, writeApiKeyCredential } from "./tokenStore.js";
 import { SESSION_DIR, listSessions, sessionsRouter } from "./sessions.js";
 import { DEFAULT_SETTINGS, piArgsForAccess, readSettings, sanitizeSettingsPatch, writeSettings } from "./settings.js";
 import { listProjects, projectsRouter } from "./projects.js";
@@ -26,6 +27,7 @@ const clientDist = path.resolve(__dirname, "../../client/dist");
 const clientIndex = path.join(clientDist, "index.html");
 const FEEDBACK_DIR = path.join(APP_CONFIG_DIR, "feedback");
 const FEEDBACK_PATH = path.join(FEEDBACK_DIR, "response-feedback.jsonl");
+const GENERATED_IMAGE_DIR = path.join(APP_CONFIG_DIR, "generated-images");
 const BACKEND_VERSION = process.env.PIAGENT_VERSION ?? "dev";
 const BACKEND_PORT = Number(process.env.PORT ?? process.env.PIAGENT_PORT ?? 1456);
 const BACKEND_FEATURES = {
@@ -53,7 +55,8 @@ const BACKEND_FEATURES = {
   automaticDelegation: true,
   projectSubagentState: true,
   clipboardTools: true,
-  beautifulUiMode: true
+  beautifulUiMode: true,
+  imageGeneration: true
 };
 const devServerPort = String(process.env.PIAGENT_DEV_PORT ?? "").replace(/[^\d]/g, "");
 const devServerPorts = [...new Set(["5173", "5174", devServerPort].filter(Boolean))];
@@ -162,6 +165,96 @@ app.delete("/api/provider-auth/:provider", (req, res) => {
     res.json({ ok: true, providers: readProviderAuthStatus() });
   } catch (err) {
     res.status(400).json({ ok: false, error: err instanceof Error ? err.message : "Unable to remove API key." });
+  }
+});
+app.get("/api/images/generated/:file", (req, res) => {
+  const file = String(req.params.file ?? "");
+  if (!/^[a-f0-9-]+\.png$/i.test(file)) {
+    res.status(404).json({ ok: false, error: "Image not found." });
+    return;
+  }
+  const imagePath = path.join(GENERATED_IMAGE_DIR, file);
+  if (!fs.existsSync(imagePath)) {
+    res.status(404).json({ ok: false, error: "Image not found." });
+    return;
+  }
+  res.sendFile(imagePath);
+});
+app.post("/api/images/generate", async (req, res) => {
+  const prompt = typeof req.body?.prompt === "string" ? req.body.prompt.trim() : "";
+  const model = typeof req.body?.model === "string" && ["gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini"].includes(req.body.model)
+    ? req.body.model
+    : "gpt-image-1.5";
+  const size = typeof req.body?.size === "string" && ["1024x1024", "1024x1536", "1536x1024", "auto"].includes(req.body.size)
+    ? req.body.size
+    : "1024x1024";
+  const quality = typeof req.body?.quality === "string" && ["auto", "low", "medium", "high"].includes(req.body.quality)
+    ? req.body.quality
+    : "auto";
+  if (!prompt) {
+    res.status(400).json({ ok: false, error: "Image prompt is required." });
+    return;
+  }
+  const apiKey = providerApiKey("openai");
+  if (!apiKey) {
+    res.status(401).json({ ok: false, error: "Connect an OpenAI API key in Settings > Connexions before generating images." });
+    return;
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 140_000);
+  try {
+    const response = await fetch("https://api.openai.com/v1/images/generations", {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model,
+        prompt: prompt.slice(0, 32_000),
+        size,
+        quality,
+        background: "auto"
+      })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const message = typeof data?.error?.message === "string" ? data.error.message : "OpenAI image generation failed.";
+      res.status(response.status).json({ ok: false, error: message });
+      return;
+    }
+    const item = Array.isArray(data?.data) ? data.data[0] : null;
+    const b64 = typeof item?.b64_json === "string" ? item.b64_json : "";
+    const url = typeof item?.url === "string" ? item.url : "";
+    let src = url;
+    if (b64) {
+      fs.mkdirSync(GENERATED_IMAGE_DIR, { recursive: true });
+      const file = `${crypto.randomUUID()}.png`;
+      fs.writeFileSync(path.join(GENERATED_IMAGE_DIR, file), Buffer.from(b64, "base64"));
+      src = `/api/images/generated/${file}`;
+    }
+    if (!src) {
+      res.status(502).json({ ok: false, error: "OpenAI returned no image payload." });
+      return;
+    }
+    res.json({
+      ok: true,
+      image: {
+        src,
+        model,
+        prompt,
+        revisedPrompt: typeof item?.revised_prompt === "string" ? item.revised_prompt : ""
+      },
+      usage: data?.usage ?? null
+    });
+  } catch (err) {
+    const message = err instanceof Error && err.name === "AbortError"
+      ? "Image generation timed out."
+      : err instanceof Error ? err.message : "Image generation failed.";
+    res.status(502).json({ ok: false, error: message });
+  } finally {
+    clearTimeout(timeout);
   }
 });
 app.post("/api/feedback", (req, res) => {

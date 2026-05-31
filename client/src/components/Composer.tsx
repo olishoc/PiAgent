@@ -34,6 +34,7 @@ const slashCommands = [
   { command: "/parallel-review", label: "Run fresh-context parallel reviewers" },
   { command: "/review-loop", label: "Run worker/reviewer/fix loop until capped or clean" },
   { command: "/beautiful-ui", label: "Run the Beautiful UI Mode scan, brief, browser QA, and patch loop" },
+  { command: "/image ", label: "Generate an image in this chat" },
   { command: "/projects", label: "Open project workspaces and Git state" },
   { command: "/sessions", label: "Open session search" },
   { command: "/settings", label: "Open settings" }
@@ -153,15 +154,18 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     const viewportHeight = window.innerHeight;
     const preferredWidth = menu === "add" ? 316 : menu === "model" ? 300 : 238;
     const menuWidth = Math.min(preferredWidth, Math.max(220, viewportWidth - edge * 2));
-    const preferredLeft = menu === "model" ? rect.right - menuWidth : rect.left;
+    const preferredLeft = menu === "model" ? rect.right - menuWidth : rect.left + (rect.width / 2) - (menuWidth / 2);
     const left = Math.min(Math.max(edge, preferredLeft), Math.max(edge, viewportWidth - menuWidth - edge));
     const spaceAbove = rect.top - gap - edge;
     const spaceBelow = viewportHeight - rect.bottom - gap - edge;
-    const openUp = spaceAbove >= Math.min(260, Math.max(spaceBelow, 0));
+    const openUp = spaceAbove > spaceBelow;
     const availableHeight = Math.max(120, openUp ? spaceAbove : spaceBelow);
-    const maxHeight = Math.min(menu === "add" ? 560 : menu === "model" ? 420 : 300, availableHeight);
-    const desiredTop = openUp ? rect.top - gap - maxHeight : rect.bottom + gap;
-    const top = Math.min(Math.max(edge, desiredTop), Math.max(edge, viewportHeight - maxHeight - edge));
+    const limitHeight = Math.min(menu === "add" ? 560 : menu === "model" ? 420 : 300, availableHeight);
+    const menuNode = menu === "add" ? addPortalRef.current : menu === "permissions" ? permissionsPortalRef.current : modelPortalRef.current;
+    const measuredHeight = menuNode ? Math.ceil(Math.min(menuNode.scrollHeight || limitHeight, limitHeight)) : Math.min(limitHeight, menu === "permissions" ? 164 : 300);
+    const desiredTop = openUp ? rect.top - gap - measuredHeight : rect.bottom + gap;
+    const top = Math.min(Math.max(edge, desiredTop), Math.max(edge, viewportHeight - measuredHeight - edge));
+    const anchorX = Math.min(Math.max(rect.left + (rect.width / 2) - left, 16), menuWidth - 16);
     setMenuStyles((current) => ({
       ...current,
       [menu]: {
@@ -171,9 +175,14 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
         right: "auto",
         bottom: "auto",
         width: menuWidth,
-        maxHeight,
-        overflowY: "auto"
-      }
+        maxHeight: limitHeight,
+        overflowY: "auto",
+        transformOrigin: `${anchorX}px ${openUp ? "bottom" : "top"}`,
+        "--menu-anchor-x": `${anchorX}px`,
+        "--menu-arrow-top": openUp ? "auto" : "-5px",
+        "--menu-arrow-bottom": openUp ? "-5px" : "auto",
+        "--menu-arrow-rotate": openUp ? "45deg" : "225deg"
+      } as CSSProperties
     }));
   }, []);
 
@@ -439,6 +448,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
                 <Icon name={settings?.autoLaunchSubagents ? "check" : "spark"} size={13} /> Auto delegation
               </button>
               <strong className="menu-heading">Workflows</strong>
+              <button onClick={() => { insertCommandDraft("/image "); setAddOpen(false); }}><Icon name="spark" size={13} /> Generate image</button>
               <button onClick={() => { insertCommandDraft("/beautiful-ui"); setAddOpen(false); }}><Icon name="layout" size={13} /> Beautiful UI mode</button>
             </>
           )) : null}

@@ -122,6 +122,11 @@ export function providerEnvironment(provider: string): Record<string, string> {
   return key ? { [API_KEY_ENV[provider]]: key } : {};
 }
 
+export function providerApiKey(provider: string): string | null {
+  if (!isApiKeyProvider(provider)) return null;
+  return apiKeyFromCredential(provider, readPiAuthFile()[provider]);
+}
+
 export function writeApiKeyCredential(provider: string, apiKey: string) {
   const key = apiKey.trim();
   if (!isApiKeyProvider(provider)) throw new Error(`Unsupported API key provider: ${provider}`);
