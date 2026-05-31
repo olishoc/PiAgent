@@ -37,7 +37,7 @@ jobs:
         env:
           PIAGENT_MANIFEST_VERSION: ${{ github.ref_name }}
           PIAGENT_RELEASE_BASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}
-          PIAGENT_RELEASE_NOTES: "PiAgent ${{ github.ref_name }}: fixes chat startup, session reopening, provider connections, project chat grouping, responsive composer menus, and backend smoke coverage."
+          PIAGENT_RELEASE_NOTES: "PiAgent ${{ github.ref_name }}: fixes installed desktop blank screen, backend origins, relative assets, and startup diagnostics."
         run: npm run desktop:latest-json
 
       - name: Publish GitHub Release

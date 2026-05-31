@@ -229,6 +229,10 @@ fn start_backend(app: &tauri::AppHandle, state: &State<BackendProcess>) -> Resul
     if !server_entry.exists() {
         return Err(format!("backend entry missing: {}", server_entry.display()));
     }
+    let client_index = root.join("client").join("dist").join("index.html");
+    if !client_index.exists() {
+        return Err(format!("client bundle missing: {}", client_index.display()));
+    }
     if let Some(health) = backend_health() {
         if backend_matches_expected(&health) {
             return Ok(());

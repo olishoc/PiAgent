@@ -400,8 +400,12 @@ export default function App() {
     if (!media) return;
     const sync = () => setSystemPrefersDark(media.matches);
     sync();
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", sync);
+      return () => media.removeEventListener("change", sync);
+    }
+    media.addListener?.(sync);
+    return () => media.removeListener?.(sync);
   }, []);
 
   const applySettings = (nextSettings?: Partial<AppSettings> | null) => {
@@ -551,20 +555,6 @@ export default function App() {
       setOpeningSessionId((current) => current === activeId ? "" : current);
     };
   }, [agent.connectionState, agent.isStreaming, agent.runningSessionId, activeId, sessions, agent.sendCommand, agent.replaceMessages]);
-
-  if (backendError) {
-    return (
-      <div className="app-shell">
-        <main className="backend-error">
-          <h1>Backend unavailable</h1>
-          <p>{backendError}</p>
-          <button onClick={() => window.location.reload()}>retry</button>
-        </main>
-      </div>
-    );
-  }
-
-  if (!auth.loggedIn) return <LoginScreen onLogin={auth.login} loading={auth.loading} authUrl={auth.authUrl} error={auth.error} message={auth.loginMessage} />;
 
   const updateSettings = async (patch: Partial<AppSettings>) => {
     const cleaned = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined)) as Partial<AppSettings>;
@@ -1231,14 +1221,28 @@ export default function App() {
   const updateCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
     event.currentTarget.style.setProperty("--cursor-x", `${event.clientX}px`);
     event.currentTarget.style.setProperty("--cursor-y", `${event.clientY}px`);
-    const target = event.target as HTMLElement;
-    const nearInteractive = Boolean(target.closest("button, a, input, textarea, select, [role='button'], .composer, .pill-menu, .session-row, .project-row, .message-actions, .toolbar-actions"));
+    const target = event.target;
+    const nearInteractive = target instanceof Element && Boolean(target.closest("button, a, input, textarea, select, [role='button'], .composer, .pill-menu, .session-row, .project-row, .message-actions, .toolbar-actions"));
     event.currentTarget.classList.add("cursor-active");
     event.currentTarget.classList.toggle("cursor-interactive", nearInteractive);
   };
   const hideCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
     event.currentTarget.classList.remove("cursor-active", "cursor-interactive");
   };
+
+  if (backendError) {
+    return (
+      <div className="app-shell">
+        <main className="backend-error">
+          <h1>Backend unavailable</h1>
+          <p>{backendError}</p>
+          <button onClick={() => window.location.reload()}>retry</button>
+        </main>
+      </div>
+    );
+  }
+
+  if (!auth.loggedIn) return <LoginScreen onLogin={auth.login} loading={auth.loading} authUrl={auth.authUrl} error={auth.error} message={auth.loginMessage} />;
 
   return (
     <div

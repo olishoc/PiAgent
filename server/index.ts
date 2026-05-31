@@ -27,6 +27,7 @@ const clientIndex = path.join(clientDist, "index.html");
 const FEEDBACK_DIR = path.join(APP_CONFIG_DIR, "feedback");
 const FEEDBACK_PATH = path.join(FEEDBACK_DIR, "response-feedback.jsonl");
 const BACKEND_VERSION = process.env.PIAGENT_VERSION ?? "dev";
+const BACKEND_PORT = Number(process.env.PORT ?? process.env.PIAGENT_PORT ?? 1456);
 const BACKEND_FEATURES = {
   subagents: true,
   trueThinking: true,
@@ -65,7 +66,12 @@ const devServerOrigins = BACKEND_VERSION === "dev" || process.env.NODE_ENV !== "
 const allowedOrigins = [
   /^http:\/\/127\.0\.0\.1:1456$/,
   /^http:\/\/localhost:1456$/,
+  new RegExp(`^http://127\\.0\\.0\\.1:${BACKEND_PORT}$`),
+  new RegExp(`^http://localhost:${BACKEND_PORT}$`),
   ...devServerOrigins,
+  /^https?:\/\/127\.0\.0\.1$/,
+  /^https?:\/\/localhost$/,
+  /^https?:\/\/asset\.localhost(?::\d+)?$/,
   /^https?:\/\/tauri\.localhost(?::\d+)?$/,
   /^tauri:\/\/localhost$/
 ];
@@ -114,6 +120,7 @@ app.use(cors({
       callback(null, true);
       return;
     }
+    console.warn(`[cors] rejected origin: ${origin}`);
     callback(new Error("Origin not allowed"));
   }
 }));
@@ -482,7 +489,11 @@ app.get("*", (_req, res) => {
     res.sendFile(clientIndex);
     return;
   }
-  res.redirect("http://127.0.0.1:5173");
+  if (process.env.NODE_ENV !== "production") {
+    res.redirect("http://127.0.0.1:5173");
+    return;
+  }
+  res.status(500).type("text").send(`PiAgent client bundle is missing: ${clientIndex}`);
 });
 
 wss.on("connection", async (ws) => {
@@ -687,7 +698,6 @@ wss.on("connection", async (ws) => {
   }
 });
 
-const port = Number(process.env.PORT ?? process.env.PIAGENT_PORT ?? 1456);
-server.listen(port, "127.0.0.1", () => {
-  console.log(`pi-app running on http://127.0.0.1:${port}`);
+server.listen(BACKEND_PORT, "127.0.0.1", () => {
+  console.log(`pi-app running on http://127.0.0.1:${BACKEND_PORT}`);
 });

@@ -422,7 +422,7 @@ button:active {
   overflow: hidden;
   border-radius: 4px;
   background:
-    center / cover no-repeat url("/piagent-icon.ico"),
+    center / cover no-repeat url("../piagent-icon.ico"),
     #050505;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.14),

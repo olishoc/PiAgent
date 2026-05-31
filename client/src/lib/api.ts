@@ -1,5 +1,16 @@
-export const API_ORIGIN = "http://127.0.0.1:1456";
-export const WS_ORIGIN = "ws://127.0.0.1:1456";
+function backendOrigin() {
+  if (typeof window === "undefined") return "http://127.0.0.1:1456";
+  const { protocol, hostname, port, origin } = window.location;
+  const servedByBackend = Boolean(port)
+    && (protocol === "http:" || protocol === "https:")
+    && (hostname === "127.0.0.1" || hostname === "localhost")
+    && port !== "5173"
+    && port !== "5174";
+  return servedByBackend ? origin : "http://127.0.0.1:1456";
+}
+
+export const API_ORIGIN = backendOrigin();
+export const WS_ORIGIN = API_ORIGIN.replace(/^http/, "ws");
 
 export function apiUrl(path: string) {
   return `${API_ORIGIN}${path}`;
