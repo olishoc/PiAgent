@@ -47,6 +47,7 @@
   --dot-queued: #d29922;
   --cursor-x: 50vw;
   --cursor-y: 50vh;
+  --cursor-react: 1;
 }
 
 * { box-sizing: border-box; }
@@ -148,16 +149,13 @@ button:active {
   width: 100vw;
   height: 100vh;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--neon-violet) 11%, transparent), transparent 34%),
-    radial-gradient(circle at 82% 10%, color-mix(in srgb, var(--neon-cyan) 8%, transparent), transparent 30%),
-    linear-gradient(135deg, color-mix(in srgb, var(--bg-app) 92%, #ffffff), var(--bg-app));
+  background: var(--bg-app);
   color: var(--text-primary);
 }
 
 .app-shell::before {
   position: fixed;
-  z-index: 0;
+  z-index: 6;
   width: 330px;
   height: 330px;
   left: calc(var(--cursor-x) - 165px);
@@ -167,17 +165,18 @@ button:active {
     radial-gradient(circle, rgba(255,255,255,0.9) 0 1px, color-mix(in srgb, var(--neon-cyan) 88%, #ffffff) 2px, transparent 5px),
     radial-gradient(circle, color-mix(in srgb, var(--neon-cyan) 36%, transparent) 0 13%, color-mix(in srgb, var(--neon-violet) 21%, transparent) 28%, color-mix(in srgb, var(--neon-rose) 10%, transparent) 44%, transparent 68%);
   content: "";
-  opacity: 0.88;
+  opacity: 0;
   pointer-events: none;
   filter: blur(13px) saturate(1.55);
   mix-blend-mode: screen;
-  transform: translate3d(0, 0, 0);
-  will-change: left, top;
+  transform: translate3d(0, 0, 0) scale(var(--cursor-react));
+  transition: opacity 120ms ease, transform 120ms ease;
+  will-change: left, top, opacity, transform;
 }
 
 .app-shell::after {
   position: fixed;
-  z-index: 0;
+  z-index: 1;
   inset: 0;
   background:
     linear-gradient(120deg, transparent 0%, color-mix(in srgb, var(--neon-violet) 5%, transparent) 42%, transparent 70%),
@@ -188,10 +187,165 @@ button:active {
   animation: ambientSweep 14s ease-in-out infinite alternate;
 }
 
+.app-shell.cursor-active::before {
+  opacity: 0.72;
+}
+
+.app-shell.cursor-interactive {
+  --cursor-react: 1.2;
+}
+
+.app-shell.cursor-interactive::before {
+  opacity: 0.95;
+}
+
+.neon-cursor {
+  position: fixed;
+  z-index: 120;
+  left: var(--cursor-x);
+  top: var(--cursor-y);
+  width: 17px;
+  height: 17px;
+  border: 1px solid color-mix(in srgb, var(--neon-cyan) 78%, #ffffff);
+  border-radius: 999px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(var(--cursor-react));
+  transition: opacity 110ms ease, transform 110ms ease, border-color 110ms ease;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #ffffff 14%, transparent),
+    0 0 14px color-mix(in srgb, var(--neon-cyan) 62%, transparent),
+    0 0 36px color-mix(in srgb, var(--neon-violet) 36%, transparent);
+  mix-blend-mode: screen;
+}
+
+.neon-cursor::after {
+  position: absolute;
+  inset: 5px;
+  border-radius: inherit;
+  background: color-mix(in srgb, #ffffff 72%, var(--neon-cyan));
+  box-shadow: 0 0 18px color-mix(in srgb, var(--neon-cyan) 86%, transparent);
+  content: "";
+}
+
+.app-shell.cursor-active .neon-cursor {
+  opacity: 0.95;
+}
+
+.app-shell.cursor-interactive .neon-cursor {
+  border-color: color-mix(in srgb, var(--neon-rose) 62%, #ffffff);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, #ffffff 22%, transparent),
+    0 0 18px color-mix(in srgb, var(--neon-cyan) 74%, transparent),
+    0 0 48px color-mix(in srgb, var(--neon-rose) 44%, transparent);
+}
+
+.environment-backdrop {
+  position: fixed;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--neon-violet) 15%, transparent), transparent 32%),
+    radial-gradient(circle at 84% 8%, color-mix(in srgb, var(--neon-cyan) 13%, transparent), transparent 28%),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-app) 76%, #071a2a) 0%, var(--bg-app) 62%, #020304 100%);
+}
+
+.sky-layer,
+.horizon-glow,
+.sea-layer,
+.light-rain {
+  position: absolute;
+  inset: 0;
+}
+
+.sky-layer {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255,255,255,0.68) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 68% 12%, rgba(255,255,255,0.48) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 82% 30%, rgba(255,255,255,0.42) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 37% 35%, rgba(255,255,255,0.32) 0 1px, transparent 1.7px),
+    radial-gradient(circle at 58% 24%, color-mix(in srgb, var(--neon-cyan) 22%, transparent), transparent 20%);
+  opacity: 0.52;
+  animation: skyDrift 42s linear infinite alternate;
+}
+
+.horizon-glow {
+  background:
+    radial-gradient(ellipse at 50% 51%, color-mix(in srgb, var(--neon-cyan) 18%, transparent) 0%, transparent 32%),
+    linear-gradient(180deg, transparent 0 43%, color-mix(in srgb, #ffffff 5%, transparent) 49%, transparent 57%);
+  opacity: 0.78;
+}
+
+.sea-layer {
+  top: 42%;
+  background:
+    repeating-radial-gradient(ellipse at 50% 90%, color-mix(in srgb, #ffffff 10%, transparent) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, color-mix(in srgb, #0e3953 30%, transparent), color-mix(in srgb, #02040b 86%, transparent));
+  transform-origin: 50% 100%;
+  filter: blur(0.2px);
+  mask-image: linear-gradient(180deg, transparent 0%, #000 18%, #000 100%);
+}
+
+.sea-layer-a {
+  opacity: 0.58;
+  animation: seaFlowA 18s ease-in-out infinite alternate;
+}
+
+.sea-layer-b {
+  opacity: 0.35;
+  background:
+    repeating-linear-gradient(173deg, transparent 0 16px, color-mix(in srgb, var(--neon-cyan) 14%, transparent) 17px 18px, transparent 19px 44px),
+    linear-gradient(180deg, transparent, color-mix(in srgb, #030816 78%, transparent));
+  animation: seaFlowB 26s ease-in-out infinite alternate;
+}
+
+.light-rain {
+  background:
+    linear-gradient(105deg, transparent 0 30%, color-mix(in srgb, #ffffff 7%, transparent) 47%, transparent 63%),
+    radial-gradient(circle at var(--cursor-x) var(--cursor-y), color-mix(in srgb, var(--neon-cyan) 15%, transparent), transparent 18%);
+  opacity: 0.42;
+  mix-blend-mode: screen;
+  animation: lightBreath 8s ease-in-out infinite alternate;
+}
+
+.app-shell[data-theme="light"] .environment-backdrop {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255,255,255,0.76), transparent 35%),
+    radial-gradient(circle at 80% 10%, rgba(114,190,255,0.36), transparent 30%),
+    linear-gradient(180deg, #dff5ff 0%, #eef9ff 42%, #d8f0f4 100%);
+}
+
+.app-shell[data-theme="light"] .sky-layer {
+  background:
+    radial-gradient(circle at 22% 14%, rgba(255,255,255,0.86) 0 10%, transparent 24%),
+    radial-gradient(ellipse at 72% 20%, rgba(255,255,255,0.42), transparent 26%);
+  opacity: 0.72;
+}
+
+.app-shell[data-theme="light"] .horizon-glow {
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(255,255,255,0.72) 0%, transparent 33%),
+    linear-gradient(180deg, transparent 0 42%, rgba(255,255,255,0.5) 50%, transparent 60%);
+}
+
+.app-shell[data-theme="light"] .sea-layer {
+  background:
+    repeating-radial-gradient(ellipse at 50% 92%, rgba(255,255,255,0.5) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(78,188,219,0.42), rgba(183,231,231,0.78));
+}
+
+.app-shell[data-theme="light"] .sea-layer-b {
+  background:
+    repeating-linear-gradient(173deg, transparent 0 16px, rgba(255,255,255,0.26) 17px 18px, transparent 19px 44px),
+    linear-gradient(180deg, transparent, rgba(133,218,220,0.36));
+}
+
 .sidebar,
 .main-panel {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 .main-panel {
@@ -200,7 +354,7 @@ button:active {
   min-width: 0;
   flex-direction: column;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 78%, transparent), color-mix(in srgb, var(--bg-main) 92%, transparent)),
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 58%, transparent), color-mix(in srgb, var(--bg-main) 76%, transparent)),
     radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 42%);
 }
 
@@ -424,13 +578,20 @@ button:active {
 }
 
 .chat-workspace {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-main) 24%, transparent), color-mix(in srgb, var(--bg-main) 54%, transparent)),
+    radial-gradient(circle at 50% 100%, color-mix(in srgb, var(--neon-cyan) 7%, transparent), transparent 42%);
 }
 
 .chat-column {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -1475,6 +1636,26 @@ button:active {
 @keyframes ambientSweep {
   from { opacity: 0.52; transform: translate3d(-16px, -8px, 0); }
   to { opacity: 0.86; transform: translate3d(16px, 10px, 0); }
+}
+
+@keyframes skyDrift {
+  from { transform: translate3d(-1.5%, -0.8%, 0) scale(1.02); }
+  to { transform: translate3d(1.5%, 0.8%, 0) scale(1.04); }
+}
+
+@keyframes seaFlowA {
+  from { transform: translate3d(-1.5%, 0, 0) skewY(-1deg) scale(1.03); }
+  to { transform: translate3d(1.5%, -1.2%, 0) skewY(1deg) scale(1.05); }
+}
+
+@keyframes seaFlowB {
+  from { transform: translate3d(1.5%, 1%, 0) skewY(1deg) scale(1.04); }
+  to { transform: translate3d(-1.5%, -0.5%, 0) skewY(-1deg) scale(1.06); }
+}
+
+@keyframes lightBreath {
+  from { opacity: 0.26; transform: translate3d(-10px, 0, 0); }
+  to { opacity: 0.52; transform: translate3d(10px, -6px, 0); }
 }
 
 @keyframes iconGlow {

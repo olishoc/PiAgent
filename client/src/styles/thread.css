@@ -255,11 +255,16 @@
   max-width: min(720px, 78%);
   margin-right: 0;
   margin-left: auto;
-  padding: 5px 0 7px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
+  padding: 9px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 17px 17px 5px 17px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--message-user-bg) 82%, #ffffff 4%), color-mix(in srgb, var(--surface) 58%, transparent)),
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--neon-cyan) 9%, transparent), transparent 42%);
+  box-shadow:
+    0 12px 34px color-mix(in srgb, var(--shadow-color) 52%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 14%, transparent);
+  backdrop-filter: blur(20px) saturate(1.25) contrast(1.03);
 }
 
 .thinking-message {
@@ -273,12 +278,6 @@
 .thinking-message.expanded {
   max-width: 820px;
   opacity: 1;
-}
-
-.thinking-message .message-label {
-  margin-bottom: 3px;
-  color: var(--text-tertiary);
-  font-size: 11px;
 }
 
 .thinking-body {
@@ -484,31 +483,8 @@
   color: var(--text-primary);
 }
 
-.message-label,
-.agent-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  margin-bottom: 8px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.user-message .message-label,
-.user-message .message-time {
-  justify-content: flex-end;
-  text-align: right;
-}
-
 .user-message .message-text {
   text-align: left;
-}
-
-.message-time,
-.agent-label span {
-  margin: -6px 0 8px;
-  color: var(--text-tertiary);
-  font-size: 10px;
 }
 
 .message-text,
@@ -518,6 +494,7 @@
   line-height: var(--message-line-height);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  text-shadow: 0 0 18px color-mix(in srgb, #ffffff 8%, transparent);
 }
 
 .agent-text {
@@ -616,6 +593,15 @@
 
 .agent-message {
   padding: 2px 0;
+}
+
+.agent-message .message-actions {
+  opacity: 0.66;
+  transition: opacity 140ms ease;
+}
+
+.agent-message:hover .message-actions {
+  opacity: 1;
 }
 
 .agent-text pre {

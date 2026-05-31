@@ -11,6 +11,8 @@ interface ComposerProps {
   onAbort: () => void;
   disabled?: boolean;
   isStreaming?: boolean;
+  isAgentBusy?: boolean;
+  queuedCount?: number;
   settings?: AppSettings;
   models?: ProviderOption[];
   extensionCommands?: Array<{ name: string; description?: string; source?: string }>;
@@ -62,11 +64,12 @@ function thinkingModeLabel(level?: AppSettings["thinkingLevel"]) {
   return `${level[0].toUpperCase()}${level.slice(1)}`;
 }
 
-export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, settings, models = [], extensionCommands = [], onSettingsChange, onOpenContextPanel }: ComposerProps) {
+export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, isAgentBusy, queuedCount = 0, settings, models = [], extensionCommands = [], onSettingsChange, onOpenContextPanel }: ComposerProps) {
   const [text, setText] = useState("");
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [showCommands, setShowCommands] = useState(false);
+  const [steeringMode, setSteeringMode] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
@@ -116,6 +119,13 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
+
+  useEffect(() => {
+    if (!isStreaming) setSteeringMode(false);
+  }, [isStreaming]);
+
+  const canSteer = Boolean(isStreaming && steeringMode);
+  const queueMode = Boolean(isAgentBusy && !canSteer);
 
   useEffect(() => {
     const onLateAccepted = (event: Event) => {
@@ -314,7 +324,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       try {
         const clientPromptId = crypto.randomUUID();
         pendingDraftRef.current = { clientPromptId, text: command.trim(), attachmentSignature: attachmentSignature(attachments) };
-        const accepted = await onSend(command, attachments, { ...promptOptions(), clientPromptId });
+        const accepted = await onSend(command, attachments, { ...promptOptions(), clientPromptId, steering: canSteer });
         if (accepted !== false) {
           setAttachments([]);
           setText("");
@@ -341,7 +351,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
     try {
       const clientPromptId = crypto.randomUUID();
       pendingDraftRef.current = { clientPromptId, text: trimmed, attachmentSignature: attachmentSignature(attachments) };
-      const accepted = await onSend(trimmed, attachments, { ...promptOptions(), clientPromptId });
+      const accepted = await onSend(trimmed, attachments, { ...promptOptions(), clientPromptId, steering: canSteer });
       if (accepted !== false) {
         setText("");
         setAttachments([]);
@@ -362,7 +372,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
   };
 
   return (
-    <section className={`composer ${isStreaming ? "streaming" : ""}`}>
+    <section className={`composer ${isStreaming ? "streaming" : ""} ${queueMode ? "queue-mode" : ""} ${canSteer ? "steer-mode" : ""}`}>
       {showCommands ? (
         <div className="command-palette">
           {filteredCommands.map((item) => (
@@ -387,7 +397,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
       <textarea
         ref={ref}
         value={text}
-        placeholder={isStreaming ? "Steer while it is working..." : "Ask anything..."}
+        placeholder={canSteer ? "Steer the current run..." : queueMode ? "Queue the next prompt..." : "Ask anything..."}
         onChange={(event) => {
           setText(event.target.value);
           setShowCommands(event.target.value.startsWith("/"));
@@ -471,6 +481,18 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
           </div>
         </div>
         <div className="composer-meta">
+          {isAgentBusy ? (
+            <button
+              className={`steer-toggle ${canSteer ? "active" : ""}`}
+              onClick={() => setSteeringMode((current) => !current)}
+              disabled={!isStreaming}
+              type="button"
+              title={isStreaming ? "Send immediately as steering" : "Steering is only available in the running chat"}
+            >
+              <Icon name={canSteer ? "check" : "spark"} size={12} />
+              {canSteer ? "Steer" : queuedCount ? `Queue ${queuedCount}` : "Queue"}
+            </button>
+          ) : queuedCount ? <span className="queue-count">Queue {queuedCount}</span> : null}
           <div className="pill-menu-wrap" ref={modelRef}>
             <button className="model-pill" onClick={() => {
               setModelOpen((current) => {
@@ -521,7 +543,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               <Icon name="stop" />
             </button>
           ) : null}
-          <button className="send-button" onClick={() => void submit()} disabled={!text.trim() || disabled || submitting} aria-label="send" title={isStreaming ? "Steer" : "Send"}>
+          <button className="send-button" onClick={() => void submit()} disabled={!text.trim() || disabled || submitting} aria-label="send" title={canSteer ? "Steer" : queueMode ? "Queue" : "Send"}>
             <Icon name="arrowUp" size={15} />
           </button>
         </div>

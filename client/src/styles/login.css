@@ -1,6 +1,9 @@
 .login-screen {
+  position: relative;
+  isolation: isolate;
   display: grid;
   min-height: 100vh;
+  overflow: hidden;
   place-items: center;
   background:
     radial-gradient(circle at 50% 12%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 34%),
@@ -8,6 +11,8 @@
 }
 
 .login-panel {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   flex-direction: column;

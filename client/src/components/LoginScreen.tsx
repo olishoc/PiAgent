@@ -13,6 +13,13 @@ export default function LoginScreen({ onLogin, loading, authUrl, error, message 
 
   return (
     <main className="login-screen">
+      <div className="environment-backdrop" aria-hidden="true">
+        <div className="sky-layer" />
+        <div className="horizon-glow" />
+        <div className="sea-layer sea-layer-a" />
+        <div className="sea-layer sea-layer-b" />
+        <div className="light-rain" />
+      </div>
       <section className="login-panel">
         <span className="login-icon app-icon-mark" aria-hidden="true" />
         <h1>local coding workspace</h1>

@@ -67,6 +67,7 @@ export interface PromptOptions {
   subagentRoutingMode?: "manual" | "assistive" | "automatic";
   subagentMaxParallel?: number;
   clientPromptId?: string;
+  steering?: boolean;
 }
 
 export interface PromptMeta {
@@ -1004,7 +1005,14 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
         }, 45_000);
         pendingPromptRef.current.set(id, { message: userMessage, resolve, sessionId, timeout, timedOut: false, clientPromptId: options?.clientPromptId });
       });
-      wsRef.current.send(JSON.stringify({ type: "prompt", id, message: text + (isSlashCommand ? "" : attachmentContext) + optionContext, streamingBehavior: "steer", projectId: meta?.projectId, sessionId: meta?.sessionId }));
+      wsRef.current.send(JSON.stringify({
+        type: "prompt",
+        id,
+        message: text + (isSlashCommand ? "" : attachmentContext) + optionContext,
+        ...(options?.steering ? { streamingBehavior: "steer" } : {}),
+        projectId: meta?.projectId,
+        sessionId: meta?.sessionId
+      }));
       return accepted;
     } catch (error) {
       const pending = pendingPromptRef.current.get(id);

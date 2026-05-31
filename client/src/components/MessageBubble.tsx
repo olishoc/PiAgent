@@ -105,11 +105,6 @@ function renderCodeAware(text: string): ReactNode[] {
   });
 }
 
-function timeLabel(timestamp?: number) {
-  if (!timestamp) return "";
-  return new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(timestamp);
-}
-
 function textHash(text: string) {
   let hash = 2166136261;
   for (let i = 0; i < text.length; i += 1) {
@@ -191,8 +186,6 @@ export default function MessageBubble({ message, sessionId = "" }: { message: Te
   if (message.kind === "user") {
     return (
       <article className="message user-message">
-        <div className="message-label">you</div>
-        <div className="message-time">{timeLabel(message.createdAt)}</div>
         <div className="message-text">{renderCodeAware(message.text)}</div>
         {message.attachments?.length ? (
           <div className="message-attachments">
@@ -268,7 +261,6 @@ export default function MessageBubble({ message, sessionId = "" }: { message: Te
 
   return (
     <article className="message agent-message">
-      <div className="agent-label">assistant <span>{timeLabel(message.createdAt)}</span></div>
       <div className="agent-text">{renderCodeAware(message.text)}</div>
       {responseActions}
     </article>

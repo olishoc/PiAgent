@@ -4,7 +4,7 @@ import Composer from "./components/Composer";
 import LoginScreen from "./components/LoginScreen";
 import Sidebar, { Session } from "./components/Sidebar";
 import ThreadView from "./components/ThreadView";
-import { useAgent } from "./hooks/useAgent";
+import { type Attachment, type PromptOptions, useAgent } from "./hooks/useAgent";
 import { useAuth } from "./hooks/useAuth";
 import { apiUrl, ensureDesktopBackend, healthCheck } from "./lib/api";
 import SettingsView from "./components/SettingsView";
@@ -161,6 +161,16 @@ export interface ProjectTreeEntry {
   depth: number;
   size?: number;
   modified?: number;
+}
+
+interface QueuedPrompt {
+  id: string;
+  text: string;
+  attachments: Attachment[];
+  options?: PromptOptions;
+  sessionId: string;
+  projectId?: string | null;
+  createdAt: number;
 }
 
 interface ThemeSurface {
@@ -327,6 +337,8 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState("");
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [openingSessionId, setOpeningSessionId] = useState("");
+  const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
+  const processingQueuedPromptRef = useRef(false);
 
   const setActiveSessionId = (id: string) => {
     activeIdRef.current = id;
@@ -1027,16 +1039,25 @@ export default function App() {
     return words.length > 58 ? `${words.slice(0, 55).trim()}...` : words;
   };
 
-  const sendScopedPrompt = async (text: string, attachments: Parameters<typeof agent.sendPrompt>[1] = [], options?: Parameters<typeof agent.sendPrompt>[2]) => {
-    const currentActiveId = activeIdRef.current || activeId;
+  const sendScopedPrompt = async (
+    text: string,
+    attachments: Parameters<typeof agent.sendPrompt>[1] = [],
+    options?: Parameters<typeof agent.sendPrompt>[2],
+    route?: { sessionId?: string; projectId?: string | null; background?: boolean; fromQueue?: boolean }
+  ) => {
+    const currentActiveId = route?.sessionId || activeIdRef.current || activeId;
+    const routeProjectId = route && Object.prototype.hasOwnProperty.call(route, "projectId") ? route.projectId ?? "" : activeProjectId;
     const activeScopedSession = [...sessions, ...allSessions].find((session) => (
       session.id === currentActiveId
       && (
+        route?.background
+        ||
         protectedActiveSessionRef.current === currentActiveId
-        || (activeProjectId ? session.projectId === activeProjectId : !session.projectId)
+        || (routeProjectId ? session.projectId === routeProjectId : !session.projectId)
       )
     ));
-    const targetSessionId = activeScopedSession?.id ?? await createScopedSession(activeProjectId || null);
+    const targetProjectId = activeScopedSession?.projectId || routeProjectId || null;
+    const targetSessionId = activeScopedSession?.id ?? await createScopedSession(targetProjectId);
     if (!targetSessionId) {
       agent.replaceMessages([
         ...agent.messages,
@@ -1044,11 +1065,35 @@ export default function App() {
       ]);
       return false;
     }
-    loadedSessionRef.current = targetSessionId;
+    const backgroundSend = Boolean(route?.background && activeIdRef.current !== targetSessionId);
+    const wantsSteering = Boolean(options?.steering);
+    if (agent.isStreaming && !wantsSteering && !route?.fromQueue) {
+      setPromptQueue((current) => {
+        const queued = [...current, {
+          id: crypto.randomUUID(),
+          text,
+          attachments: attachments ?? [],
+          options: options ? { ...options, steering: false } : undefined,
+          sessionId: targetSessionId,
+          projectId: targetProjectId,
+          createdAt: Date.now()
+        }];
+        return queued.slice(-12);
+      });
+      return true;
+    }
+    if (agent.isStreaming && wantsSteering && !canSwitchAgentRuntime(targetSessionId)) {
+      agent.replaceMessages([
+        ...agent.messages,
+        { id: crypto.randomUUID(), kind: "status", text: "Steering is only available in the chat that is currently running. This message was not sent." }
+      ]);
+      return false;
+    }
+    if (!backgroundSend) loadedSessionRef.current = targetSessionId;
     if (activeScopedSession?.path && runtimeSessionRef.current !== targetSessionId) {
-      setOpeningSessionId(targetSessionId);
+      if (!backgroundSend) setOpeningSessionId(targetSessionId);
       if (!canSwitchAgentRuntime(targetSessionId)) {
-        setOpeningSessionId((current) => current === targetSessionId ? "" : current);
+        if (!backgroundSend) setOpeningSessionId((current) => current === targetSessionId ? "" : current);
         agent.replaceMessages([
           ...agent.messages,
           { id: crypto.randomUUID(), kind: "status", text: "Pi is still working in another chat. Open that chat to follow the run, or wait for it to finish." }
@@ -1056,8 +1101,8 @@ export default function App() {
         return false;
       }
       const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: activeScopedSession.path });
-      setOpeningSessionId((current) => current === targetSessionId ? "" : current);
-      if (activeIdRef.current !== targetSessionId) return false;
+      if (!backgroundSend) setOpeningSessionId((current) => current === targetSessionId ? "" : current);
+      if (!backgroundSend && activeIdRef.current !== targetSessionId) return false;
       if (switchResult?.success === false) {
         agent.replaceMessages([
           ...agent.messages,
@@ -1067,8 +1112,8 @@ export default function App() {
       }
       runtimeSessionRef.current = targetSessionId;
     }
-    if (activeIdRef.current !== targetSessionId) return false;
-    const accepted = await agent.sendPrompt(text, attachments, options, { projectId: activeScopedSession?.projectId || activeProjectId || undefined, sessionId: targetSessionId || undefined });
+    if (!backgroundSend && activeIdRef.current !== targetSessionId) return false;
+    const accepted = await agent.sendPrompt(text, attachments, options, { projectId: targetProjectId || undefined, sessionId: targetSessionId || undefined });
     if (!accepted) return false;
     const current = sessions.find((session) => session.id === targetSessionId);
     if (!current || current.messageCount < 2 || current.name === "New thread") {
@@ -1084,6 +1129,23 @@ export default function App() {
   const sendPrompt = async (text: string, attachments?: Parameters<typeof agent.sendPrompt>[1], options?: Parameters<typeof agent.sendPrompt>[2]) => {
     return sendScopedPrompt(text, attachments ?? [], options);
   };
+
+  useEffect(() => {
+    if (agent.isStreaming || agent.connectionState !== "ready" || processingQueuedPromptRef.current || promptQueue.length === 0) return;
+    const next = promptQueue[0];
+    processingQueuedPromptRef.current = true;
+    setPromptQueue((current) => current.filter((item) => item.id !== next.id));
+    const queuedOptions = next.options ? { ...next.options, steering: false, clientPromptId: crypto.randomUUID() } : undefined;
+    void sendScopedPrompt(next.text, next.attachments, queuedOptions, {
+      sessionId: next.sessionId,
+      projectId: next.projectId,
+      background: true,
+      fromQueue: true
+    }).finally(() => {
+      processingQueuedPromptRef.current = false;
+      setPromptQueue((current) => [...current]);
+    });
+  }, [agent.connectionState, agent.isStreaming, promptQueue]);
 
   const compactContext = () => {
     agent.replaceMessages([
@@ -1158,6 +1220,7 @@ export default function App() {
             : "";
   const toolbarDetail = [
     agent.footerStatus && !/^connected$/i.test(agent.footerStatus) ? agent.footerStatus : "",
+    promptQueue.length ? `${promptQueue.length} queued` : "",
     runningToolCount > 0 ? `${runningToolCount} tools` : "",
     (agent.contextUsage?.percent ?? 0) > 0 ? `${agent.contextUsage?.percent}% context` : ""
   ].filter(Boolean).join(" / ");
@@ -1168,12 +1231,22 @@ export default function App() {
   const updateCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
     event.currentTarget.style.setProperty("--cursor-x", `${event.clientX}px`);
     event.currentTarget.style.setProperty("--cursor-y", `${event.clientY}px`);
+    const target = event.target as HTMLElement;
+    const nearInteractive = Boolean(target.closest("button, a, input, textarea, select, [role='button'], .composer, .pill-menu, .session-row, .project-row, .message-actions, .toolbar-actions"));
+    event.currentTarget.classList.add("cursor-active");
+    event.currentTarget.classList.toggle("cursor-interactive", nearInteractive);
+  };
+  const hideCursorGlow = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.classList.remove("cursor-active", "cursor-interactive");
   };
 
   return (
     <div
       className={`app-shell density-${settings?.density ?? "comfortable"}`}
+      data-theme={resolvedTheme}
       onPointerMove={updateCursorGlow}
+      onPointerEnter={updateCursorGlow}
+      onPointerLeave={hideCursorGlow}
       style={{
         "--bg-app": surface.app,
         "--bg-sidebar": surface.sidebar,
@@ -1209,6 +1282,14 @@ export default function App() {
         "--message-spacing": `${textPreset.messageSpacing}px`
       } as CSSProperties}
     >
+      <div className="environment-backdrop" aria-hidden="true">
+        <div className="sky-layer" />
+        <div className="horizon-glow" />
+        <div className="sea-layer sea-layer-a" />
+        <div className="sea-layer sea-layer-b" />
+        <div className="light-rain" />
+      </div>
+      <div className="neon-cursor" aria-hidden="true" />
       <Sidebar
         sessions={sessions}
         allSessions={allSessions}
@@ -1310,6 +1391,8 @@ export default function App() {
                 onAbort={agent.abort}
                 disabled={agent.connectionState !== "ready"}
                 isStreaming={visibleStreaming}
+                isAgentBusy={agent.isStreaming}
+                queuedCount={promptQueue.length}
                 settings={settings ?? undefined}
                 models={models}
                 extensionCommands={extensionCommands}
