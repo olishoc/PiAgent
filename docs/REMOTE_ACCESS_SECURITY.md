@@ -37,6 +37,8 @@ npx wrangler secret put REMOTE_TOKEN_PEPPER
 npx wrangler deploy
 ```
 
+The production Worker name is `rblxagent-site` because the existing `rblxagent.com` routes already belong to that Worker.
+
 The Cloudflare token used by `wrangler` needs permissions for Workers Scripts, Workers Routes or Custom Domains, Durable Objects, and the `rblxagent.com` zone if the custom domain is managed in Cloudflare.
 
 ## Public-domain checklist
