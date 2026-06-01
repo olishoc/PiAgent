@@ -37,14 +37,14 @@ npx wrangler secret put REMOTE_TOKEN_PEPPER
 npx wrangler deploy
 ```
 
-The production Worker name is `rblxagent-site` because the existing `rblxagent.com` routes already belong to that Worker.
+The production Worker name is `rblxagent-site` because the existing `rblxagent.com` routes already belong to that Worker. The routes stay managed in Cloudflare; `wrangler.jsonc` does not recreate them.
 
 The Cloudflare token used by `wrangler` needs permissions for Workers Scripts, Workers Routes or Custom Domains, Durable Objects, and the `rblxagent.com` zone if the custom domain is managed in Cloudflare.
 
 ## Public-domain checklist
 
 - `REMOTE_TOKEN_PEPPER` is configured as a Worker secret, not in git.
-- `rblxagent.com` resolves to the Cloudflare Worker routes declared in `web-remote/wrangler.jsonc`.
+- `rblxagent.com` resolves to the existing Cloudflare Worker routes on `rblxagent-site`.
 - `/archive/rblxagent-landing-2026-06-01.html` serves only the archived static page.
 - `/` serves PiAgent Remote.
 - Desktop Settings > Remote shows `Off` by default.

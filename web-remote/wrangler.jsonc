@@ -10,16 +10,6 @@
     "enabled": true,
     "head_sampling_rate": 1
   },
-  "routes": [
-    {
-      "pattern": "rblxagent.com",
-      "zone_name": "rblxagent.com"
-    },
-    {
-      "pattern": "rblxagent.com/*",
-      "zone_name": "rblxagent.com"
-    }
-  ],
   "vars": {
     "PUBLIC_HOST": "rblxagent.com",
     "PROTOCOL_VERSION": "2026-06-remote-v1"
