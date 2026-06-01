@@ -42,7 +42,7 @@ The Cloudflare token used by `wrangler` needs permissions for Workers Scripts, W
 ## Public-domain checklist
 
 - `REMOTE_TOKEN_PEPPER` is configured as a Worker secret, not in git.
-- `rblxagent.com` resolves to the Cloudflare Worker route/custom domain.
+- `rblxagent.com` resolves to the Cloudflare Worker routes declared in `web-remote/wrangler.jsonc`.
 - `/archive/rblxagent-landing-2026-06-01.html` serves only the archived static page.
 - `/` serves PiAgent Remote.
 - Desktop Settings > Remote shows `Off` by default.
