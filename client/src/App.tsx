@@ -1737,7 +1737,9 @@ export default function App() {
       <main className="main-panel">
         <div className="app-toolbar">
           <div className="toolbar-title">
-            <span className="brand-mark app-icon-mark" aria-hidden="true" />
+            <span className="brand-mark app-icon-frame" aria-hidden="true">
+              <img className="piagent-icon-img" src="/piagent-icon.png" alt="" />
+            </span>
             {appTitle ? <strong>{appTitle}</strong> : null}
             <em className={`toolbar-ready ${agent.connectionState}`}>{toolbarStatus}</em>
             {activeSessionName ? <span className="toolbar-thread" title={activeSessionName}>{activeSessionName}</span> : null}

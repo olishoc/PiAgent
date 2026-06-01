@@ -122,8 +122,8 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
       <div className="thread-feed" ref={feedRef} onScroll={onScroll}>
         {messages.length === 0 ? (
           <div className="empty-thread">
-            <div className="empty-icon-stage" aria-hidden="true">
-              <span className="empty-icon app-icon-mark" />
+            <div className="empty-icon-stage icon-clean" aria-hidden="true">
+              <img className="empty-icon piagent-icon-img" src="/piagent-icon.png" alt="" />
             </div>
             <h1><span>Ready when you are</span></h1>
             <p>{displayName?.trim() ? `Workspace ready for ${displayName.trim()}.` : "Workspace ready."}</p>

@@ -20,7 +20,9 @@ const css = files
   .map((file) => `/* ${file} */\n${readFileSync(join(repoRoot, file), "utf8")}`)
   .join("\n\n")
   .replaceAll('url("../piagent-icon.ico")', 'url("/piagent-icon.ico")')
-  .replaceAll("url('../piagent-icon.ico')", 'url("/piagent-icon.ico")');
+  .replaceAll("url('../piagent-icon.ico')", 'url("/piagent-icon.ico")')
+  .replaceAll('url("../piagent-icon.png")', 'url("/piagent-icon.png")')
+  .replaceAll("url('../piagent-icon.png')", 'url("/piagent-icon.png")');
 
 writeFileSync(
   cssOutFile,

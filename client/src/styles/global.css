@@ -689,7 +689,7 @@ button:active {
   overflow: hidden;
   border-radius: 4px;
   background:
-    center / contain no-repeat url("../piagent-icon.ico"),
+    center / contain no-repeat url("/piagent-icon.png"),
     #050505;
   background-origin: content-box;
   background-clip: border-box;
@@ -700,6 +700,31 @@ button:active {
     0 0 22px color-mix(in srgb, var(--accent-red) 18%, transparent),
     0 8px 24px color-mix(in srgb, var(--shadow-color) 74%, transparent);
   animation: iconGlow 4.8s ease-in-out infinite;
+}
+
+.app-icon-frame {
+  overflow: visible;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent-red) 20%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface) 76%, transparent);
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.05),
+    0 0 18px color-mix(in srgb, var(--accent-red) 16%, transparent),
+    0 8px 22px color-mix(in srgb, var(--shadow-color) 72%, transparent);
+  animation: iconGlow 4.8s ease-in-out infinite;
+}
+
+.piagent-icon-img {
+  display: block;
+  object-fit: contain;
+  object-position: center center;
+  image-rendering: auto;
+}
+
+.app-icon-frame > .piagent-icon-img {
+  width: 100%;
+  height: 100%;
 }
 
 .app-shell.coarse-pointer {
@@ -722,6 +747,7 @@ button:active {
 .brand-mark {
   width: 25px;
   height: 25px;
+  padding: 2px;
 }
 
 .mini-mark {

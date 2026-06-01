@@ -21,7 +21,7 @@ export default function LoginScreen({ onLogin, loading, authUrl, error, message 
         <div className="light-rain" />
       </div>
       <section className="login-panel">
-        <span className="login-icon app-icon-mark" aria-hidden="true" />
+        <img className="login-icon piagent-icon-img" src="/piagent-icon.png" alt="" aria-hidden="true" />
         <h1>local coding workspace</h1>
         <p>gpt-5.5</p>
         {message ? <p role="status">{message}</p> : null}

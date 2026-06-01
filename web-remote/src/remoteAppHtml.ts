@@ -61,16 +61,24 @@ const remoteShellCss = `
 .remote-login-panel .login-icon {
   display: block;
   margin-inline: auto;
+  filter:
+    drop-shadow(0 0 18px color-mix(in srgb, var(--accent-red) 22%, transparent))
+    drop-shadow(0 10px 22px color-mix(in srgb, var(--shadow-color) 72%, transparent));
 }
-.remote-shell .app-icon-mark {
-  border: 0 !important;
-  background: center center / 100% 100% no-repeat url("/piagent-icon.ico"), #050505 !important;
-  background-origin: border-box !important;
-  background-clip: border-box !important;
+.remote-shell .piagent-icon-img {
+  display: block;
+  object-fit: contain;
+  object-position: center center;
 }
-.remote-login-panel .app-icon-mark,
-.remote-shell .empty-icon.app-icon-mark {
-  border-radius: 0 !important;
+.remote-shell .app-icon-frame > .piagent-icon-img {
+  width: 100%;
+  height: 100%;
+}
+.remote-shell .app-icon-frame {
+  display: inline-grid;
+  place-items: center;
+  padding: 2px;
+  overflow: visible;
 }
 .remote-login-panel h1 {
   font-weight: 640;
@@ -325,7 +333,7 @@ export const remoteAppHtml = `<!doctype html>
 
     <main class="remote-login-screen" id="remoteLogin">
       <section class="login-panel remote-login-panel">
-        <span class="login-icon app-icon-mark" aria-hidden="true"></span>
+        <img class="login-icon piagent-icon-img" src="/piagent-icon.png" alt="" aria-hidden="true"/>
         <h1>Pi Agent</h1>
         <p id="loginLead">Use Pi Agent on this device or connect to your desktop.</p>
         <div class="remote-mode-switch" role="tablist" aria-label="PiAgent web mode">
@@ -336,7 +344,7 @@ export const remoteAppHtml = `<!doctype html>
           <div class="mobile-oauth-panel">
             <p>Mobile chat uses PiAgent's OpenAI OAuth session from your approved desktop. No OpenAI API key is accepted or stored by this public relay.</p>
             <div class="mobile-oauth-actions">
-              <button id="mobileConnectButton" class="login-button" type="button">connect with PiAgent OAuth</button>
+              <button id="mobileConnectButton" class="login-button" type="button">pair desktop OAuth</button>
               <button id="mobileStartButton" class="login-button secondary" type="button">open mobile chat</button>
             </div>
           </div>
@@ -359,7 +367,7 @@ export const remoteAppHtml = `<!doctype html>
 
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-brand">
-        <span class="brand-mark app-icon-mark" aria-hidden="true"></span>
+        <span class="brand-mark app-icon-frame" aria-hidden="true"><img class="piagent-icon-img" src="/piagent-icon.png" alt=""/></span>
         <strong>Pi Agent</strong>
       </div>
       <div class="sidebar-topnav">
@@ -427,7 +435,7 @@ export const remoteAppHtml = `<!doctype html>
     <main class="main-panel">
       <div class="app-toolbar">
         <div class="toolbar-title">
-          <span class="brand-mark app-icon-mark" aria-hidden="true"></span>
+          <span class="brand-mark app-icon-frame" aria-hidden="true"><img class="piagent-icon-img" src="/piagent-icon.png" alt=""/></span>
           <strong>Pi Agent</strong>
           <em class="toolbar-ready ready" id="topStatus">Mobile chat</em>
           <span class="toolbar-thread" id="topDetail" title="OpenAI OAuth stays on the paired desktop">PiAgent OAuth</span>
@@ -446,8 +454,8 @@ export const remoteAppHtml = `<!doctype html>
           <section class="thread-shell compact-header">
             <div class="thread-feed" id="feed" aria-live="polite">
               <div class="empty-thread remote-pairing" id="intro">
-                <div class="empty-icon-stage" aria-hidden="true">
-                  <span class="empty-icon app-icon-mark"></span>
+                <div class="empty-icon-stage icon-clean" aria-hidden="true">
+                  <img class="empty-icon piagent-icon-img" src="/piagent-icon.png" alt=""/>
                 </div>
                 <h1><span>Ready when you are</span></h1>
                 <p id="introText">Mobile chat runs here. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.</p>
@@ -560,6 +568,20 @@ export const remoteAppHtml = `<!doctype html>
         showLogin('Connect this device to your desktop.', 'scan a QR from PiAgent Desktop');
         restoreIntro(false);
       }
+    }
+
+    function startDesktopOauthPairing() {
+      if (desktopId) {
+        connect('mobile');
+        return;
+      }
+      activeMode = 'desktop';
+      localStorage.setItem('piagent.remote.webMode', activeMode);
+      updateModeButtons();
+      setStatus('Not paired', 'scan QR from desktop', 'bad');
+      showLogin('Pair this device with PiAgent Desktop.', 'Open PiAgent on the computer, then Parameters -> Remote Access -> QR.');
+      restoreIntro(false);
+      if (loginState) loginState.textContent = 'Waiting for a desktop pairing link or QR scan.';
     }
 
     function setLogin(text, detail) {
@@ -1168,8 +1190,14 @@ export const remoteAppHtml = `<!doctype html>
     loginDesktopModeButton.addEventListener('click', function () { setMode('desktop'); });
     mobileModeButton.addEventListener('click', function () { setMode('mobile'); });
     desktopModeButton.addEventListener('click', function () { setMode('desktop'); });
-    mobileConnectButton.addEventListener('click', function () { connect('mobile'); });
-    mobileStartButton.addEventListener('click', function () { if (connect('mobile')) showMobileChat(false); });
+    mobileConnectButton.addEventListener('click', startDesktopOauthPairing);
+    mobileStartButton.addEventListener('click', function () {
+      if (desktopId && connect('mobile')) {
+        showMobileChat(false);
+        return;
+      }
+      startDesktopOauthPairing();
+    });
     reconnectButton.addEventListener('click', function () { connect(activeMode); });
     loginReconnectButton.addEventListener('click', function () { connect(activeMode); });
     loginForgetButton.addEventListener('click', forgetDevice);

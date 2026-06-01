@@ -29,8 +29,11 @@
 .login-icon {
   width: 48px;
   height: 48px;
-  border-radius: 16px;
+  border-radius: 6px;
   margin-bottom: 4px;
+  filter:
+    drop-shadow(0 0 18px color-mix(in srgb, var(--accent-red) 22%, transparent))
+    drop-shadow(0 10px 22px color-mix(in srgb, var(--shadow-color) 72%, transparent));
 }
 
 .login-panel h1 {

@@ -161,7 +161,9 @@ export default function Sidebar({
   return (
     <aside className={`sidebar ${collapsed ? "collapsed" : ""}`}>
       <div className="sidebar-brand">
-        <span className="brand-mark app-icon-mark" aria-hidden="true" />
+        <span className="brand-mark app-icon-frame" aria-hidden="true">
+          <img className="piagent-icon-img" src="/piagent-icon.png" alt="" />
+        </span>
         {appTitle ? <strong>{appTitle}</strong> : null}
       </div>
       <div className="sidebar-topnav">

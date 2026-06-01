@@ -207,12 +207,20 @@
   animation-direction: reverse;
 }
 
+.empty-icon-stage.icon-clean::before,
+.empty-icon-stage.icon-clean::after {
+  display: none;
+}
+
 .empty-icon {
   z-index: 1;
   width: 56px;
   height: 56px;
-  border-radius: 11px;
+  border-radius: 6px;
   place-self: center;
+  filter:
+    drop-shadow(0 0 22px color-mix(in srgb, var(--accent-red) 24%, transparent))
+    drop-shadow(0 12px 26px color-mix(in srgb, var(--shadow-color) 72%, transparent));
   animation: iconGlow 5s ease-in-out infinite;
 }
 
