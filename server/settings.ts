@@ -146,8 +146,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   themePreset: "codex",
   animatedBackground: "aurora-glass",
-  lightDeflection: "strong",
-  cursorLight: "subtle",
+  lightDeflection: "balanced",
+  cursorLight: "off",
   answerSurface: "glass",
   accentColor: "#58a6ff",
   density: "comfortable",
@@ -303,8 +303,8 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   if (!loaded.advisorModel) loaded.advisorModel = loaded.modelLabel || "gpt-5.5";
   if (!THEME_PRESETS.includes(loaded.themePreset as ThemePreset)) loaded.themePreset = "codex";
   if (!ANIMATED_BACKGROUNDS.includes(loaded.animatedBackground as AnimatedBackground)) loaded.animatedBackground = "aurora-glass";
-  if (!LIGHT_DEFLECTIONS.includes(loaded.lightDeflection as LightDeflection)) loaded.lightDeflection = "strong";
-  if (!CURSOR_LIGHTS.includes(loaded.cursorLight as CursorLight)) loaded.cursorLight = "subtle";
+  if (!LIGHT_DEFLECTIONS.includes(loaded.lightDeflection as LightDeflection)) loaded.lightDeflection = DEFAULT_SETTINGS.lightDeflection;
+  loaded.cursorLight = DEFAULT_SETTINGS.cursorLight;
   if (!ANSWER_SURFACES.includes(loaded.answerSurface as AnswerSurface)) loaded.answerSurface = "glass";
   if (!THINKING_LEVELS.includes(loaded.thinkingLevel as ThinkingLevel)) loaded.thinkingLevel = "medium";
   if (!THINKING_LEVELS.includes(loaded.advisorReasoning as ThinkingLevel) || loaded.advisorReasoning === "off") loaded.advisorReasoning = "high";

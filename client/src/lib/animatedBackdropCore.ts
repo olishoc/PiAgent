@@ -111,7 +111,8 @@ function drawStars(ctx: CanvasRenderingContext2D, width: number, height: number,
   if (light) return;
   ctx.save();
   ctx.globalCompositeOperation = "screen";
-  for (let i = 0; i < 90; i += 1) {
+  const count = width <= 860 || height <= 760 ? 48 : 90;
+  for (let i = 0; i < count; i += 1) {
     const item = star(i + 1, width, height);
     const twinkle = 0.32 + Math.sin(time * 1.2 + i * 0.9) * 0.22;
     ctx.fillStyle = `rgba(255,255,255,${Math.max(0.08, twinkle)})`;
@@ -122,10 +123,11 @@ function drawStars(ctx: CanvasRenderingContext2D, width: number, height: number,
   ctx.restore();
 }
 
-function drawAurora(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, colors: string[], light: boolean) {
+function drawAurora(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, colors: string[], light: boolean, quality = 1) {
   ctx.save();
   ctx.globalCompositeOperation = light ? "source-over" : "screen";
-  for (let band = 0; band < 3; band += 1) {
+  const bands = quality < 0.8 ? 2 : 3;
+  for (let band = 0; band < bands; band += 1) {
     const base = height * (0.14 + band * 0.09);
     const amplitude = height * (0.05 + band * 0.018);
     const gradient = ctx.createLinearGradient(0, base, width, base + height * 0.24);
@@ -254,11 +256,11 @@ function drawSciFi(ctx: CanvasRenderingContext2D, width: number, height: number,
   ctx.restore();
 }
 
-function drawNebulaRain(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, colors: string[], light: boolean) {
+function drawNebulaRain(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, colors: string[], light: boolean, quality = 1) {
   ctx.save();
   ctx.globalCompositeOperation = light ? "source-over" : "screen";
   drawPrism(ctx, width, height, time * 0.42, colors);
-  const rainCount = Math.max(28, Math.floor(width / 34));
+  const rainCount = Math.max(16, Math.floor((width / 34) * quality));
   for (let i = 0; i < rainCount; i += 1) {
     const seed = i * 37.3;
     const x = fract(Math.sin(seed) * 15423.33) * (width + 280) - 140;
@@ -352,7 +354,12 @@ export function startAnimatedBackdrop(canvas: HTMLCanvasElement, options: Animat
   const theme = options.theme ?? "dark";
   const palette = options.palette ?? "codex";
   const accent = options.accent ?? "#58a6ff";
-  const cursorLight = options.cursorLight ?? "subtle";
+  const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  const mobileLike = window.matchMedia?.("(pointer: coarse), (max-width: 860px)").matches ?? false;
+  const lowMemory = typeof (navigator as Navigator & { deviceMemory?: number }).deviceMemory === "number"
+    && ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
+  const lowPower = prefersReducedMotion || mobileLike || lowMemory;
+  const cursorLight: CursorLight = "off";
   const pointer: PointerState = { x: -1000, y: -1000, active: false, down: false, nearInteractive: false, lastSeen: 0 };
   const paletteColors = paletteAccents[palette] ?? paletteAccents.codex;
   const accentRgb = parseHex(accent);
@@ -365,9 +372,13 @@ export function startAnimatedBackdrop(canvas: HTMLCanvasElement, options: Animat
   let width = 0;
   let height = 0;
   let animationFrame = 0;
+  let lastFrame = 0;
+  let reducedFrameDrawn = false;
+  const quality = lowPower ? 0.58 : 1;
+  const frameInterval = lowPower ? 1000 / 24 : 1000 / 34;
 
   const resize = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, lowPower ? 1 : 1.45);
     width = window.innerWidth;
     height = window.innerHeight;
     canvas.width = Math.max(1, Math.floor(width * dpr));
@@ -400,32 +411,43 @@ export function startAnimatedBackdrop(canvas: HTMLCanvasElement, options: Animat
   };
 
   const draw = (now: number) => {
+    if (document.hidden) {
+      animationFrame = window.requestAnimationFrame(draw);
+      return;
+    }
+    if (prefersReducedMotion && reducedFrameDrawn) return;
+    if (!prefersReducedMotion && now - lastFrame < frameInterval) {
+      animationFrame = window.requestAnimationFrame(draw);
+      return;
+    }
+    reducedFrameDrawn = true;
+    lastFrame = now;
     const time = now / 1000;
     ctx.clearRect(0, 0, width, height);
     fillBase(ctx, width, height, mode, light, colors);
     drawStars(ctx, width, height, time, light || mode === "cartoon-beach");
-    if (mode === "aurora-glass") drawAurora(ctx, width, height, time, colors, light);
+    if (mode === "aurora-glass") drawAurora(ctx, width, height, time, colors, light, quality);
     if (mode === "midnight-ocean") {
-      drawAurora(ctx, width, height, time * 0.45, colors, light);
+      drawAurora(ctx, width, height, time * 0.45, colors, light, quality);
       drawOcean(ctx, width, height, time, colors, light);
     }
     if (mode === "liquid-prism") drawPrism(ctx, width, height, time, colors);
     if (mode === "solar-frost") {
-      drawAurora(ctx, width, height, time * 0.28, ["#ffffff", colors[0], colors[1]], true);
+      drawAurora(ctx, width, height, time * 0.28, ["#ffffff", colors[0], colors[1]], true, quality);
       drawOcean(ctx, width, height, time * 0.36, colors, true);
     }
     if (mode === "sci-fi-grid") {
-      drawAurora(ctx, width, height, time * 0.25, colors, false);
+      drawAurora(ctx, width, height, time * 0.25, colors, false, quality);
       drawSciFi(ctx, width, height, time, colors);
     }
     if (mode === "lunar-waves") {
-      drawAurora(ctx, width, height, time * 0.35, colors, false);
+      drawAurora(ctx, width, height, time * 0.35, colors, false, quality);
       drawOcean(ctx, width, height, time, colors, false, true);
     }
     if (mode === "cartoon-beach") drawCartoonBeach(ctx, width, height, time, colors, light);
     if (mode === "nebula-rain") {
-      drawAurora(ctx, width, height, time * 0.42, colors, light);
-      drawNebulaRain(ctx, width, height, time, colors, light);
+      drawAurora(ctx, width, height, time * 0.42, colors, light, quality);
+      drawNebulaRain(ctx, width, height, time, colors, light, quality);
     }
     drawMotionWash(ctx, width, height, time, colors, light);
     drawPointerLight(ctx, pointer, width, height, time, colors, cursorLight);
@@ -434,30 +456,34 @@ export function startAnimatedBackdrop(canvas: HTMLCanvasElement, options: Animat
 
   resize();
   window.addEventListener("resize", resize);
-  window.addEventListener("pointermove", move, { passive: true });
-  window.addEventListener("pointerover", move, { passive: true });
-  window.addEventListener("pointerdown", down, { passive: true });
-  window.addEventListener("pointerup", up, { passive: true });
-  window.addEventListener("pointercancel", leave);
-  window.addEventListener("mousemove", move, { passive: true });
-  window.addEventListener("mousedown", down, { passive: true });
-  window.addEventListener("mouseup", up, { passive: true });
-  window.addEventListener("blur", leave);
-  document.addEventListener("mouseleave", leave);
+  if (cursorLight !== "off") {
+    window.addEventListener("pointermove", move, { passive: true });
+    window.addEventListener("pointerover", move, { passive: true });
+    window.addEventListener("pointerdown", down, { passive: true });
+    window.addEventListener("pointerup", up, { passive: true });
+    window.addEventListener("pointercancel", leave);
+    window.addEventListener("mousemove", move, { passive: true });
+    window.addEventListener("mousedown", down, { passive: true });
+    window.addEventListener("mouseup", up, { passive: true });
+    window.addEventListener("blur", leave);
+    document.addEventListener("mouseleave", leave);
+  }
   animationFrame = window.requestAnimationFrame(draw);
 
   return () => {
     window.cancelAnimationFrame(animationFrame);
     window.removeEventListener("resize", resize);
-    window.removeEventListener("pointermove", move);
-    window.removeEventListener("pointerover", move);
-    window.removeEventListener("pointerdown", down);
-    window.removeEventListener("pointerup", up);
-    window.removeEventListener("pointercancel", leave);
-    window.removeEventListener("mousemove", move);
-    window.removeEventListener("mousedown", down);
-    window.removeEventListener("mouseup", up);
-    window.removeEventListener("blur", leave);
-    document.removeEventListener("mouseleave", leave);
+    if (cursorLight !== "off") {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerover", move);
+      window.removeEventListener("pointerdown", down);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", leave);
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mousedown", down);
+      window.removeEventListener("mouseup", up);
+      window.removeEventListener("blur", leave);
+      document.removeEventListener("mouseleave", leave);
+    }
   };
 }

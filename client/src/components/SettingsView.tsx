@@ -332,9 +332,7 @@ const lightDeflectionOptions: Array<SettingSelectOption<AppSettings["lightDeflec
 ];
 
 const cursorLightOptions: Array<SettingSelectOption<AppSettings["cursorLight"]>> = [
-  { value: "subtle", label: "Subtle cursor light", note: "native" },
-  { value: "strong", label: "Strong cursor light", note: "reactive" },
-  { value: "off", label: "Off" }
+  { value: "off", label: "Off", note: "faster" }
 ];
 
 const answerSurfaceOptions: Array<SettingSelectOption<AppSettings["answerSurface"]>> = [
@@ -821,7 +819,7 @@ export default function SettingsView({ settings, models, initialActive = "Genera
                 onChange={(value) => onChange({ lightDeflection: value })}
                 options={lightDeflectionOptions}
               />
-              <span>Lumiere curseur</span>
+              <span>Curseur lumineux</span>
               <SettingSelect
                 value={settings.cursorLight}
                 onChange={(value) => onChange({ cursorLight: value })}

@@ -56,9 +56,11 @@ const PAIR_TTL_MS = 5 * 60 * 1000;
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
 const DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_PROMPT_CHARS = 6000;
+const MAX_MOBILE_CHAT_CHARS = 6000;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const COOKIE_NAME = "piagent_remote";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
+const MOBILE_CHAT_MODELS = ["gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini"] as const;
 const PIAGENT_ICON_BASE64 = "AAABAAEAICAAAAEAIAAoEAAAFgAAACgAAAAgAAAAQAAAAAEAIAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAANDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/";
 
 class HttpError extends Error {
@@ -199,6 +201,79 @@ function errorJson(error: unknown, fallback: string) {
   return jsonResponse({ ok: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
 }
 
+function mobileModel(value: unknown) {
+  const model = typeof value === "string" ? value.trim() : "";
+  return (MOBILE_CHAT_MODELS as readonly string[]).includes(model) ? model : MOBILE_CHAT_MODELS[0];
+}
+
+function openAiKeyFromRequest(request: WorkerRequest) {
+  const key = bearerToken(request).trim();
+  if (!/^sk-[A-Za-z0-9_-]{20,}$/.test(key)) throw new HttpError(401, "A valid OpenAI API key is required.");
+  return key;
+}
+
+function extractResponseText(payload: unknown) {
+  const direct = (payload as { output_text?: unknown })?.output_text;
+  if (typeof direct === "string" && direct.trim()) return direct;
+  const output = (payload as { output?: unknown })?.output;
+  if (!Array.isArray(output)) return "";
+  const parts: string[] = [];
+  for (const item of output) {
+    const content = (item as { content?: unknown })?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      const text = (part as { text?: unknown })?.text;
+      if (typeof text === "string") parts.push(text);
+    }
+  }
+  return parts.join("\n").trim();
+}
+
+function sanitizeUpstreamError(payload: unknown) {
+  const message = (payload as { error?: { message?: unknown } })?.error?.message;
+  if (typeof message !== "string") return "OpenAI request failed.";
+  return message.replace(/sk-[A-Za-z0-9_*.-]+/g, "OpenAI API key").slice(0, 240);
+}
+
+async function mobileChat(request: WorkerRequest) {
+  if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Cross-origin requests are blocked." }, { status: 403 });
+  const apiKey = openAiKeyFromRequest(request);
+  const body = await readJson(request);
+  const message = typeof body.message === "string" ? body.message.trim() : "";
+  if (!message) throw new HttpError(400, "Message is required.");
+  if (message.length > MAX_MOBILE_CHAT_CHARS) throw new HttpError(413, "Message is too long.");
+  const model = mobileModel(body.model);
+  const upstream = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      store: false,
+      max_output_tokens: 1400,
+      input: [
+        {
+          role: "system",
+          content: "You are PiAgent Mobile Chat. You run inside a public web Worker with no desktop tools, no local files, no shell, no browser control, and no credential access. Be concise and professional. If a request needs code execution, filesystem edits, project work, or desktop tools, tell the user to switch to Desktop coding mode."
+        },
+        { role: "user", content: message }
+      ]
+    })
+  });
+  const payload = await upstream.json().catch(() => ({}));
+  if (!upstream.ok) {
+    if (upstream.status === 401 || upstream.status === 403) {
+      return jsonResponse({ ok: false, error: "OpenAI rejected this API key." }, { status: upstream.status });
+    }
+    return jsonResponse({ ok: false, error: sanitizeUpstreamError(payload) }, { status: upstream.status >= 500 ? 502 : upstream.status });
+  }
+  const text = extractResponseText(payload);
+  if (!text) return jsonResponse({ ok: false, error: "OpenAI returned no text." }, { status: 502 });
+  return jsonResponse({ ok: true, text, model });
+}
+
 function remoteIdFromRequest(request: WorkerRequest, body?: Record<string, unknown>) {
   const url = new URL(request.url);
   const value = url.searchParams.get("desktopId")
@@ -325,8 +400,9 @@ export default {
       if (url.pathname === "/piagent-icon.ico" || url.pathname === "/favicon.ico") return iconResponse();
       if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
       if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events. It does not store PiAgent prompts, local files, OAuth tokens, or API keys by default.</p>");
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat sends the OpenAI API key you provide to OpenAI through this Worker for that request; this Worker code does not store it. Desktop prompts, local files, OAuth tokens, and API keys are not stored by the remote relay.</p>");
       if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private remote access for paired PiAgent devices only.</p>");
+      if (url.pathname === "/api/mobile/chat" && request.method === "POST") return await mobileChat(request);
 
       if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/relay/")) {
         const needsBody = request.method !== "GET" && request.method !== "HEAD" && request.headers.get("Upgrade")?.toLowerCase() !== "websocket";

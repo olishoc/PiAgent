@@ -176,6 +176,7 @@
   width: 96px;
   height: 96px;
   place-items: center;
+  justify-self: center;
   border-radius: 34px;
   background:
     radial-gradient(circle at 30% 22%, color-mix(in srgb, #ffffff 16%, transparent), transparent 36%),
@@ -211,6 +212,7 @@
   width: 56px;
   height: 56px;
   border-radius: 11px;
+  place-self: center;
   animation: iconGlow 5s ease-in-out infinite;
 }
 
@@ -261,6 +263,31 @@
   background: var(--subtle-bg);
   color: var(--text-secondary);
   font-size: 11px;
+}
+
+.history-window-button {
+  align-self: center;
+  width: fit-content;
+  max-width: min(100%, 520px);
+  min-height: 30px;
+  margin: 0 auto var(--message-spacing);
+  padding: 6px 12px;
+  border: 0.5px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--glass-bg) 84%, transparent), color-mix(in srgb, var(--subtle-bg) 72%, transparent));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 12px 32px rgba(0,0,0,0.18);
+}
+
+.history-window-button:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  transform: translateY(-1px);
 }
 
 .message {
@@ -1908,12 +1935,16 @@
   .run-card footer strong { white-space: normal; }
   .split-setting,
   .provider-status-grid { grid-template-columns: 1fr; }
-  .thread-feed { padding-inline: 22px; }
+  .thread-feed {
+    padding-inline: 22px;
+    padding-bottom: calc(24px + var(--keyboard-inset));
+  }
 }
 
 @media (max-width: 520px) {
   .thread-feed {
     padding-inline: 12px;
+    padding-bottom: calc(22px + var(--keyboard-inset));
   }
 
   .empty-thread {

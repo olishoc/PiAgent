@@ -384,8 +384,8 @@ export default function App() {
     theme: "dark",
     themePreset: "codex",
     animatedBackground: "aurora-glass",
-    lightDeflection: "strong",
-    cursorLight: "subtle",
+    lightDeflection: "balanced",
+    cursorLight: "off",
     answerSurface: "glass",
     accentColor: "#58a6ff",
     density: "comfortable",
@@ -1490,46 +1490,23 @@ export default function App() {
   useEffect(() => {
     const shell = appShellElement;
     if (!shell) return;
-    const interactiveSelector = "button, a, input, textarea, select, [role='button'], .composer, .pill-menu, .setting-select-menu, .session-row, .project-row, .message-actions, .toolbar-actions";
-    const setCursor = (event: PointerEvent | MouseEvent) => {
-      shell.style.setProperty("--cursor-x", `${event.clientX}px`);
-      shell.style.setProperty("--cursor-y", `${event.clientY}px`);
-      const nearInteractive = event.target instanceof Element && Boolean(event.target.closest(interactiveSelector));
-      shell.classList.add("cursor-active");
-      shell.classList.toggle("cursor-interactive", nearInteractive);
+    const updateViewportInset = () => {
+      const viewport = window.visualViewport;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const keyboardInset = viewport
+        ? Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop)
+        : 0;
+      shell.style.setProperty("--visual-viewport-height", `${Math.round(viewportHeight)}px`);
+      shell.style.setProperty("--keyboard-inset", `${Math.round(keyboardInset)}px`);
     };
-    const press = (event: PointerEvent | MouseEvent) => {
-      setCursor(event);
-      shell.classList.add("cursor-pressing");
-    };
-    const release = (event: PointerEvent | MouseEvent) => {
-      setCursor(event);
-      shell.classList.remove("cursor-pressing");
-    };
-    const hide = () => shell.classList.remove("cursor-active", "cursor-interactive", "cursor-pressing");
-    window.addEventListener("pointermove", setCursor, { passive: true });
-    window.addEventListener("pointerover", setCursor, { passive: true });
-    window.addEventListener("pointerdown", press, { passive: true });
-    window.addEventListener("pointerup", release, { passive: true });
-    window.addEventListener("pointercancel", hide);
-    window.addEventListener("mousemove", setCursor, { passive: true });
-    window.addEventListener("mousedown", press, { passive: true });
-    window.addEventListener("mouseup", release, { passive: true });
-    window.addEventListener("blur", hide);
-    document.addEventListener("mouseleave", hide);
-    document.addEventListener("visibilitychange", hide);
+    updateViewportInset();
+    window.visualViewport?.addEventListener("resize", updateViewportInset);
+    window.visualViewport?.addEventListener("scroll", updateViewportInset);
+    window.addEventListener("resize", updateViewportInset);
     return () => {
-      window.removeEventListener("pointermove", setCursor);
-      window.removeEventListener("pointerover", setCursor);
-      window.removeEventListener("pointerdown", press);
-      window.removeEventListener("pointerup", release);
-      window.removeEventListener("pointercancel", hide);
-      window.removeEventListener("mousemove", setCursor);
-      window.removeEventListener("mousedown", press);
-      window.removeEventListener("mouseup", release);
-      window.removeEventListener("blur", hide);
-      document.removeEventListener("mouseleave", hide);
-      document.removeEventListener("visibilitychange", hide);
+      window.visualViewport?.removeEventListener("resize", updateViewportInset);
+      window.visualViewport?.removeEventListener("scroll", updateViewportInset);
+      window.removeEventListener("resize", updateViewportInset);
     };
   }, [appShellElement]);
 
@@ -1554,8 +1531,8 @@ export default function App() {
       data-theme={resolvedTheme}
       data-background={settings?.animatedBackground ?? "aurora-glass"}
       data-palette={requestedThemePreset}
-      data-refraction={settings?.lightDeflection ?? "strong"}
-      data-cursor-light={settings?.cursorLight ?? "subtle"}
+      data-refraction={settings?.lightDeflection ?? "balanced"}
+      data-cursor-light="off"
       data-answer-surface={settings?.answerSurface ?? "glass"}
       style={{
         "--bg-app": surface.app,
@@ -1597,7 +1574,7 @@ export default function App() {
         theme={resolvedTheme ?? "dark"}
         palette={requestedThemePreset}
         accent={settings?.accentColor ?? "#58a6ff"}
-        cursorLight={settings?.cursorLight ?? "subtle"}
+        cursorLight="off"
       />
       <div className="environment-backdrop" aria-hidden="true">
         <div className="sky-layer" />
@@ -1642,7 +1619,6 @@ export default function App() {
           <feColorMatrix in="bentGlassExtreme" type="matrix" values="1.1 0 0 0 0  0 1.1 0 0 0  0 0 1.16 0 0  0 0 0 1 0" />
         </filter>
       </svg>
-      <div className="neon-cursor" aria-hidden="true" />
       <Sidebar
         sessions={sessions}
         allSessions={allSessions}

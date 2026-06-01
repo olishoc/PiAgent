@@ -54,10 +54,12 @@
   --glass-refraction-filter: url("#piagent-glass-refraction-strong") blur(30px) saturate(1.55) contrast(1.1);
   --glass-overlay-opacity: 0.82;
   --background-energy: 1;
-  --cursor-light-alpha: 0.08;
-  --cursor-light-size: 15px;
-  --cursor-light-field: 52px;
-  --cursor-surface-light: 4%;
+  --cursor-light-alpha: 0;
+  --cursor-light-size: 0px;
+  --cursor-light-field: 0px;
+  --cursor-surface-light: 0%;
+  --keyboard-inset: 0px;
+  --visual-viewport-height: 100vh;
   --text-glow-soft: 0 0 9px color-mix(in srgb, var(--text-primary) 28%, transparent), 0 0 26px color-mix(in srgb, var(--neon-cyan) 12%, transparent);
   --text-glow-strong: 0 0 14px color-mix(in srgb, var(--text-primary) 38%, transparent), 0 0 34px color-mix(in srgb, var(--neon-cyan) 18%, transparent);
 }
@@ -176,6 +178,7 @@ button:active {
   display: flex;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg-app);
   color: var(--text-primary);
@@ -212,13 +215,13 @@ button:active {
 }
 
 .app-shell.cursor-interactive {
-  --cursor-react: 1.08;
-  --cursor-surface-light: 8%;
+  --cursor-react: 1;
+  --cursor-surface-light: 0%;
 }
 
 .app-shell.cursor-pressing {
-  --cursor-react: 1.22;
-  --cursor-surface-light: 13%;
+  --cursor-react: 1;
+  --cursor-surface-light: 0%;
 }
 
 .app-shell[data-palette="ember"],
@@ -274,17 +277,17 @@ button:active {
 }
 
 .app-shell[data-cursor-light="subtle"] {
-  --cursor-light-alpha: 0.08;
-  --cursor-light-size: 15px;
-  --cursor-light-field: 52px;
-  --cursor-surface-light: 4%;
+  --cursor-light-alpha: 0;
+  --cursor-light-size: 0px;
+  --cursor-light-field: 0px;
+  --cursor-surface-light: 0%;
 }
 
 .app-shell[data-cursor-light="strong"] {
-  --cursor-light-alpha: 0.16;
-  --cursor-light-size: 24px;
-  --cursor-light-field: 84px;
-  --cursor-surface-light: 8%;
+  --cursor-light-alpha: 0;
+  --cursor-light-size: 0px;
+  --cursor-light-field: 0px;
+  --cursor-surface-light: 0%;
 }
 
 .app-shell[data-theme="light"] {
@@ -293,6 +296,7 @@ button:active {
 }
 
 .neon-cursor {
+  display: none !important;
   position: fixed;
   z-index: 120;
   left: var(--cursor-x);
@@ -685,14 +689,24 @@ button:active {
   overflow: hidden;
   border-radius: 4px;
   background:
-    center / cover no-repeat url("../piagent-icon.ico"),
+    center / contain no-repeat url("../piagent-icon.ico"),
     #050505;
+  background-origin: content-box;
+  background-clip: border-box;
+  image-rendering: auto;
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,0.14),
     0 0 0 1px rgba(255,255,255,0.06),
     0 0 22px color-mix(in srgb, var(--accent-red) 18%, transparent),
     0 8px 24px color-mix(in srgb, var(--shadow-color) 74%, transparent);
   animation: iconGlow 4.8s ease-in-out infinite;
+}
+
+.app-shell.coarse-pointer {
+  --cursor-light-alpha: 0;
+  --cursor-light-size: 0px;
+  --cursor-light-field: 0px;
+  --cursor-surface-light: 0%;
 }
 
 .app-icon-mark::before {
@@ -798,6 +812,49 @@ button:active {
 
   .toolbar-actions {
     gap: 4px;
+  }
+}
+
+@media (max-width: 860px), (pointer: coarse) {
+  .app-shell {
+    --glass-backdrop-filter: blur(15px) saturate(1.14) contrast(1.02);
+    --glass-refraction-filter: blur(15px) saturate(1.14) contrast(1.02);
+    --glass-overlay-opacity: 0.34;
+    --background-energy: 0.72;
+    --text-glow-soft: 0 0 7px color-mix(in srgb, var(--text-primary) 20%, transparent);
+    --text-glow-strong: 0 0 10px color-mix(in srgb, var(--text-primary) 26%, transparent), 0 0 18px color-mix(in srgb, var(--neon-cyan) 8%, transparent);
+  }
+
+  .app-shell::after {
+    opacity: 0.42;
+    animation-duration: 28s;
+  }
+
+  .environment-backdrop {
+    opacity: 0.42;
+  }
+
+  .environment-backdrop::before {
+    opacity: 0.18;
+    filter: blur(0.4px);
+    animation-duration: 26s;
+  }
+
+  .environment-backdrop::after,
+  .light-rain,
+  .horizon-glow {
+    opacity: 0.34;
+    animation-duration: 22s;
+  }
+
+  .sky-layer,
+  .sea-layer-a,
+  .sea-layer-b {
+    animation-duration: 24s;
+  }
+
+  .neon-cursor {
+    display: none;
   }
 }
 

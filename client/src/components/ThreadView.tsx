@@ -25,6 +25,12 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
   const programmaticScrollRef = useRef(false);
   const wasStreamingRef = useRef(false);
   const [awayFromLatest, setAwayFromLatest] = useState(false);
+  const [showFullHistory, setShowFullHistory] = useState(false);
+  const renderWindowSize = isStreaming ? 220 : 160;
+  const hiddenMessageCount = !showFullHistory && messages.length > renderWindowSize
+    ? messages.length - renderWindowSize
+    : 0;
+  const visibleThreadMessages = hiddenMessageCount > 0 ? messages.slice(-renderWindowSize) : messages;
   const toolCount = useMemo(() => messages.reduce((count, message) => {
     if (message.kind === "tool") return count + 1;
     if (message.kind === "tool_group") return count + message.tools.length;
@@ -89,6 +95,10 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
     scrollToLatest("smooth");
   };
 
+  useEffect(() => {
+    setShowFullHistory(false);
+  }, [sessionId]);
+
   return (
     <section className={`thread-shell ${compactHeader ? "compact-header" : ""}`}>
       {!compactHeader ? (
@@ -119,7 +129,12 @@ export default function ThreadView({ messages, isStreaming, footerStatus, connec
             <p>{displayName?.trim() ? `Workspace ready for ${displayName.trim()}.` : "Workspace ready."}</p>
           </div>
         ) : null}
-        {messages.map((message) => (
+        {hiddenMessageCount > 0 ? (
+          <button className="history-window-button" type="button" onClick={() => setShowFullHistory(true)}>
+            Show {hiddenMessageCount} earlier items
+          </button>
+        ) : null}
+        {visibleThreadMessages.map((message) => (
           message.kind === "tool"
           || message.kind === "tool_group"
             ? <ToolCallRow key={message.id} message={message} />
