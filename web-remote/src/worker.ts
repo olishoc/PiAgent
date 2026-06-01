@@ -91,20 +91,20 @@ function textResponse(body: string, init: ResponseInit = {}) {
   const responseBody = nonce ? body.replaceAll("__CSP_NONCE__", nonce) : body;
   return new Response(responseBody, {
     ...init,
-    headers: securityHeaders({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...(init.headers ?? {}) }, nonce)
+    headers: securityHeaders({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store, no-transform", ...(init.headers ?? {}) }, nonce)
   });
 }
 
 function jsonResponse(body: Record<string, JsonValue>, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
     ...init,
-    headers: securityHeaders({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...(init.headers ?? {}) })
+    headers: securityHeaders({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, no-transform", ...(init.headers ?? {}) })
   });
 }
 
 function noStoreText(body: string, contentType: string) {
   return new Response(body, {
-    headers: securityHeaders({ "Content-Type": contentType, "Cache-Control": "no-store" })
+    headers: securityHeaders({ "Content-Type": contentType, "Cache-Control": "no-store, no-transform" })
   });
 }
 
