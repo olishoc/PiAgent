@@ -25,6 +25,7 @@ import { clipboardExtensionArgs, clipboardRouter, clipboardStatus } from "./clip
 import { capabilitiesRouter } from "./capabilities.js";
 import { browserToolsRouter } from "./browserTools.js";
 import { createRun, getRun, isRunActive, listRuns, recordRunEvent, runLedgerRouter, stopActiveRuns, updateRun } from "./runLedger.js";
+import { remoteAccessRouter, syncRemoteAccessWithSettings } from "./remoteAccess.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -68,7 +69,9 @@ const BACKEND_FEATURES = {
   runLedger: true,
   sovereignMemory: true,
   promptCompiler: true,
-  projectSupervisor: true
+  projectSupervisor: true,
+  remoteAccess: true,
+  remoteQrPairing: true
 };
 const devServerPort = String(process.env.PIAGENT_DEV_PORT ?? "").replace(/[^\d]/g, "");
 const devServerPorts = [...new Set(["5173", "5174", devServerPort].filter(Boolean))];
@@ -224,6 +227,7 @@ app.use("/api/beautiful-ui", beautifulUiRouter);
 app.use("/api/clipboard", clipboardRouter);
 app.use("/api/capabilities", capabilitiesRouter);
 app.use("/api/runs", runLedgerRouter);
+app.use("/api/remote-access", remoteAccessRouter);
 app.use("/api", browserToolsRouter);
 app.get("/api/provider-auth", (_req, res) => {
   res.json({ ok: true, providers: readProviderAuthStatus() });
@@ -391,6 +395,12 @@ app.patch("/api/settings", (req, res, next) => {
       || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentThinking")
       || Object.prototype.hasOwnProperty.call(req.body ?? {}, "subagentIntercomMode")) {
       syncSubagentConfig(settings);
+    }
+    if (Object.prototype.hasOwnProperty.call(req.body ?? {}, "remoteAccessEnabled")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "remoteAccessRelayUrl")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "remoteAccessDesktopName")
+      || Object.prototype.hasOwnProperty.call(req.body ?? {}, "remoteAccessMode")) {
+      syncRemoteAccessWithSettings();
     }
     res.json({ settings });
   } catch (err) {
@@ -1204,4 +1214,5 @@ wss.on("connection", async (ws) => {
 
 server.listen(BACKEND_PORT, "127.0.0.1", () => {
   console.log(`pi-app running on http://127.0.0.1:${BACKEND_PORT}`);
+  syncRemoteAccessWithSettings();
 });

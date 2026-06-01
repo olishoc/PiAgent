@@ -15,6 +15,7 @@ export type AnswerSurface = "open" | "glass";
 export type MemoryMode = "off" | "manual" | "assistive" | "deep";
 export type SubagentRoutingMode = "manual" | "assistive" | "automatic";
 export type SubagentIntercomMode = "off" | "fork-only" | "always";
+export type RemoteAccessMode = "off" | "safe-chat";
 
 export interface AppSettings {
   onboardingComplete: boolean;
@@ -56,6 +57,11 @@ export interface AppSettings {
   memorySkillLearning: boolean;
   promptCompilerEnabled: boolean;
   projectSupervisorEnabled: boolean;
+  remoteAccessEnabled: boolean;
+  remoteAccessRelayUrl: string;
+  remoteAccessDesktopName: string;
+  remoteAccessMode: RemoteAccessMode;
+  remoteAccessMaxPromptChars: number;
   memoryMaxEpisodicHits: number;
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
@@ -130,6 +136,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memorySkillLearning: true,
   promptCompilerEnabled: true,
   projectSupervisorEnabled: true,
+  remoteAccessEnabled: false,
+  remoteAccessRelayUrl: "https://rblxagent.com",
+  remoteAccessDesktopName: "PiAgent Desktop",
+  remoteAccessMode: "safe-chat",
+  remoteAccessMaxPromptChars: 6000,
   memoryMaxEpisodicHits: 8,
   memoryMinConfidence: 0.35,
   theme: "dark",
@@ -173,6 +184,7 @@ const APPROVAL_POLICIES: ApprovalPolicy[] = ["on-request", "on-failure", "never"
 const MEMORY_MODES: MemoryMode[] = ["off", "manual", "assistive", "deep"];
 const SUBAGENT_ROUTING_MODES: SubagentRoutingMode[] = ["manual", "assistive", "automatic"];
 const SUBAGENT_INTERCOM_MODES: SubagentIntercomMode[] = ["off", "fork-only", "always"];
+const REMOTE_ACCESS_MODES: RemoteAccessMode[] = ["off", "safe-chat"];
 const THEMES: Array<AppSettings["theme"]> = ["dark", "light", "system"];
 const DENSITIES: Array<AppSettings["density"]> = ["comfortable", "compact"];
 const BOOLEAN_KEYS = new Set<keyof AppSettings>([
@@ -200,6 +212,7 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "memorySkillLearning",
   "promptCompilerEnabled",
   "projectSupervisorEnabled",
+  "remoteAccessEnabled",
   "longRunningMode",
   "autoLaunchAdvisor",
   "autoLaunchSubagents",
@@ -220,7 +233,8 @@ const NUMBER_KEYS = new Set<keyof AppSettings>([
   "advisorMaxTokens",
   "advisorMaxContextMessages",
   "subagentMaxParallel",
-  "subagentMaxDepth"
+  "subagentMaxDepth",
+  "remoteAccessMaxPromptChars"
 ]);
 const STRING_KEYS = new Set<keyof AppSettings>([
   "displayName",
@@ -230,6 +244,8 @@ const STRING_KEYS = new Set<keyof AppSettings>([
   "advisorProvider",
   "advisorModel",
   "subagentModel",
+  "remoteAccessRelayUrl",
+  "remoteAccessDesktopName",
   "accentColor",
   "fontFamily"
 ]);
@@ -241,6 +257,7 @@ const ENUM_VALUES: Partial<Record<keyof AppSettings, readonly string[]>> = {
   memoryMode: MEMORY_MODES,
   subagentRoutingMode: SUBAGENT_ROUTING_MODES,
   subagentIntercomMode: SUBAGENT_INTERCOM_MODES,
+  remoteAccessMode: REMOTE_ACCESS_MODES,
   subagentThinking: THINKING_LEVELS,
   answerSurface: ANSWER_SURFACES,
   theme: THEMES,
@@ -300,6 +317,11 @@ function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   loaded.memoryBudgetTokens = clampNumber(loaded.memoryBudgetTokens, DEFAULT_SETTINGS.memoryBudgetTokens, 100, 4000);
   loaded.memoryMaxEpisodicHits = clampNumber(loaded.memoryMaxEpisodicHits, DEFAULT_SETTINGS.memoryMaxEpisodicHits, 0, 30);
   loaded.memoryMinConfidence = clampNumber(loaded.memoryMinConfidence, DEFAULT_SETTINGS.memoryMinConfidence, 0, 1);
+  loaded.remoteAccessMaxPromptChars = clampNumber(loaded.remoteAccessMaxPromptChars, DEFAULT_SETTINGS.remoteAccessMaxPromptChars, 500, 12_000);
+  if (!REMOTE_ACCESS_MODES.includes(loaded.remoteAccessMode as RemoteAccessMode)) loaded.remoteAccessMode = "safe-chat";
+  if (!/^https:\/\/[A-Za-z0-9.-]+(?::\d+)?\/?$/.test(String(loaded.remoteAccessRelayUrl ?? ""))) loaded.remoteAccessRelayUrl = DEFAULT_SETTINGS.remoteAccessRelayUrl;
+  loaded.remoteAccessRelayUrl = loaded.remoteAccessRelayUrl.replace(/\/+$/, "");
+  if (!loaded.remoteAccessDesktopName?.trim()) loaded.remoteAccessDesktopName = DEFAULT_SETTINGS.remoteAccessDesktopName;
   loaded.advisorMaxUsesPerRun = clampNumber(loaded.advisorMaxUsesPerRun, DEFAULT_SETTINGS.advisorMaxUsesPerRun, 1, 12);
   loaded.advisorMaxTokens = clampNumber(loaded.advisorMaxTokens, DEFAULT_SETTINGS.advisorMaxTokens, 100, 65_536);
   loaded.advisorMaxContextMessages = clampNumber(loaded.advisorMaxContextMessages, DEFAULT_SETTINGS.advisorMaxContextMessages, 4, 80);

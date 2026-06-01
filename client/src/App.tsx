@@ -161,6 +161,11 @@ export interface AppSettings {
   memorySkillLearning: boolean;
   promptCompilerEnabled: boolean;
   projectSupervisorEnabled: boolean;
+  remoteAccessEnabled: boolean;
+  remoteAccessRelayUrl: string;
+  remoteAccessDesktopName: string;
+  remoteAccessMode: "off" | "safe-chat";
+  remoteAccessMaxPromptChars: number;
   memoryMaxEpisodicHits: number;
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
@@ -369,6 +374,11 @@ export default function App() {
     memorySkillLearning: true,
     promptCompilerEnabled: true,
     projectSupervisorEnabled: true,
+    remoteAccessEnabled: false,
+    remoteAccessRelayUrl: "https://rblxagent.com",
+    remoteAccessDesktopName: "PiAgent Desktop",
+    remoteAccessMode: "safe-chat",
+    remoteAccessMaxPromptChars: 6000,
     memoryMaxEpisodicHits: 8,
     memoryMinConfidence: 0.35,
     theme: "dark",

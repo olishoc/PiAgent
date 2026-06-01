@@ -9,6 +9,7 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
   { id: "General", label: "General", icon: "gear" },
   { id: "Apparence", label: "Apparence", icon: "spark" },
   { id: "Connexions", label: "Connexions", icon: "link" },
+  { id: "Remote", label: "Remote", icon: "link" },
   { id: "Configuration", label: "Configuration", icon: "shield" },
   { id: "Modeles", label: "Modeles", icon: "terminal" },
   { id: "Sous-agents", label: "Sous-agents", icon: "plug" },
@@ -110,6 +111,24 @@ interface RunsReport {
     failed: number;
   };
   runs: RunSummary[];
+}
+
+interface RemoteAccessStatus {
+  ok: boolean;
+  enabled: boolean;
+  connected: boolean;
+  relayUrl: string;
+  desktopId: string;
+  desktopName: string;
+  mode: "off" | "safe-chat";
+  safeMode: boolean;
+  protocolVersion: string;
+  lastError?: string;
+  lastEventAt?: string;
+  pendingApprovals: Array<{ approvalId: string; deviceName: string; createdAt: string; expiresAt: string }>;
+  devices: Array<{ id: string; name: string; createdAt: string; lastActiveAt: string; expiresAt: string; connected?: boolean }>;
+  auditEvents: Array<{ id: string; type: string; at: string; deviceId?: string; deviceName?: string; reason?: string }>;
+  currentPairing?: { pairId: string; pairUrl: string; qrSvg: string; expiresAt: string } | null;
 }
 
 async function openTarget(target: string) {
@@ -362,6 +381,8 @@ export default function SettingsView({ settings, models, initialActive = "Genera
   const [runsReport, setRunsReport] = useState<RunsReport | null>(null);
   const [runsLoading, setRunsLoading] = useState(false);
   const [runsError, setRunsError] = useState("");
+  const [remoteStatus, setRemoteStatus] = useState<RemoteAccessStatus | null>(null);
+  const [remoteLoading, setRemoteLoading] = useState(false);
   const [gitName, setGitName] = useState("");
   const [gitEmail, setGitEmail] = useState("");
   const [githubStatus, setGithubStatus] = useState<any>(null);
@@ -482,6 +503,19 @@ export default function SettingsView({ settings, models, initialActive = "Genera
     setRunsLoading(false);
   };
 
+  const refreshRemoteStatus = async (announce = false) => {
+    setRemoteLoading(true);
+    const response = await fetch(apiUrl("/api/remote-access/status")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (data?.ok) {
+      setRemoteStatus(data);
+      if (announce) setActionStatus(data.connected ? "Remote relay connected." : data.enabled ? "Remote enabled, waiting for relay connection." : "Remote access is off.");
+    } else {
+      setActionStatus(data?.error ?? "Remote status failed.");
+    }
+    setRemoteLoading(false);
+  };
+
   useEffect(() => {
     void refreshGithubStatus();
     void refreshAdvisorStatus();
@@ -489,6 +523,7 @@ export default function SettingsView({ settings, models, initialActive = "Genera
     void refreshBeautifulUiStatus();
     void refreshProviderAuth();
     void refreshCapabilities(false);
+    void refreshRemoteStatus(false);
   }, []);
 
   useEffect(() => {
@@ -498,7 +533,64 @@ export default function SettingsView({ settings, models, initialActive = "Genera
     if (active === "Configuration" && !runsReport && !runsLoading) {
       void refreshRuns(false);
     }
+    if (active === "Remote") {
+      void refreshRemoteStatus(false);
+    }
   }, [active, capabilities, capabilitiesLoading, runsReport, runsLoading]);
+
+  const createRemotePairing = async () => {
+    setActionStatus("Creating one-use pairing QR...");
+    const response = await fetch(apiUrl("/api/remote-access/pairing"), { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      setActionStatus(data.error ?? "Unable to create pairing QR.");
+      return;
+    }
+    setRemoteStatus((current) => current ? { ...current, currentPairing: data } : current);
+    await refreshRemoteStatus(false);
+    setActionStatus("Pairing QR ready. The remote device still needs desktop approval.");
+  };
+
+  const approveRemoteDevice = async (approvalId: string) => {
+    const response = await fetch(apiUrl("/api/remote-access/approve"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvalId })
+    });
+    const data = await response.json().catch(() => ({}));
+    setActionStatus(response.ok && data.ok ? "Remote device approved." : data.error ?? "Approval failed.");
+    await refreshRemoteStatus(false);
+  };
+
+  const denyRemoteDevice = async (approvalId: string) => {
+    const response = await fetch(apiUrl("/api/remote-access/deny"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvalId })
+    });
+    const data = await response.json().catch(() => ({}));
+    setActionStatus(response.ok && data.ok ? "Remote device denied." : data.error ?? "Deny failed.");
+    await refreshRemoteStatus(false);
+  };
+
+  const revokeRemoteDevice = async (deviceId: string) => {
+    const response = await fetch(apiUrl("/api/remote-access/revoke"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId })
+    });
+    const data = await response.json().catch(() => ({}));
+    setActionStatus(response.ok && data.ok ? "Remote device revoked." : data.error ?? "Revoke failed.");
+    await refreshRemoteStatus(false);
+  };
+
+  const disableRemoteAccess = async () => {
+    const response = await fetch(apiUrl("/api/remote-access/disable"), { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    onChange({ remoteAccessEnabled: false });
+    setActionStatus(response.ok && data.ok ? "Remote access disabled and live sockets closed." : data.error ?? "Disable failed.");
+    await refreshRemoteStatus(false);
+  };
 
   const saveProviderKey = async (provider: string) => {
     const apiKey = providerKeys[provider] ?? "";
@@ -879,6 +971,136 @@ export default function SettingsView({ settings, models, initialActive = "Genera
                 </article>
               );
             })}
+          </section>
+        ) : null}
+
+        {active === "Remote" ? (
+          <section className="settings-section">
+            <h2>Remote Access</h2>
+            <div className="settings-card compact">
+              <span>Status</span>
+              <strong className={remoteStatus?.connected ? "connected" : ""}>
+                {remoteStatus?.connected ? "Relay connected" : settings.remoteAccessEnabled ? "Enabled, waiting for relay" : "Off"}
+              </strong>
+              <span>Public relay</span>
+              <input value={settings.remoteAccessRelayUrl} onChange={(event) => onChange({ remoteAccessRelayUrl: event.target.value })} />
+              <span>Desktop name</span>
+              <input value={settings.remoteAccessDesktopName} onChange={(event) => onChange({ remoteAccessDesktopName: event.target.value })} />
+              <span>Remote mode</span>
+              <SettingSelect
+                value={settings.remoteAccessMode}
+                onChange={(value) => onChange({ remoteAccessMode: value })}
+                options={[
+                  { value: "safe-chat", label: "Safe chat", note: "no tools" },
+                  { value: "off", label: "Off" }
+                ]}
+              />
+              <span>Access</span>
+              <SettingSelect
+                value={settings.remoteAccessEnabled ? "on" : "off"}
+                onChange={(value) => onChange({ remoteAccessEnabled: value === "on", remoteAccessMode: value === "on" ? "safe-chat" : settings.remoteAccessMode })}
+                options={[
+                  { value: "off", label: "Disabled", note: "default" },
+                  { value: "on", label: "Enabled", note: "outbound only" }
+                ]}
+              />
+              <span>Prompt limit</span>
+              <input type="number" min="500" max="12000" step="500" value={settings.remoteAccessMaxPromptChars} onChange={(event) => onChange({ remoteAccessMaxPromptChars: Number(event.target.value) })} />
+              <span>Desktop ID</span>
+              <em>{shortId(remoteStatus?.desktopId)}</em>
+              <span>Protocol</span>
+              <em>{remoteStatus?.protocolVersion ?? "remote-v1"}</em>
+              <span>Last event</span>
+              <em>{remoteStatus?.lastEventAt ? formatRunTime(remoteStatus.lastEventAt) : "none"}</em>
+              <span>Security</span>
+              <span>Remote web is safe-chat only: no shell, no file read/write, no browser automation, no clipboard, no credentials. Pairing requires desktop approval.</span>
+              <span>Actions</span>
+              <div className="split-setting">
+                <button disabled={remoteLoading} onClick={() => void refreshRemoteStatus(true)}><Icon name="plug" /> Refresh</button>
+                <button disabled={!settings.remoteAccessEnabled} onClick={() => void createRemotePairing()}><Icon name="link" /> New QR</button>
+                <button onClick={() => void disableRemoteAccess()}><Icon name="archive" /> Disable all</button>
+              </div>
+              {remoteStatus?.lastError ? (
+                <>
+                  <span>Last error</span>
+                  <strong>{remoteStatus.lastError}</strong>
+                </>
+              ) : null}
+            </div>
+
+            {remoteStatus?.currentPairing ? (
+              <article className="provider-card remote-pairing-card">
+                <header>
+                  <div>
+                    <span>One-use QR</span>
+                    <h2>Pair a phone or laptop</h2>
+                  </div>
+                  <strong>Expires {formatRunTime(remoteStatus.currentPairing.expiresAt)}</strong>
+                </header>
+                <div className="remote-qr" dangerouslySetInnerHTML={{ __html: remoteStatus.currentPairing.qrSvg }} />
+                <p>Scan this on the remote device. The browser will wait until you approve it here. The QR secret is in the URL fragment and is never sent in the initial page request.</p>
+              </article>
+            ) : null}
+
+            <article className="provider-card">
+              <header>
+                <div>
+                  <span>Pending approval</span>
+                  <h2>Devices waiting</h2>
+                </div>
+                <strong>{remoteStatus?.pendingApprovals?.length ?? 0}</strong>
+              </header>
+              {(remoteStatus?.pendingApprovals ?? []).length ? remoteStatus!.pendingApprovals.map((item) => (
+                <div className="remote-device-row" key={item.approvalId}>
+                  <div>
+                    <strong>{item.deviceName}</strong>
+                    <span>{shortId(item.approvalId)} / expires {formatRunTime(item.expiresAt)}</span>
+                  </div>
+                  <div className="provider-actions">
+                    <button onClick={() => void approveRemoteDevice(item.approvalId)}><Icon name="check" /> Approve</button>
+                    <button onClick={() => void denyRemoteDevice(item.approvalId)}><Icon name="archive" /> Deny</button>
+                  </div>
+                </div>
+              )) : <p>No devices are waiting for approval.</p>}
+            </article>
+
+            <article className="provider-card">
+              <header>
+                <div>
+                  <span>Paired devices</span>
+                  <h2>Revocable access</h2>
+                </div>
+                <strong>{remoteStatus?.devices?.length ?? 0}</strong>
+              </header>
+              {(remoteStatus?.devices ?? []).length ? remoteStatus!.devices.map((device) => (
+                <div className="remote-device-row" key={device.id}>
+                  <div>
+                    <strong>{device.name}</strong>
+                    <span>{shortId(device.id)} / {device.connected ? "connected" : "offline"} / last {formatRunTime(device.lastActiveAt)}</span>
+                  </div>
+                  <button onClick={() => void revokeRemoteDevice(device.id)}><Icon name="archive" /> Revoke</button>
+                </div>
+              )) : <p>No paired devices yet.</p>}
+            </article>
+
+            <article className="provider-card">
+              <header>
+                <div>
+                  <span>Audit</span>
+                  <h2>Security events</h2>
+                </div>
+                <strong>{remoteStatus?.auditEvents?.length ?? 0}</strong>
+              </header>
+              {(remoteStatus?.auditEvents ?? []).length ? remoteStatus!.auditEvents.slice(0, 8).map((event) => (
+                <div className="remote-device-row" key={event.id}>
+                  <div>
+                    <strong>{event.type.replace(/_/g, " ")}</strong>
+                    <span>{formatRunTime(event.at)}{event.deviceName ? ` / ${event.deviceName}` : ""}{event.reason ? ` / ${event.reason}` : ""}</span>
+                  </div>
+                  {event.deviceId ? <em>{shortId(event.deviceId)}</em> : null}
+                </div>
+              )) : <p>No remote security events yet.</p>}
+            </article>
           </section>
         ) : null}
 

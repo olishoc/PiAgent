@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "server",
-    "client"
+    "client",
+    "web-remote"
   ],
   "scripts": {
     "dev:server": "cd server && tsx watch index.ts",
@@ -16,7 +17,9 @@
     "desktop:build": "npm run prepare:runtime && node scripts/build-desktop.mjs",
     "desktop:latest-json": "node scripts/write-latest-json.mjs",
     "desktop:update-local": "npm run desktop:build && node scripts/install-latest.mjs",
-    "build": "npm run build -w client && npm run build -w server",
+    "build": "npm run build -w client && npm run build -w server && npm run build -w web-remote",
+    "remote:deploy": "npm run deploy -w web-remote",
+    "remote:dry-run": "npm run deploy:dry-run -w web-remote",
     "smoke:backend": "npm run build -w server && node server/dist/smoke.js",
     "start": "node server/dist/index.js"
   },

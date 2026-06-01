@@ -1,0 +1,17 @@
+{
+  "name": "piagent-remote-web",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260529.0",
+    "typescript": "^5.4.0",
+    "wrangler": "^4.95.0"
+  }
+}

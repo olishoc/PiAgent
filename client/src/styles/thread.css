@@ -1776,6 +1776,56 @@
   opacity: 0.45;
 }
 
+.remote-pairing-card {
+  align-items: stretch;
+}
+
+.remote-qr {
+  display: grid;
+  place-items: center;
+  width: min(100%, 320px);
+  margin: 8px auto 16px;
+  padding: 18px;
+  border-radius: 22px;
+  background: #ffffff;
+  box-shadow:
+    0 24px 70px color-mix(in srgb, var(--shadow-color) 70%, transparent),
+    0 0 42px rgba(255, 255, 255, .16);
+}
+
+.remote-qr svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.remote-device-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 0.5px solid var(--border);
+}
+
+.remote-device-row:first-of-type {
+  border-top: 0;
+}
+
+.remote-device-row div:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.remote-device-row span {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .theme-preview {
   margin-bottom: 10px;
   padding: 10px 14px;
