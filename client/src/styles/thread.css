@@ -363,7 +363,13 @@
     0 12px 36px color-mix(in srgb, var(--shadow-color) 44%, transparent),
     0 0 22px color-mix(in srgb, var(--accent-amber) 9%, transparent),
     inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
+  cursor: pointer;
   opacity: 0.96;
+}
+
+.thinking-message:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-amber) 58%, transparent);
+  outline-offset: 3px;
 }
 
 .thinking-message.expanded {

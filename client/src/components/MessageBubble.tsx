@@ -254,14 +254,26 @@ export default function MessageBubble({ message, sessionId = "" }: { message: Te
   if (message.kind === "thinking") {
     const copy = localizedThinkingCopy(expanded);
     const detail = message.detail ?? message.text;
+    const toggleThinking = () => setExpanded((current) => !current);
     return (
-      <article className={`message thinking-message ${expanded ? "expanded" : ""} ${message.active ? "active" : "settled"}`}>
+      <article
+        className={`message thinking-message ${expanded ? "expanded" : ""} ${message.active ? "active" : "settled"}`}
+        role="button"
+        tabIndex={0}
+        aria-expanded={expanded}
+        onClick={toggleThinking}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          toggleThinking();
+        }}
+      >
         <div className="thinking-body">
-          <button className="thinking-head" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+          <div className="thinking-head" aria-expanded={expanded}>
             <span className="thinking-pulse" aria-hidden="true" />
             <span className="thinking-label">{copy.label}</span>
             <em>{copy.action}</em>
-          </button>
+          </div>
           {!expanded ? <div className="thinking-preview">{message.text}</div> : null}
           {expanded ? <div className="message-text">{detail}</div> : null}
         </div>

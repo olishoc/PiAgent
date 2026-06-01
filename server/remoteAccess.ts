@@ -149,6 +149,13 @@ function activeRemoteMode(settings: AppSettings): Exclude<RemoteAccessMode, "off
   return settings.remoteAccessMode === "full-agent" ? "full-agent" : "safe-chat";
 }
 
+function requestedRemoteMode(settings: AppSettings, command: Record<string, unknown>): Exclude<RemoteAccessMode, "off"> {
+  const requested = typeof command.remoteMode === "string" ? command.remoteMode : "";
+  if (requested === "safe-chat") return "safe-chat";
+  if (requested === "full-agent" && settings.remoteAccessMode === "full-agent") return "full-agent";
+  return activeRemoteMode(settings);
+}
+
 function remoteSessionKey(settings: AppSettings, mode: Exclude<RemoteAccessMode, "off">) {
   return JSON.stringify({
     mode,
@@ -222,7 +229,18 @@ async function runRemotePrompt(deviceId: string, command: Record<string, unknown
     sendBridge({ type: "command_response", deviceId, id: command.id, ok: false, error: "Remote prompt is empty." });
     return;
   }
-  const mode = activeRemoteMode(settings);
+  const requested = typeof command.remoteMode === "string" ? command.remoteMode : "";
+  if (requested === "full-agent" && settings.remoteAccessMode !== "full-agent") {
+    sendBridge({
+      type: "command_response",
+      deviceId,
+      id: command.id,
+      ok: false,
+      error: "Desktop remote access is configured for safe chat only. Enable Full agent on the desktop before using Desktop coding."
+    });
+    return;
+  }
+  const mode = requestedRemoteMode(settings, command);
   const remotePrompt = remotePromptForMode(mode, message);
   try {
     remoteRun = { deviceId, commandId: typeof command.id === "string" ? command.id : undefined };
@@ -249,7 +267,7 @@ async function handleRemoteCommand(message: Record<string, unknown>) {
       return;
     }
     try {
-      if (remoteSession?.isAlive()) await remoteSession.abort();
+      if (remoteSession?.isAlive()) void remoteSession.abort().catch(() => {});
     } catch {}
     closeRemoteSession();
     sendBridge({ type: "command_response", deviceId, id: command.id, ok: true });

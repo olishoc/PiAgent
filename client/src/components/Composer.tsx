@@ -9,6 +9,9 @@ interface ComposerProps {
   onSend: (text: string, attachments?: Attachment[], options?: PromptOptions) => boolean | void | Promise<boolean | void>;
   onCommand: (command: string) => void;
   onAbort: () => void;
+  onPause?: () => void;
+  onResume?: () => void;
+  canResume?: boolean;
   disabled?: boolean;
   isStreaming?: boolean;
   isAgentBusy?: boolean;
@@ -68,7 +71,7 @@ function thinkingModeLabel(level?: AppSettings["thinkingLevel"]) {
   return `${level[0].toUpperCase()}${level.slice(1)}`;
 }
 
-export default function Composer({ onSend, onCommand, onAbort, disabled, isStreaming, isAgentBusy, queuedCount = 0, settings, models = [], extensionCommands = [], onSettingsChange, onOpenContextPanel }: ComposerProps) {
+export default function Composer({ onSend, onCommand, onAbort, onPause, onResume, canResume, disabled, isStreaming, isAgentBusy, queuedCount = 0, settings, models = [], extensionCommands = [], onSettingsChange, onOpenContextPanel }: ComposerProps) {
   const [text, setText] = useState("");
   const [tools, setTools] = useState({ web: false, advisor: false, context: true });
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -552,12 +555,22 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
               </>
             )) : null}
           </div>
-          {isStreaming ? (
-            <button className="round-button stop" onClick={onAbort} aria-label="stop generation" title="Stop">
-              <Icon name="stop" />
+          {!isStreaming && canResume ? (
+            <button type="button" className="round-button resume" onClick={onResume} aria-label="resume paused answer" title="Resume paused answer">
+              <Icon name="play" />
             </button>
           ) : null}
-          <button className="send-button" onClick={() => void submit()} disabled={!text.trim() || disabled || submitting} aria-label="send" title={canSteer ? "Steer" : queueMode ? "Queue" : "Send"}>
+          {isStreaming ? (
+            <>
+              <button type="button" className="round-button pause" onClick={onPause} aria-label="pause generation" title="Pause">
+                <Icon name="pause" />
+              </button>
+              <button type="button" className="round-button stop" onClick={onAbort} aria-label="stop generation" title="Stop">
+                <Icon name="stop" />
+              </button>
+            </>
+          ) : null}
+          <button type="button" className="send-button" onClick={() => void submit()} disabled={!text.trim() || disabled || submitting} aria-label="send" title={canSteer ? "Steer" : queueMode ? "Queue" : "Send"}>
             <Icon name="arrowUp" size={15} />
           </button>
         </div>

@@ -73,6 +73,7 @@ export interface PromptOptions {
 export interface PromptMeta {
   projectId?: string;
   sessionId?: string;
+  visibleUserText?: string;
 }
 
 export interface ContextUsage {
@@ -952,6 +953,7 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
   const runningSessionIdRef = useRef("");
   const runningSessionIdsRef = useRef(new Set<string>());
   const runningRunIdsRef = useRef(new Set<string>());
+  const activeRunsRef = useRef<RunSummary[]>([]);
   const optimisticSessionIdsRef = useRef(new Set<string>());
   const pendingRef = useRef(new Map<string, (value: any) => void>());
   const pendingPromptRef = useRef(new Map<string, { message: TextMessage; resolve: (accepted: boolean) => void; sessionId?: string; timeout: number; cleanupTimeout?: number; timedOut: boolean; clientPromptId?: string }>());
@@ -1017,6 +1019,10 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    activeRunsRef.current = activeRuns;
+  }, [activeRuns]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -1157,7 +1163,8 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
     setRunningSessionIds([...runningSessionIdsRef.current]);
     setRunningSessionId(sessionId ?? "");
     setIsStreaming(true);
-    const userMessage: TextMessage = { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() };
+    const visibleUserText = meta?.visibleUserText ?? text;
+    const userMessage: TextMessage = { id: crypto.randomUUID(), kind: "user", text: visibleUserText, attachments, createdAt: Date.now() };
     try {
       const accepted = new Promise<boolean>((resolve) => {
         const timeout = window.setTimeout(() => {
@@ -1179,7 +1186,7 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
         type: "prompt",
         id,
         message: text,
-        userText: text,
+        userText: visibleUserText,
         attachments,
         options,
         ...(options?.steering ? { streamingBehavior: "steer" } : {}),
@@ -1200,8 +1207,39 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
     }
   }, [clearOptimisticSession, clearPendingPrompts]);
 
-  const abort = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: "abort", sessionId: activeSessionIdRef.current || runningSessionIdRef.current || undefined }));
+  const abort = useCallback((reason = "Run aborted by user.") => {
+    const targetSessionId = activeSessionIdRef.current || runningSessionIdRef.current || "";
+    const targetRunIds = activeRunsRef.current
+      .filter((run) => (run.sessionId || "") === targetSessionId || (!targetSessionId && ACTIVE_RUN_STATUSES.has(run.status)))
+      .map((run) => run.id);
+    if (targetSessionId) {
+      runningSessionIdsRef.current.delete(targetSessionId);
+      optimisticSessionIdsRef.current.delete(targetSessionId);
+    } else {
+      runningSessionIdsRef.current.clear();
+      optimisticSessionIdsRef.current.clear();
+    }
+    for (const runId of targetRunIds) runningRunIdsRef.current.delete(runId);
+    const nextIds = [...runningSessionIdsRef.current];
+    setRunningSessionIds(nextIds);
+    setRunningRunIds([...runningRunIdsRef.current]);
+    setActiveRuns((runs) => runs.filter((run) => !targetRunIds.includes(run.id) && (targetSessionId ? (run.sessionId || "") !== targetSessionId : false)));
+    setIsStreaming(nextIds.length > 0);
+    if (!nextIds.length || runningSessionIdRef.current === targetSessionId) {
+      runningSessionIdRef.current = nextIds[0] ?? "";
+      setRunningSessionId(nextIds[0] ?? "");
+    }
+    setFooterStatus(reason);
+    if (!targetSessionId || targetSessionId === activeSessionIdRef.current) {
+      setMessages((items) => [
+        ...settleThinking(items),
+        { id: crypto.randomUUID(), kind: "status", text: reason, createdAt: Date.now() }
+      ]);
+    }
+    const id = crypto.randomUUID();
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "abort", id, sessionId: targetSessionId || undefined, reason }));
+    }
   }, []);
 
   const replaceMessages = useCallback((next: DisplayMessage[]) => setMessages(next), []);

@@ -78,6 +78,45 @@ function appendLocalChatMessages(sessionId: string, messages: DisplayMessage[]) 
   }
 }
 
+function latestPausedRunDraft(messages: DisplayMessage[], sessionId: string, projectId?: string | null): PausedRun | null {
+  const lastUserIndex = (() => {
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      if (messages[index].kind === "user") return index;
+    }
+    return -1;
+  })();
+  if (lastUserIndex < 0) return null;
+  const user = messages[lastUserIndex];
+  if (user.kind !== "user") return null;
+  const partialAnswer = messages
+    .slice(lastUserIndex + 1)
+    .flatMap((message) => message.kind === "agent" ? [message.text] : [])
+    .join("\n\n")
+    .trim();
+  return {
+    sessionId,
+    projectId,
+    userText: user.text,
+    partialAnswer,
+    createdAt: Date.now()
+  };
+}
+
+function resumePromptFromPausedRun(paused: PausedRun) {
+  const partial = paused.partialAnswer.trim()
+    ? `Partial answer already shown before pause:\n${paused.partialAnswer.trim()}`
+    : "No assistant text was shown before the pause.";
+  return [
+    "Continue exactly from the paused answer.",
+    "Do not restart from the beginning. Do not repeat completed text except for the minimum needed to reconnect the sentence.",
+    "If the partial answer ends mid-sentence, complete that sentence first.",
+    "",
+    `Original user request:\n${paused.userText}`,
+    "",
+    partial
+  ].join("\n");
+}
+
 function normalizeProviders(rawProviders: any[]): ProviderOption[] {
   return rawProviders.map((provider) => ({
     id: String(provider.id),
@@ -235,8 +274,17 @@ interface QueuedPrompt {
   text: string;
   attachments: Attachment[];
   options?: PromptOptions;
+  visibleUserText?: string;
   sessionId: string;
   projectId?: string | null;
+  createdAt: number;
+}
+
+interface PausedRun {
+  sessionId: string;
+  projectId?: string | null;
+  userText: string;
+  partialAnswer: string;
   createdAt: number;
 }
 
@@ -423,6 +471,7 @@ export default function App() {
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [openingSessionId, setOpeningSessionId] = useState("");
   const [promptQueue, setPromptQueue] = useState<QueuedPrompt[]>([]);
+  const [pausedRuns, setPausedRuns] = useState<Record<string, PausedRun>>({});
   const processingQueuedPromptRef = useRef(false);
 
   const setActiveSessionId = (id: string) => {
@@ -1296,7 +1345,7 @@ export default function App() {
     text: string,
     attachments: Parameters<typeof agent.sendPrompt>[1] = [],
     options?: Parameters<typeof agent.sendPrompt>[2],
-    route?: { sessionId?: string; projectId?: string | null; background?: boolean; fromQueue?: boolean }
+    route?: { sessionId?: string; projectId?: string | null; background?: boolean; fromQueue?: boolean; visibleUserText?: string }
   ) => {
     const currentActiveId = route?.sessionId || activeIdRef.current || activeId;
     const routeProjectId = route && Object.prototype.hasOwnProperty.call(route, "projectId") ? route.projectId ?? "" : activeProjectId;
@@ -1328,6 +1377,7 @@ export default function App() {
           text,
           attachments: attachments ?? [],
           options: options ? { ...options, steering: false } : undefined,
+          visibleUserText: route?.visibleUserText,
           sessionId: targetSessionId,
           projectId: targetProjectId,
           createdAt: Date.now()
@@ -1361,7 +1411,11 @@ export default function App() {
       runtimeSessionRef.current = targetSessionId;
     }
     if (!backgroundSend && activeIdRef.current !== targetSessionId) return false;
-    const accepted = await agent.sendPrompt(text, attachments, options, { projectId: targetProjectId || undefined, sessionId: targetSessionId || undefined });
+    const accepted = await agent.sendPrompt(text, attachments, options, {
+      projectId: targetProjectId || undefined,
+      sessionId: targetSessionId || undefined,
+      visibleUserText: route?.visibleUserText
+    });
     if (!accepted) return false;
     const current = sessions.find((session) => session.id === targetSessionId);
     if (!current || current.messageCount < 2 || current.name === "New thread") {
@@ -1378,6 +1432,35 @@ export default function App() {
     return sendScopedPrompt(text, attachments ?? [], options);
   };
 
+  const pauseActiveRun = () => {
+    const targetSessionId = activeIdRef.current || activeId;
+    if (!targetSessionId) {
+      agent.abort("Run paused. Resume is unavailable because no active chat was selected.");
+      return;
+    }
+    const draft = latestPausedRunDraft(agent.messages, targetSessionId, activeProjectId || null);
+    if (draft) {
+      setPausedRuns((current) => ({ ...current, [targetSessionId]: draft }));
+    }
+    agent.abort("Run paused. Press Resume to continue from the last visible answer.");
+  };
+
+  const resumePausedRun = async () => {
+    const targetSessionId = activeIdRef.current || activeId;
+    const paused = targetSessionId ? pausedRuns[targetSessionId] : undefined;
+    if (!targetSessionId || !paused) return;
+    setPausedRuns((current) => {
+      const next = { ...current };
+      delete next[targetSessionId];
+      return next;
+    });
+    await sendScopedPrompt(resumePromptFromPausedRun(paused), [], undefined, {
+      sessionId: paused.sessionId,
+      projectId: paused.projectId ?? (activeProjectId || null),
+      visibleUserText: "Resume paused answer."
+    });
+  };
+
   useEffect(() => {
     if (agent.connectionState !== "ready" || processingQueuedPromptRef.current || promptQueue.length === 0) return;
     const next = promptQueue.find((item) => !isSessionRunning(item.sessionId));
@@ -1389,7 +1472,8 @@ export default function App() {
       sessionId: next.sessionId,
       projectId: next.projectId,
       background: true,
-      fromQueue: true
+      fromQueue: true,
+      visibleUserText: next.visibleUserText
     }).finally(() => {
       processingQueuedPromptRef.current = false;
       setPromptQueue((current) => [...current]);
@@ -1447,6 +1531,7 @@ export default function App() {
     return count;
   }, 0);
   const activeQueuedCount = activeId ? promptQueue.filter((item) => item.sessionId === activeId).length : promptQueue.length;
+  const pausedRunForActiveSession = activeId ? pausedRuns[activeId] : undefined;
   const runningSessionSet = new Set([
     ...(agent.runningSessionIds ?? []),
     ...((agent.activeRuns ?? []).filter((run) => run.status === "starting" || run.status === "running").flatMap((run) => run.sessionId ? [run.sessionId] : []))
@@ -1717,13 +1802,16 @@ export default function App() {
                 sessionId={activeId}
                 contextUsage={agent.contextUsage}
                 displayName={settings.displayName}
-                onAbort={agent.abort}
+                onAbort={() => agent.abort()}
                 compactHeader
               />
               <Composer
                 onSend={sendPrompt}
                 onCommand={runComposerCommand}
-                onAbort={agent.abort}
+                onAbort={() => agent.abort()}
+                onPause={pauseActiveRun}
+                onResume={resumePausedRun}
+                canResume={Boolean(pausedRunForActiveSession)}
                 disabled={agent.connectionState !== "ready" || Boolean(openingSessionId)}
                 isStreaming={visibleStreaming}
                 isAgentBusy={visibleStreaming}

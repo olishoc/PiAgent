@@ -186,9 +186,9 @@
 
 .round-button {
   display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   place-items: center;
   border: 0.5px solid var(--border);
   border-radius: 50%;
@@ -209,6 +209,14 @@
 
 .round-button.stop {
   color: var(--accent-red);
+}
+
+.round-button.pause {
+  color: color-mix(in srgb, var(--accent-amber) 76%, var(--text-primary));
+}
+
+.round-button.resume {
+  color: color-mix(in srgb, var(--accent-green) 82%, var(--text-primary));
 }
 
 .tool-pills {
@@ -444,9 +452,9 @@
 
 .send-button {
   display: grid;
-  width: 30px;
-  height: 30px;
-  flex: 0 0 30px;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
   place-items: center;
   border: none;
   border-radius: 50%;
@@ -547,9 +555,9 @@
 
   .round-button,
   .send-button {
-    width: 28px;
-    height: 28px;
-    flex-basis: 28px;
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
   }
 
   .pill-menu,

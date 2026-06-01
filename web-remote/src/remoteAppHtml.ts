@@ -59,8 +59,18 @@ const remoteShellCss = `
   text-align: center;
 }
 .remote-login-panel .login-icon {
+  display: block;
   margin-inline: auto;
-  background-size: contain;
+}
+.remote-shell .app-icon-mark {
+  border: 0 !important;
+  background: center center / 100% 100% no-repeat url("/piagent-icon.ico"), #050505 !important;
+  background-origin: border-box !important;
+  background-clip: border-box !important;
+}
+.remote-login-panel .app-icon-mark,
+.remote-shell .empty-icon.app-icon-mark {
+  border-radius: 0 !important;
 }
 .remote-login-panel h1 {
   font-weight: 640;
@@ -100,7 +110,7 @@ const remoteShellCss = `
 .remote-mode-panel.hidden {
   display: none !important;
 }
-.mobile-key-panel {
+.mobile-oauth-panel {
   padding: 12px;
   border: 0.5px solid var(--border);
   border-radius: 16px;
@@ -110,29 +120,13 @@ const remoteShellCss = `
   text-align: left;
   backdrop-filter: var(--glass-refraction-filter);
 }
-.mobile-key-panel p {
+.mobile-oauth-panel p {
   margin: 0 0 9px !important;
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.45;
 }
-.mobile-key-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 7px;
-}
-.mobile-key-row input {
-  min-width: 0;
-  height: 34px;
-  border: 0.5px solid var(--border);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-input) 68%, transparent);
-  color: var(--text-primary);
-  padding: 0 12px;
-  font-size: 11px;
-  outline: none;
-}
-.mobile-key-actions {
+.mobile-oauth-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -259,9 +253,6 @@ const remoteShellCss = `
   .remote-login-screen {
     align-items: center;
   }
-  .mobile-key-row {
-    grid-template-columns: 1fr;
-  }
 }
 `;
 
@@ -342,15 +333,11 @@ export const remoteAppHtml = `<!doctype html>
           <button id="loginDesktopModeButton" type="button">Desktop coding</button>
         </div>
         <div class="remote-mode-panel" id="mobileLoginPanel">
-          <div class="mobile-key-panel">
-            <p>Private mobile chat uses your OpenAI API key from this browser only. The Worker forwards it per request and does not store it.</p>
-            <div class="mobile-key-row">
-              <input id="mobileKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="OpenAI API key"/>
-              <button id="mobileSaveKeyButton" class="login-button" type="button">save</button>
-            </div>
-            <div class="mobile-key-actions">
-              <button id="mobileStartButton" class="login-button" type="button">open mobile chat</button>
-              <button id="mobileForgetKeyButton" class="login-button secondary" type="button">forget key</button>
+          <div class="mobile-oauth-panel">
+            <p>Mobile chat uses PiAgent's OpenAI OAuth session from your approved desktop. No OpenAI API key is accepted or stored by this public relay.</p>
+            <div class="mobile-oauth-actions">
+              <button id="mobileConnectButton" class="login-button" type="button">connect with PiAgent OAuth</button>
+              <button id="mobileStartButton" class="login-button secondary" type="button">open mobile chat</button>
             </div>
           </div>
         </div>
@@ -443,7 +430,7 @@ export const remoteAppHtml = `<!doctype html>
           <span class="brand-mark app-icon-mark" aria-hidden="true"></span>
           <strong>Pi Agent</strong>
           <em class="toolbar-ready ready" id="topStatus">Mobile chat</em>
-          <span class="toolbar-thread" id="topDetail" title="OpenAI key stays on this device">OpenAI key local</span>
+          <span class="toolbar-thread" id="topDetail" title="OpenAI OAuth stays on the paired desktop">PiAgent OAuth</span>
           <span class="toolbar-activity idle" id="toolbarActivity">remote</span>
           <span class="toolbar-detail" id="toolbarDetail" title="mobile chat mode">mobile chat</span>
         </div>
@@ -521,9 +508,7 @@ export const remoteAppHtml = `<!doctype html>
     var desktopModeButton = document.getElementById('desktopModeButton');
     var mobileLoginPanel = document.getElementById('mobileLoginPanel');
     var desktopLoginPanel = document.getElementById('desktopLoginPanel');
-    var mobileKeyInput = document.getElementById('mobileKeyInput');
-    var mobileSaveKeyButton = document.getElementById('mobileSaveKeyButton');
-    var mobileForgetKeyButton = document.getElementById('mobileForgetKeyButton');
+    var mobileConnectButton = document.getElementById('mobileConnectButton');
     var mobileStartButton = document.getElementById('mobileStartButton');
     var remoteMenu = document.getElementById('remoteMenu');
     var parametersButton = document.getElementById('parametersButton');
@@ -538,30 +523,8 @@ export const remoteAppHtml = `<!doctype html>
     var thinkingPreview = null;
     var thinkingDetail = null;
     var toolRows = {};
-    var MOBILE_KEY_STORAGE = 'piagent.mobile.openaiKey';
-    var MOBILE_MODEL_STORAGE = 'piagent.mobile.model';
-    var MOBILE_MODELS = ['gpt-4.1-mini', 'gpt-4.1', 'gpt-4o-mini'];
-
-    function mobileKey() {
-      return localStorage.getItem(MOBILE_KEY_STORAGE) || '';
-    }
-
-    function mobileModel() {
-      var value = localStorage.getItem(MOBILE_MODEL_STORAGE) || MOBILE_MODELS[0];
-      return MOBILE_MODELS.indexOf(value) >= 0 ? value : MOBILE_MODELS[0];
-    }
-
-    function cycleMobileModel() {
-      var current = mobileModel();
-      var next = MOBILE_MODELS[(MOBILE_MODELS.indexOf(current) + 1) % MOBILE_MODELS.length];
-      localStorage.setItem(MOBILE_MODEL_STORAGE, next);
-      showMobileChat(true);
-      appendStatus('Mobile model: ' + next);
-    }
-
-    function hasMobileKey() {
-      return mobileKey().length > 20;
-    }
+    localStorage.removeItem('piagent.mobile.openaiKey');
+    localStorage.removeItem('piagent.mobile.model');
 
     function updateModeButtons() {
       var mobile = activeMode === 'mobile';
@@ -581,17 +544,17 @@ export const remoteAppHtml = `<!doctype html>
       localStorage.setItem('piagent.remote.webMode', activeMode);
       updateModeButtons();
       if (activeMode === 'mobile') {
-        if (ws) ws.close();
+        connect('mobile');
         setRunActive(false);
-        if (!hasMobileKey() && !(options && options.keepChat)) {
-          setStatus('Mobile chat', 'add OpenAI key', 'bad');
-          showLogin('Use Pi Agent on this device.', 'Add an OpenAI API key to start mobile chat');
+        if (!desktopId) {
+          setStatus('Not paired', 'connect PiAgent OAuth', 'bad');
+          showLogin('Use Pi Agent on this device.', 'Pair with desktop PiAgent OAuth to start mobile chat');
           restoreIntro(false);
         } else {
           showMobileChat(options && options.keepChat);
         }
       } else if (desktopId) {
-        connect();
+        connect('desktop');
       } else {
         setStatus('Not paired', 'scan QR from desktop', 'bad');
         showLogin('Connect this device to your desktop.', 'scan a QR from PiAgent Desktop');
@@ -603,9 +566,9 @@ export const remoteAppHtml = `<!doctype html>
       updateModeButtons();
       if (activeMode === 'mobile') {
         if (loginLead) loginLead.textContent = text || 'Use Pi Agent on this device.';
-        if (loginState) loginState.textContent = hasMobileKey() ? 'OpenAI key saved on this browser.' : 'Add an OpenAI API key or continue without saving until you send.';
-        if (loginReconnectButton) loginReconnectButton.classList.add('hidden');
-        if (loginForgetButton) loginForgetButton.classList.add('hidden');
+        if (loginState) loginState.textContent = detail || (desktopId ? 'Paired with PiAgent OAuth.' : 'Pair this device with PiAgent Desktop first.');
+        if (loginReconnectButton) loginReconnectButton.classList.toggle('hidden', !desktopId);
+        if (loginForgetButton) loginForgetButton.classList.toggle('hidden', !desktopId);
         return;
       }
       if (loginLead) loginLead.textContent = text || 'Connect this device to your desktop.';
@@ -684,7 +647,7 @@ export const remoteAppHtml = `<!doctype html>
         : state === 'run'
           ? 'Working'
           : activeMode === 'mobile'
-            ? 'OpenAI key required'
+            ? 'Pair desktop OAuth'
             : 'Desktop required';
       topStatus.className = 'toolbar-ready ' + (state === 'ok' ? 'ready' : state === 'run' ? 'running' : 'error');
       sidebarDot.className = 'status-dot ' + (state === 'ok' ? 'done' : state === 'run' ? 'running' : 'error');
@@ -722,12 +685,12 @@ export const remoteAppHtml = `<!doctype html>
         chatColumn.classList.remove('has-thread');
       }
       composer.classList.remove('hidden');
-      if (introText) introText.textContent = 'Mobile chat runs here. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.';
-      setStatus('Mobile chat', hasMobileKey() ? 'OpenAI key local' : 'add OpenAI key', hasMobileKey() ? 'ok' : 'bad');
-      if (composerStatus) composerStatus.textContent = hasMobileKey() ? 'Mobile ready' : 'OpenAI key required';
+      if (introText) introText.textContent = 'Mobile chat uses PiAgent OAuth in safe mode. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.';
+      setStatus(desktopId ? 'Mobile chat' : 'Not paired', desktopId ? 'PiAgent OAuth safe chat' : 'pair PiAgent OAuth', desktopId ? 'ok' : 'bad');
+      if (composerStatus) composerStatus.textContent = desktopId ? 'Mobile ready' : 'Pair with PiAgent OAuth';
       promptEl.placeholder = 'Ask Pi Agent mobile...';
       document.getElementById('remoteAccessButton').innerHTML = '${icon("shield", 13)} Mobile chat ${icon("chevronDown", 12)}';
-      document.getElementById('modelButton').innerHTML = mobileModel() + ' ${icon("chevronDown", 12)}';
+      document.getElementById('modelButton').innerHTML = 'PiAgent OAuth ${icon("chevronDown", 12)}';
     }
 
     function scrollToBottom() {
@@ -901,11 +864,10 @@ export const remoteAppHtml = `<!doctype html>
       return data;
     }
 
-    async function sendMobilePrompt(text) {
-      var key = mobileKey();
-      if (!key) {
-        appendStatus('Add an OpenAI API key for Mobile chat, or switch to Desktop coding.', true);
-        showLogin('Use Pi Agent on this device.', 'OpenAI API key required for mobile chat');
+    function sendMobilePrompt(text) {
+      if (!desktopId) {
+        appendStatus('Pair this device with PiAgent Desktop OAuth before mobile chat.', true);
+        showLogin('Use Pi Agent on this device.', 'Pair with desktop PiAgent OAuth first');
         setRunActive(false);
         return;
       }
@@ -915,35 +877,12 @@ export const remoteAppHtml = `<!doctype html>
       thinkingPreview = null;
       thinkingDetail = null;
       toolRows = {};
-      setStatus('Working', 'mobile OpenAI request', 'run');
+      setStatus('Working', 'PiAgent OAuth safe chat', 'run');
       ensureThinking();
-      appendThinking('Contacting OpenAI from mobile chat...');
-      try {
-        var response = await fetch('/api/mobile/chat', {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + key
-          },
-          body: JSON.stringify({ message: text, model: mobileModel() })
-        });
-        var data = await response.json().catch(function () { return {}; });
-        if (!response.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + response.status));
-        finishThinking();
-        assistantEl = createAgentMessage();
-        assistantEl.querySelector('.agent-text').textContent = data.text || '';
-        setStatus('Mobile chat', 'OpenAI key local', 'ok');
-      } catch (error) {
-        finishThinking();
-        appendStatus(error.message || 'Mobile chat failed.', true);
-        setStatus('Mobile chat', 'check API key', 'bad');
-      } finally {
+      appendThinking('Sending through the approved PiAgent OAuth desktop session...');
+      if (!sendCommand({ type:'prompt', id: token(10), message: text, remoteMode: 'safe-chat' })) {
         setRunActive(false);
-        assistantEl = null;
-        thinkingEl = null;
-        thinkingPreview = null;
-        thinkingDetail = null;
+        setStatus('Disconnected', 'open PiAgent desktop or reconnect', 'bad');
       }
     }
 
@@ -956,37 +895,59 @@ export const remoteAppHtml = `<!doctype html>
       return true;
     }
 
-    function connect() {
-      activeMode = 'desktop';
-      localStorage.setItem('piagent.remote.webMode', activeMode);
+    function applyComposerMode() {
+      promptEl.placeholder = activeMode === 'mobile' ? 'Ask Pi Agent mobile...' : 'Ask Pi Agent on your desktop...';
+      document.getElementById('remoteAccessButton').innerHTML = activeMode === 'mobile'
+        ? '${icon("shield", 13)} Mobile chat ${icon("chevronDown", 12)}'
+        : '${icon("shield", 13)} Desktop coding ${icon("chevronDown", 12)}';
+      document.getElementById('modelButton').innerHTML = activeMode === 'mobile'
+        ? 'PiAgent OAuth ${icon("chevronDown", 12)}'
+        : '5.5 High ${icon("chevronDown", 12)}';
+    }
+
+    function connectedDetail() {
+      return activeMode === 'mobile' ? 'PiAgent OAuth safe chat' : 'Pi Agent Ready';
+    }
+
+    function connect(mode) {
+      if (mode === 'mobile' || mode === 'desktop') {
+        activeMode = mode;
+        localStorage.setItem('piagent.remote.webMode', activeMode);
+      }
       updateModeButtons();
       if (!desktopId) {
-        setStatus('Not paired', 'scan QR from desktop', 'bad');
-        showLogin('Connect this device to your desktop.', 'scan a QR from PiAgent Desktop');
+        setStatus('Not paired', activeMode === 'mobile' ? 'pair PiAgent OAuth' : 'scan QR from desktop', 'bad');
+        showLogin(
+          activeMode === 'mobile' ? 'Use Pi Agent on this device.' : 'Connect this device to your desktop.',
+          activeMode === 'mobile' ? 'pair with desktop PiAgent OAuth first' : 'scan a QR from PiAgent Desktop'
+        );
         restoreIntro(false);
-        return;
+        return false;
       }
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-      setStatus('Connecting', 'waiting for desktop relay', 'run');
-      promptEl.placeholder = 'Ask Pi Agent on your desktop...';
-      document.getElementById('remoteAccessButton').innerHTML = '${icon("shield", 13)} Desktop coding ${icon("chevronDown", 12)}';
-      document.getElementById('modelButton').innerHTML = '5.5 High ${icon("chevronDown", 12)}';
+      applyComposerMode();
+      if (activeMode === 'mobile') showMobileChat(true);
+      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+        if (ws.readyState === WebSocket.OPEN) setStatus(activeMode === 'mobile' ? 'Mobile chat' : 'Connected', connectedDetail(), 'ok');
+        return true;
+      }
+      setStatus('Connecting', activeMode === 'mobile' ? 'connecting PiAgent OAuth' : 'waiting for desktop relay', 'run');
       var scheme = location.protocol === 'https:' ? 'wss://' : 'ws://';
       ws = new WebSocket(scheme + location.host + '/relay/client?desktopId=' + encodeURIComponent(desktopId));
       ws.onopen = function () {
-        setStatus('Connected', 'Pi Agent Ready', 'ok');
+        setStatus(activeMode === 'mobile' ? 'Mobile chat' : 'Connected', connectedDetail(), 'ok');
         showApp();
         showChat();
-        appendStatus('Connected to your desktop PiAgent.');
+        appendStatus(activeMode === 'mobile' ? 'Connected to PiAgent OAuth safe chat.' : 'Connected to your desktop PiAgent.');
       };
       ws.onclose = function () {
-        if (activeMode !== 'desktop') return;
-        setStatus('Disconnected', 'open PiAgent desktop or reconnect', 'bad');
-        showLogin('Desktop connection paused.', 'tap reconnect when the desktop is online');
+        setStatus('Disconnected', activeMode === 'mobile' ? 'open PiAgent desktop' : 'open PiAgent desktop or reconnect', 'bad');
+        showLogin(
+          activeMode === 'mobile' ? 'PiAgent OAuth connection paused.' : 'Desktop connection paused.',
+          'tap reconnect when the desktop is online'
+        );
         setRunActive(false);
       };
       ws.onerror = function () {
-        if (activeMode !== 'desktop') return;
         setStatus('Connection error', 'pair again if needed', 'bad');
         showLogin('Connection error.', 'pair again if needed');
       };
@@ -994,13 +955,16 @@ export const remoteAppHtml = `<!doctype html>
         var message = {};
         try { message = JSON.parse(event.data); } catch (error) { return; }
         if (message.type === 'remote_ready') {
-          setStatus('Connected', message.desktopConnected ? 'Pi Agent Ready' : 'desktop offline', message.desktopConnected ? 'ok' : 'bad');
-          if (message.desktopConnected) showChat();
+          setStatus(activeMode === 'mobile' ? 'Mobile chat' : 'Connected', message.desktopConnected ? connectedDetail() : 'desktop offline', message.desktopConnected ? 'ok' : 'bad');
+          if (message.desktopConnected) {
+            if (activeMode === 'mobile') showMobileChat(true);
+            else showChat();
+          }
           else showLogin('Desktop is offline.', 'open PiAgent on the computer, then reconnect');
           return;
         }
         if (message.type === 'desktop_status') {
-          setStatus('Connected', 'Pi Agent Ready', 'ok');
+          setStatus(activeMode === 'mobile' ? 'Mobile chat' : 'Connected', connectedDetail(), 'ok');
           return;
         }
         if (message.type === 'desktop_offline') {
@@ -1134,7 +1098,7 @@ export const remoteAppHtml = `<!doctype html>
           desktopId = pair.desktopId;
           setStatus('Approved', 'connecting', 'ok');
           setLogin('Approved.', 'connecting to desktop');
-          connect();
+          connect(activeMode);
           return true;
         }
         if (state.status === 'denied') {
@@ -1180,32 +1144,13 @@ export const remoteAppHtml = `<!doctype html>
       thinkingDetail = null;
       toolRows = {};
       setStatus('Working', 'Pi Agent is running', 'run');
-      if (!sendCommand({ type:'prompt', id: token(10), message: text })) {
+      if (!sendCommand({ type:'prompt', id: token(10), message: text, remoteMode: 'full-agent' })) {
         setRunActive(false);
         setStatus('Disconnected', 'open PiAgent desktop or reconnect', 'bad');
       }
     });
 
     abortButton.addEventListener('click', abortRun);
-    function saveMobileKey() {
-      var value = (mobileKeyInput && mobileKeyInput.value || '').trim();
-      if (!value) {
-        setLogin('Use Pi Agent on this device.', 'Paste an OpenAI API key first');
-        return;
-      }
-      localStorage.setItem(MOBILE_KEY_STORAGE, value);
-      if (mobileKeyInput) mobileKeyInput.value = '';
-      setLogin('Use Pi Agent on this device.', 'OpenAI key saved on this browser');
-      showMobileChat(true);
-    }
-
-    function forgetMobileKey() {
-      localStorage.removeItem(MOBILE_KEY_STORAGE);
-      if (mobileKeyInput) mobileKeyInput.value = '';
-      setLogin('Use Pi Agent on this device.', 'OpenAI API key forgotten');
-      showMobileChat(true);
-    }
-
     function forgetDevice() {
       clearPendingPair();
       localStorage.removeItem('piagent.remote.desktopId');
@@ -1223,11 +1168,10 @@ export const remoteAppHtml = `<!doctype html>
     loginDesktopModeButton.addEventListener('click', function () { setMode('desktop'); });
     mobileModeButton.addEventListener('click', function () { setMode('mobile'); });
     desktopModeButton.addEventListener('click', function () { setMode('desktop'); });
-    mobileSaveKeyButton.addEventListener('click', saveMobileKey);
-    mobileForgetKeyButton.addEventListener('click', forgetMobileKey);
-    mobileStartButton.addEventListener('click', function () { showMobileChat(false); });
-    reconnectButton.addEventListener('click', connect);
-    loginReconnectButton.addEventListener('click', connect);
+    mobileConnectButton.addEventListener('click', function () { connect('mobile'); });
+    mobileStartButton.addEventListener('click', function () { if (connect('mobile')) showMobileChat(false); });
+    reconnectButton.addEventListener('click', function () { connect(activeMode); });
+    loginReconnectButton.addEventListener('click', function () { connect(activeMode); });
     loginForgetButton.addEventListener('click', forgetDevice);
     document.getElementById('toggleSidebarButton').addEventListener('click', function () { sidebar.classList.toggle('collapsed'); });
     document.getElementById('backButton').addEventListener('click', function () { history.back(); });
@@ -1258,7 +1202,7 @@ export const remoteAppHtml = `<!doctype html>
       }
     });
     document.getElementById('modelButton').addEventListener('click', function () {
-      if (activeMode === 'mobile') cycleMobileModel();
+      if (activeMode === 'mobile') appendStatus('Model selection is inherited from PiAgent OAuth on the paired desktop.');
       else appendStatus('Model and access settings are inherited from PiAgent Desktop.');
     });
     ['searchButton','extensionsButton','automationsButton','projectsButton','unassociatedButton','toolbarSearchButton','toolbarProjectsButton','toolbarExtensionsButton','addButton'].forEach(function (id) {
@@ -1306,14 +1250,13 @@ export const remoteAppHtml = `<!doctype html>
         return;
       }
       if (activeMode === 'mobile') {
-        if (hasMobileKey()) {
-          showMobileChat(false);
-        } else {
-          setStatus('Mobile chat', 'add OpenAI key', 'bad');
-          showLogin('Use Pi Agent on this device.', 'Add an OpenAI API key to start mobile chat');
+        if (desktopId) connect('mobile');
+        else {
+          setStatus('Not paired', 'pair PiAgent OAuth', 'bad');
+          showLogin('Use Pi Agent on this device.', 'Pair with desktop PiAgent OAuth first');
           restoreIntro(false);
         }
-      } else if (desktopId) connect();
+      } else if (desktopId) connect('desktop');
       else {
         setStatus('Not paired', 'scan QR from desktop', 'bad');
         showLogin('Connect this device to your desktop.', 'scan a QR from PiAgent Desktop');

@@ -204,6 +204,22 @@ function runtimeStatePayload() {
   };
 }
 
+function abortRuntimeRun(runtime: AgentRuntimeSlot, runId: string | undefined, reason = "Run aborted by user.") {
+  if (runId) {
+    const current = getRun(runId);
+    if (current && isRunActive(current.status)) {
+      updateRun(runId, { status: "aborted", lastEventType: "abort", lastError: reason });
+    }
+    forgetRuntimeRun(runtime, runId);
+  }
+  runtime.running = false;
+  runtime.currentPromptId = undefined;
+  runtime.session.onEvent = () => {};
+  runtime.session.kill();
+  agentRuntimes.delete(runtime.key);
+  broadcastRuntimeState();
+}
+
 app.use(cors({
   origin(origin, callback) {
     if (!origin || allowedOrigins.some((pattern) => pattern.test(origin))) {
@@ -942,6 +958,23 @@ wss.on("connection", async (ws) => {
           if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "response", id: cmd.id, command: cmd.type, success: false, error: "Provider is not connected." }));
           return;
         }
+        if (cmd.type === "abort") {
+          const runId = runtime.currentRunId;
+          const reason = typeof cmd.reason === "string" && cmd.reason.trim()
+            ? cmd.reason.trim().slice(0, 300)
+            : "Run aborted by user.";
+          abortRuntimeRun(runtime, runId, reason);
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({
+            type: "response",
+            id: cmd.id,
+            command: cmd.type,
+            success: true,
+            sessionId: runtime.sessionId ?? undefined,
+            projectId: runtime.projectId ?? undefined,
+            runId
+          }));
+          return;
+        }
         let runId: string | undefined;
         const isPromptCommand = cmd.type === "prompt" && typeof cmd.message === "string";
         const isSteeringPrompt = isPromptCommand && cmd.streamingBehavior === "steer";
@@ -1013,8 +1046,9 @@ wss.on("connection", async (ws) => {
           runtime.projectId = commandProjectId;
           runtime.sessionId = commandSessionId;
           const visibleMessage = String(cmd.userText ?? cmd.message ?? "");
-          const attachmentContext = visibleMessage.trimStart().startsWith("/") ? "" : buildAttachmentPromptContext(cmd.attachments);
-          const promptInput = `${visibleMessage}${attachmentContext}`;
+          const rawPromptMessage = String(cmd.message ?? visibleMessage);
+          const attachmentContext = rawPromptMessage.trimStart().startsWith("/") ? "" : buildAttachmentPromptContext(cmd.attachments);
+          const promptInput = `${rawPromptMessage}${attachmentContext}`;
           const automaticMemory = settings.memoryMode === "assistive" || settings.memoryMode === "deep";
           if (settings.memoryEnabled && settings.memoryAutopilot && !settings.memoryPrivateMode && settings.memoryLearnFromChats && automaticMemory) {
             observeMemoryTurn({
@@ -1127,16 +1161,16 @@ wss.on("connection", async (ws) => {
           if (!wroteCompilerContext) clearPromptCompilerContext(runtime.session.promptContextPath);
         }
         if (cmd.type === "prompt" && !runtime.currentPromptId) runtime.currentPromptId = typeof cmd.id === "string" ? cmd.id : undefined;
-        if (cmd.type === "abort" && runtime.currentRunId) {
-          runId = runtime.currentRunId;
-        }
         let result;
         try {
           result = await runtime.session.send(outbound);
         } catch (err) {
           if (promptContextWritten) clearPromptCompilerContext(runtime.session.promptContextPath);
+          const message = err instanceof Error ? err.message : "Pi RPC send failed.";
+          if (isPromptCommand && !runtime.running && !agentRuntimes.has(runtime.key) && /Pi process exited|process exited|killed|closed/i.test(message)) {
+            return;
+          }
           if (isPromptCommand && runId) {
-            const message = err instanceof Error ? err.message : "Pi RPC send failed.";
             updateRun(runId, { status: "failed", lastError: message, lastEventType: "send_error" });
             runtime.running = false;
             forgetRuntimeRun(runtime, runId);
@@ -1147,14 +1181,12 @@ wss.on("connection", async (ws) => {
           if (cmd.type === "prompt" && runtime.currentPromptId === cmd.id) runtime.currentPromptId = undefined;
         }
         if (promptContextWritten) clearPromptCompilerContext(runtime.session.promptContextPath);
-        if (cmd.type === "abort" && runId) {
-          const current = getRun(runId);
-          if (current && isRunActive(current.status)) {
-            updateRun(runId, { status: "aborted", lastEventType: "abort", lastError: "Run aborted by user." });
-            runtime.running = false;
-            forgetRuntimeRun(runtime, runId);
-            broadcastRuntimeState();
-          }
+        if (isPromptCommand
+          && result?.success === false
+          && !runtime.running
+          && !agentRuntimes.has(runtime.key)
+          && /Pi process exited|process exited|killed|closed/i.test(String(result?.error ?? ""))) {
+          return;
         }
         if (isPromptCommand && !isSteeringPrompt && runId) {
           const current = getRun(runId);
