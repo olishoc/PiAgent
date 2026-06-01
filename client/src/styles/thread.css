@@ -243,6 +243,7 @@
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .empty-suggestions {
@@ -1936,6 +1937,11 @@
     max-width: 230px;
     font-size: 23px;
     line-height: 1.16;
+  }
+
+  .empty-thread p {
+    width: min(230px, 100%);
+    max-width: 230px;
   }
 }
 

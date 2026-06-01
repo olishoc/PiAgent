@@ -1,0 +1,45 @@
+name: remote-web
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/remote-web.yml"
+      - "web-remote/**"
+      - "client/src/styles/**"
+      - "client/src/lib/animatedBackdropCore.ts"
+      - "client/src/components/AnimatedBackdrop.tsx"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: remote-web-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build remote web
+        run: npm run build -w web-remote
+
+      - name: Validate Cloudflare Worker deploy
+        run: npm run remote:dry-run
+
+      - name: Deploy Cloudflare Worker
+        run: npm run remote:deploy

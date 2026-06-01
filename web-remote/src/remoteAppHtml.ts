@@ -1,3 +1,115 @@
+import { desktopBackdropScript } from "./generatedDesktopBackdrop";
+import { desktopUiCss } from "./generatedDesktopUi";
+
+const iconPaths = {
+  archive: "M4 7h16M6 7v12h12V7M9 11h6",
+  arrowDown: "M12 5v14M6 13l6 6 6-6",
+  arrowLeft: "M15 6l-6 6 6 6",
+  arrowRight: "M9 6l6 6-6 6",
+  arrowUp: "M12 19V5M6 11l6-6 6 6",
+  check: "M5 12l4 4L19 6",
+  chevronDown: "M6 9l6 6 6-6",
+  circle: "M12 21a9 9 0 100-18 9 9 0 000 18",
+  clock: "M12 21a9 9 0 100-18 9 9 0 000 18M12 7v5l3 2",
+  copy: "M8 8h11v11H8V8M5 16H4a1 1 0 01-1-1V4a1 1 0 011-1h11a1 1 0 011 1v1",
+  folder: "M3 7h7l2 2h9v9a2 2 0 01-2 2H5a2 2 0 01-2-2V7",
+  gear: "M12 15.5a3.5 3.5 0 100-7 3.5 3.5 0 000 7M19 12a7 7 0 00-.1-1l2-1.5-2-3.4-2.4 1a7 7 0 00-1.8-1L14.4 3h-4.8l-.3 3.1a7 7 0 00-1.8 1l-2.4-1-2 3.4 2 1.5a7 7 0 000 2l-2 1.5 2 3.4 2.4-1a7 7 0 001.8 1l.3 3.1h4.8l.3-3.1a7 7 0 001.8-1l2.4 1 2-3.4-2-1.5c.1-.3.1-.7.1-1z",
+  layout: "M4 5h16v14H4V5M9 5v14M4 10h5",
+  paperclip: "M21 12l-8.5 8.5a6 6 0 01-8.5-8.5L13 3a4 4 0 115.7 5.7l-9 9a2 2 0 11-2.8-2.8l8.5-8.5",
+  play: "M8 5v14l11-7-11-7",
+  plug: "M8 2v6M16 2v6M7 8h10v4a5 5 0 01-10 0V8M12 17v5",
+  plus: "M12 5v14M5 12h14",
+  search: "M11 19a8 8 0 100-16 8 8 0 000 16M21 21l-4.3-4.3",
+  shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10",
+  spark: "M12 2l1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7L12 2M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8L19 16",
+  stop: "M7 7h10v10H7z",
+  thumbDown: "M10 14H5a2 2 0 01-2-2v-1a2 2 0 012-2h2l2-5h7a2 2 0 012 2v7l-4 7h-2l1-6h-3zM17 5h3v8h-3",
+  thumbUp: "M10 10H5a2 2 0 00-2 2v1a2 2 0 002 2h2l2 5h7a2 2 0 002-2v-7l-4-7h-2l1 6h-3zM17 11h3v8h-3",
+  x: "M6 6l12 12M18 6L6 18"
+} as const;
+
+function icon(name: keyof typeof iconPaths, size = 16) {
+  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" aria-hidden="true"><path d="${iconPaths[name]}"></path></svg>`;
+}
+
+const remoteShellCss = `
+.remote-shell .remote-menu {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 48px;
+  z-index: 40;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 0.5px solid var(--border);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg-menu) 86%, transparent);
+  box-shadow: 0 22px 64px color-mix(in srgb, var(--shadow-color) 92%, transparent), inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
+  backdrop-filter: var(--glass-refraction-filter);
+}
+.remote-shell .remote-menu.hidden,
+.remote-shell .hidden {
+  display: none !important;
+}
+.remote-shell .remote-menu button {
+  min-height: 30px;
+  border: 0.5px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  text-align: left;
+  padding: 0 8px;
+}
+.remote-shell .remote-menu button:hover {
+  border-color: var(--border);
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+.remote-shell .thread-status.error {
+  color: color-mix(in srgb, var(--accent-red) 72%, #ffffff);
+}
+.remote-shell .thread-feed {
+  isolation: isolate;
+}
+.remote-shell .thread-feed .empty-thread.remote-pairing {
+  min-height: 100%;
+}
+.remote-shell .agent-message .agent-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.remote-shell .user-message .message-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.remote-shell .toolbar-actions button:disabled,
+.remote-shell .sidebar-actions button:disabled {
+  opacity: 0.48;
+}
+.remote-shell .composer-meta .remote-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 0.5px solid color-mix(in srgb, var(--border) 84%, transparent);
+  border-radius: 999px;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.remote-shell .remote-only-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+@media (max-width: 860px) {
+  .remote-shell .project-list {
+    overflow: visible;
+  }
+}
+`;
+
 export const remoteAppHtml = `<!doctype html>
 <html lang="en">
 <head>
@@ -5,86 +117,184 @@ export const remoteAppHtml = `<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="description" content="Secure remote access to your local PiAgent desktop."/>
   <meta name="theme-color" content="#050506"/>
+  <link rel="icon" href="/piagent-icon.ico"/>
   <title>PiAgent Remote</title>
-  <style nonce="__CSP_NONCE__">
-    :root{color-scheme:dark;--bg:#050506;--panel:rgba(19,20,23,.66);--panel-strong:rgba(31,32,35,.84);--panel-soft:rgba(255,255,255,.055);--text:#f5f5f2;--muted:#aeb3b8;--faint:#747b84;--line:rgba(255,255,255,.115);--line-strong:rgba(255,255,255,.22);--accent:#ff4d43;--accent2:#ffffff;--ok:#7df3a2;--warn:#ffd37a;--bad:#ff7b72;--shadow:rgba(0,0,0,.44);--lane:min(820px,calc(100vw - 34px));--font:"OpenAI Sans",Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    *{box-sizing:border-box}html,body{height:100%;overflow:hidden}body{margin:0;font-family:var(--font);background:var(--bg);color:var(--text);font-size:13.5px;line-height:1.54;-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}
-    button,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.48}
-    .environment{position:fixed;inset:-8vh -8vw;z-index:0;overflow:hidden;background:radial-gradient(circle at 18% 12%,rgba(255,255,255,.16),transparent 20rem),radial-gradient(circle at 72% 6%,rgba(255,77,67,.22),transparent 25rem),linear-gradient(180deg,#050506 0%,#0a0b0e 46%,#050506 100%)}
-    .environment:before{content:"";position:absolute;inset:-20%;background:conic-gradient(from 210deg at 50% 42%,transparent,rgba(255,77,67,.22),rgba(255,255,255,.13),rgba(91,141,255,.18),transparent 72%);filter:blur(50px);opacity:.58;animation:aurora 22s ease-in-out infinite alternate}
-    .environment:after{content:"";position:absolute;left:-10%;right:-10%;bottom:-10%;height:48%;background:repeating-radial-gradient(ellipse at 50% 115%,rgba(255,255,255,.11) 0 1px,transparent 1px 18px),linear-gradient(180deg,transparent,rgba(255,255,255,.08));filter:blur(.2px);transform-origin:center bottom;animation:waves 13s linear infinite}
-    .stars{position:absolute;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,.72) 0 1px,transparent 1.7px),radial-gradient(circle,rgba(255,77,67,.5) 0 1px,transparent 1.6px);background-size:130px 120px,210px 180px;background-position:0 0,40px 50px;opacity:.18;animation:stars 46s linear infinite}
-    @keyframes aurora{0%{transform:translate3d(-3%,2%,0) rotate(-5deg) scale(1)}100%{transform:translate3d(4%,-2%,0) rotate(7deg) scale(1.08)}}@keyframes waves{0%{background-position:0 0,0 0;transform:translateY(0) scaleY(1)}100%{background-position:180px 0,0 0;transform:translateY(1.5%) scaleY(1.03)}}@keyframes stars{to{background-position:260px 120px,250px 230px}}
-    .app{position:relative;z-index:1;height:100dvh;display:grid;grid-template-columns:264px 1fr;padding:12px;gap:12px}
-    .rail,.main,.composer,.tool-row,.message.user,.thinking-card,.intro-card,.status-pill,.quick button{border:1px solid var(--line);background:linear-gradient(135deg,rgba(255,255,255,.105),rgba(255,255,255,.04));box-shadow:0 22px 70px var(--shadow),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(24px) saturate(1.35);-webkit-backdrop-filter:blur(24px) saturate(1.35)}
-    .rail{border-radius:24px;padding:14px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
-    .brand{display:flex;align-items:center;gap:11px;padding:3px 2px 13px}.pi-mark{width:34px;height:34px;border-radius:10px;background:#050505;border:1px solid rgba(255,255,255,.24);display:grid;place-items:center;box-shadow:0 0 24px rgba(255,77,67,.32),inset 0 1px 0 rgba(255,255,255,.12)}.pi-mark span{display:grid;place-items:center;width:20px;height:20px;background:#bd332e;color:#fff;font-weight:800;font-size:15px;line-height:1;border:1px solid rgba(255,255,255,.78);text-shadow:0 0 12px rgba(255,255,255,.8)}.brand strong{font-size:15px;letter-spacing:-.02em;text-shadow:0 0 14px rgba(255,255,255,.22)}.brand em{display:block;color:var(--muted);font-size:11px;font-style:normal}
-    .nav-block{border-top:1px solid var(--line);padding-top:12px;margin-top:2px;display:grid;gap:8px}.nav-row{min-height:34px;display:flex;align-items:center;justify-content:space-between;gap:10px;border-radius:12px;padding:0 10px;color:var(--muted);background:rgba(255,255,255,.035)}.nav-row strong{font-size:12px;color:var(--text);font-weight:520}.dot{width:8px;height:8px;border-radius:999px;background:var(--bad);box-shadow:0 0 16px var(--bad)}.dot.ok{background:var(--ok);box-shadow:0 0 16px var(--ok)}.dot.run{background:var(--warn);box-shadow:0 0 16px var(--warn);animation:pulse 1.8s ease-in-out infinite}
-    .quick{margin-top:auto;display:grid;gap:8px}.quick button,.icon-btn{min-height:34px;border:1px solid var(--line);border-radius:12px;color:var(--text);background:rgba(255,255,255,.045);display:flex;align-items:center;justify-content:center;gap:8px}.quick button:hover,.icon-btn:hover{border-color:var(--line-strong);box-shadow:0 0 22px rgba(255,255,255,.08)}
-    .main{min-width:0;min-height:0;border-radius:28px;display:grid;grid-template-rows:auto 1fr auto;overflow:hidden;position:relative}
-    .topbar{height:58px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:rgba(5,5,6,.22)}.thread-title{display:flex;align-items:center;gap:9px;min-width:0}.thread-title strong{font-weight:620;font-size:14px;text-shadow:0 0 16px rgba(255,255,255,.22)}.thread-title span{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.status-pill{height:32px;border-radius:999px;padding:0 11px;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;box-shadow:none}.status-pill strong{color:var(--text);font-weight:560}
-    .feed{position:relative;min-height:0;overflow:auto;overflow-x:hidden;padding:24px max(18px,calc((100% - var(--lane))/2)) 18px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}.feed::-webkit-scrollbar{width:10px}.feed::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:999px;border:3px solid transparent;background-clip:content-box}
-    .intro-card{width:min(620px,100%);margin:10vh auto 0;border-radius:26px;padding:30px;text-align:center}.intro-mark{width:72px;height:72px;border-radius:20px;margin:0 auto 16px}.intro-mark span{width:42px;height:42px;font-size:27px}.intro-card h1{font-size:clamp(34px,7vw,70px);line-height:.9;letter-spacing:-.065em;margin:0 0 13px}.intro-card p{margin:0 auto;color:var(--muted);max-width:470px}.chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:17px}.chip{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:#dfe5ed;background:rgba(255,255,255,.055);font-size:11.5px}
-    .message{width:var(--lane);max-width:var(--lane);margin:16px auto;color:var(--text);white-space:pre-wrap}.message.assistant{padding:1px 2px;text-shadow:0 0 14px rgba(255,255,255,.16)}.message.user{width:min(560px,calc(var(--lane) - 80px));margin-left:auto;margin-right:0;border-radius:18px;padding:12px 14px;background:linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.058))}.message.status{color:var(--muted);font-size:12.5px}.message.error{color:#ffd7d4}.message-actions{display:flex;gap:6px;margin-top:7px}.message-actions button{min-width:42px;height:26px;border-radius:9px;border:1px solid var(--line);background:rgba(255,255,255,.045);color:var(--muted);font-size:12px}
-    .thinking-card{width:var(--lane);margin:14px auto;border-radius:18px;padding:11px 13px;background:linear-gradient(135deg,rgba(255,211,122,.13),rgba(255,255,255,.055));box-shadow:0 0 32px rgba(255,211,122,.12),inset 0 1px 0 rgba(255,255,255,.13);animation:thinkingGlow 2.6s ease-in-out infinite}.thinking-title{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#fff3d6;font-size:12px}.thinking-title strong{font-weight:560}.thinking-body{margin-top:8px;color:#e9edf3;white-space:pre-wrap;max-height:180px;overflow:auto}.thinking-card.collapsed .thinking-body{display:none}
-    .tool-row{width:var(--lane);margin:10px auto;border-radius:14px;padding:10px 12px;box-shadow:none;background:rgba(255,255,255,.05);display:grid;gap:5px}.tool-row header{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.tool-row strong{color:var(--text);font-weight:550}.tool-row pre{margin:0;white-space:pre-wrap;word-break:break-word;color:var(--faint);font:12px/1.45 ui-monospace,SFMono-Regular,Cascadia Code,Consolas,monospace;max-height:120px;overflow:hidden}.tool-row.running .tool-dot{animation:pulse 1.4s ease-in-out infinite}.tool-row.error{border-color:rgba(255,123,114,.34)}.tool-dot{width:7px;height:7px;border-radius:999px;background:var(--ok);box-shadow:0 0 12px var(--ok)}
-    .composer{margin:0 max(12px,calc((100% - var(--lane))/2)) max(12px,env(safe-area-inset-bottom));border-radius:24px;display:grid;grid-template-columns:1fr auto auto;gap:8px;padding:8px;background:linear-gradient(135deg,rgba(255,255,255,.13),rgba(255,255,255,.055))}.composer textarea{min-height:52px;max-height:180px;resize:none;border:0;outline:0;color:var(--text);background:rgba(255,255,255,.035);border-radius:18px;padding:15px 14px}.composer textarea::placeholder{color:rgba(245,245,242,.48)}.send-btn{min-width:58px;border:1px solid rgba(255,255,255,.18);border-radius:18px;background:linear-gradient(135deg,#ff4d43,#ff8177);color:#fff;font-weight:650;box-shadow:0 0 28px rgba(255,77,67,.24)}.send-btn:hover{box-shadow:0 0 36px rgba(255,77,67,.36)}.abort-btn{width:50px;border:1px solid var(--line);border-radius:18px;background:rgba(255,255,255,.045);color:var(--muted)}
-    .mobile-top{display:none}.hidden{display:none!important}
-    @keyframes pulse{50%{opacity:.52;transform:scale(.82)}}@keyframes thinkingGlow{0%,100%{box-shadow:0 0 22px rgba(255,211,122,.08),inset 0 1px 0 rgba(255,255,255,.13)}50%{box-shadow:0 0 42px rgba(255,211,122,.22),inset 0 1px 0 rgba(255,255,255,.2)}}
-    @media(max-width:860px){html,body{overflow:hidden}.app{grid-template-columns:1fr;padding:0;gap:0}.rail{display:none}.main{border-radius:0;border:0;height:100dvh}.mobile-top{display:flex}.topbar{height:54px;padding:0 12px;overflow:hidden}.status-pill{display:none}.feed{padding:18px max(12px,calc((100% - var(--lane))/2)) 14px}.intro-card{width:100%;max-width:540px;margin-top:6vh;padding:24px 18px}.composer{margin:0 10px max(10px,env(safe-area-inset-bottom));grid-template-columns:1fr auto}.abort-btn{display:none}.message.user{width:min(620px,calc(100vw - 44px))}.thread-title>span{display:none}}
-    @media(max-width:650px){.intro-card{max-width:340px}.chips{max-width:310px;margin-left:auto;margin-right:auto}}
-    @media(max-width:440px){:root{--lane:calc(100vw - 22px)}body{font-size:13px}.intro-card{max-width:340px;padding:22px 16px}.intro-card h1{font-size:clamp(30px,9vw,36px)}.intro-card p{font-size:12.5px}.chips{gap:7px}.chip{max-width:100%}.composer{border-radius:20px}.composer textarea{min-height:50px}.send-btn{min-width:52px}}
-  </style>
+  <style nonce="__CSP_NONCE__">${desktopUiCss}\n${remoteShellCss}</style>
 </head>
 <body>
-  <div class="environment" aria-hidden="true"><div class="stars"></div></div>
-  <svg width="0" height="0" class="hidden" aria-hidden="true" focusable="false">
-    <filter id="remote-glass-soft" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
-      <feTurbulence type="fractalNoise" baseFrequency="0.012 0.028" numOctaves="2" seed="17" result="noise"><animate attributeName="baseFrequency" dur="15s" values="0.010 0.024;0.016 0.034;0.010 0.024" repeatCount="indefinite"/></feTurbulence>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="5" xChannelSelector="R" yChannelSelector="G"/>
-    </filter>
-    <filter id="remote-glass-strong" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
-      <feTurbulence type="fractalNoise" baseFrequency="0.016 0.038" numOctaves="3" seed="19" result="noise"><animate attributeName="baseFrequency" dur="13s" values="0.013 0.032;0.022 0.048;0.013 0.032" repeatCount="indefinite"/></feTurbulence>
-      <feDisplacementMap in="SourceGraphic" in2="noise" scale="9" xChannelSelector="R" yChannelSelector="G"/>
-    </filter>
-  </svg>
-  <div class="app">
-    <aside class="rail">
-      <div class="brand"><div class="pi-mark"><span>P</span></div><div><strong>Pi Agent</strong><em>Remote desktop</em></div></div>
-      <div class="nav-block">
-        <div class="nav-row"><strong>Status</strong><span id="railStatus">Not paired</span></div>
-        <div class="nav-row"><strong>Mode</strong><span id="railMode">remote</span></div>
-        <div class="nav-row"><strong>Desktop</strong><span id="railDesktop">offline</span></div>
+  <div
+    class="app-shell density-comfortable remote-shell"
+    data-theme="dark"
+    data-background="aurora-glass"
+    data-palette="codex"
+    data-refraction="strong"
+    data-cursor-light="subtle"
+    data-answer-surface="glass"
+  >
+    <canvas id="animatedBackdrop" class="animated-backdrop-canvas" aria-hidden="true"></canvas>
+    <div class="environment-backdrop" aria-hidden="true">
+      <div class="sky-layer"></div>
+      <div class="horizon-glow"></div>
+      <div class="sea-layer sea-layer-a"></div>
+      <div class="sea-layer sea-layer-b"></div>
+      <div class="light-rain"></div>
+    </div>
+    <svg class="glass-distortion-map" aria-hidden="true" focusable="false">
+      <filter id="piagent-glass-distortion" x="-20%" y="-20%" width="140%" height="140%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.034" numOctaves="2" seed="7" result="noise">
+          <animate attributeName="baseFrequency" dur="16s" values="0.010 0.026;0.018 0.042;0.010 0.026" repeatCount="indefinite"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="noise" scale="9" xChannelSelector="R" yChannelSelector="G"/>
+      </filter>
+      <filter id="piagent-glass-refraction" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.042" numOctaves="3" seed="13" result="refractNoise">
+          <animate attributeName="baseFrequency" dur="11s" values="0.014 0.034;0.026 0.052;0.014 0.034" repeatCount="indefinite"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="refractNoise" scale="18" xChannelSelector="R" yChannelSelector="G" result="bentGlass"/>
+        <feColorMatrix in="bentGlass" type="matrix" values="1.05 0 0 0 0  0 1.05 0 0 0  0 0 1.08 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="piagent-glass-refraction-soft" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.012 0.028" numOctaves="2" seed="17" result="refractNoiseSoft">
+          <animate attributeName="baseFrequency" dur="15s" values="0.010 0.024;0.016 0.034;0.010 0.024" repeatCount="indefinite"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="refractNoiseSoft" scale="8" xChannelSelector="R" yChannelSelector="G" result="bentGlassSoft"/>
+        <feColorMatrix in="bentGlassSoft" type="matrix" values="1.02 0 0 0 0  0 1.02 0 0 0  0 0 1.04 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="piagent-glass-refraction-strong" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.042" numOctaves="3" seed="19" result="refractNoiseStrong">
+          <animate attributeName="baseFrequency" dur="11s" values="0.014 0.034;0.026 0.052;0.014 0.034" repeatCount="indefinite"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="refractNoiseStrong" scale="18" xChannelSelector="R" yChannelSelector="G" result="bentGlassStrong"/>
+        <feColorMatrix in="bentGlassStrong" type="matrix" values="1.05 0 0 0 0  0 1.05 0 0 0  0 0 1.08 0 0  0 0 0 1 0"/>
+      </filter>
+      <filter id="piagent-glass-refraction-extreme" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+        <feTurbulence type="fractalNoise" baseFrequency="0.026 0.062" numOctaves="4" seed="23" result="refractNoiseExtreme">
+          <animate attributeName="baseFrequency" dur="7s" values="0.020 0.052;0.038 0.078;0.020 0.052" repeatCount="indefinite"/>
+        </feTurbulence>
+        <feDisplacementMap in="SourceGraphic" in2="refractNoiseExtreme" scale="32" xChannelSelector="R" yChannelSelector="G" result="bentGlassExtreme"/>
+        <feColorMatrix in="bentGlassExtreme" type="matrix" values="1.1 0 0 0 0  0 1.1 0 0 0  0 0 1.16 0 0  0 0 0 1 0"/>
+      </filter>
+    </svg>
+    <div class="neon-cursor" aria-hidden="true"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <span class="brand-mark app-icon-mark" aria-hidden="true"></span>
+        <strong>Pi Agent</strong>
       </div>
-      <div class="nav-block">
-        <div class="nav-row"><strong>Pairing</strong><span>QR approval</span></div>
-        <div class="nav-row"><strong>Relay</strong><span>Cloudflare</span></div>
-        <div class="nav-row"><strong>Tools</strong><span>desktop policy</span></div>
+      <div class="sidebar-topnav">
+        <button aria-label="toggle sidebar" id="toggleSidebarButton" title="Toggle sidebar">${icon("layout")}</button>
+        <button aria-label="back" id="backButton" title="Back">${icon("arrowLeft")}</button>
+        <button aria-label="forward" id="forwardButton" title="Forward">${icon("arrowRight")}</button>
       </div>
-      <div class="quick">
-        <button id="reconnectButton" type="button">Reconnect</button>
-        <button id="forgetButton" type="button">Forget iPad pairing</button>
+      <div class="sidebar-actions">
+        <button class="active" id="newThreadButton" type="button">${icon("plus")} <span>New thread</span></button>
+        <button id="searchButton" type="button">${icon("search")} <span>Search</span></button>
+        <button id="extensionsButton" type="button">${icon("plug")} <span>Extensions</span></button>
+        <button id="automationsButton" type="button">${icon("clock")} <span>Automations</span></button>
       </div>
-    </aside>
-    <main class="main">
-      <header class="topbar">
-        <div class="thread-title mobile-top"><div class="pi-mark"><span>P</span></div><strong>Pi Agent</strong><span>iPad remote</span></div>
-        <div class="thread-title"><span class="dot" id="dot"></span><strong id="topStatus">Not paired</strong><span id="topDetail">scan QR from desktop</span></div>
-        <div class="status-pill"><strong id="modePill">Remote</strong><span id="desktopPill">desktop required</span></div>
-      </header>
-      <section id="feed" class="feed" aria-live="polite">
-        <div id="intro" class="intro-card">
-          <div class="pi-mark intro-mark"><span>P</span></div>
-          <h1>PiAgent from iPad.</h1>
-          <p id="introText">Open PiAgent on the computer, enable Remote Access, create a QR code, then approve this iPad on the desktop.</p>
-          <div class="chips"><span class="chip">Outbound tunnel</span><span class="chip">One-use QR</span><span class="chip">Desktop approval</span><span class="chip">Revocable devices</span></div>
+      <div class="sidebar-label project-label">
+        <span>Projects</span>
+        <button id="projectsButton" type="button" title="Manage projects" aria-label="Manage projects">${icon("plus", 12)}</button>
+      </div>
+      <div class="project-list folder-list">
+        <div class="project-folder active expanded">
+          <div class="project-row-shell">
+            <button class="project-row active" id="remoteProjectButton" type="button" aria-expanded="true" title="PiAgent Remote">
+              ${icon("folder")} <span>PiAgent Remote</span><em>1</em>
+            </button>
+            <button class="project-close" id="collapseProjectButton" type="button" title="Collapse project" aria-label="Collapse project">${icon("archive", 12)}</button>
+          </div>
+          <div class="folder-chats" id="remoteFolderChats">
+            <button class="task-row folder-chat active" id="remoteTaskButton" type="button">
+              <span class="status-dot" id="sidebarDot"></span>
+              <span class="task-copy">
+                <span class="task-name">iPad remote session</span>
+                <span class="task-time" id="sidebarStatus">Not paired</span>
+              </span>
+            </button>
+          </div>
         </div>
-      </section>
-      <form id="composer" class="composer hidden">
-        <textarea id="prompt" maxlength="12000" rows="1" placeholder="Ask PiAgent anything on your computer..."></textarea>
-        <button id="abortButton" class="abort-btn" type="button" title="Abort current run">Stop</button>
-        <button id="sendButton" class="send-btn" type="submit">Send</button>
-      </form>
+        <div class="sidebar-label inline">
+          <span>Unassociated</span>
+          <button id="unassociatedButton" type="button" title="Show unassociated chats" aria-label="Show unassociated chats">${icon("archive", 12)}</button>
+        </div>
+        <div class="loose-chats">
+          <button class="task-row folder-chat" id="pairingTaskButton" type="button">
+            <span class="status-dot queued"></span>
+            <span class="task-copy">
+              <span class="task-name">Pairing approval</span>
+              <span class="task-time">QR required</span>
+            </span>
+          </button>
+        </div>
+      </div>
+      <div class="task-list"></div>
+      <footer class="sidebar-footer">
+        <div class="remote-menu hidden" id="remoteMenu">
+          <button id="reconnectButton" type="button">${icon("play", 13)} Reconnect desktop</button>
+          <button id="forgetButton" type="button">${icon("x", 13)} Forget this device</button>
+        </div>
+        <button class="parameters-button" id="parametersButton" type="button" aria-label="Parameters" title="Parameters">
+          <span class="parameters-icon">${icon("gear")}</span>
+          <span>Parameters</span>
+        </button>
+      </footer>
+    </aside>
+
+    <main class="main-panel">
+      <div class="app-toolbar">
+        <div class="toolbar-title">
+          <span class="brand-mark app-icon-mark" aria-hidden="true"></span>
+          <strong>Pi Agent</strong>
+          <em class="toolbar-ready error" id="topStatus">Not paired</em>
+          <span class="toolbar-thread" id="topDetail" title="scan QR from desktop">scan QR from desktop</span>
+          <span class="toolbar-activity idle" id="toolbarActivity">remote</span>
+          <span class="toolbar-detail" id="toolbarDetail" title="desktop offline">desktop offline</span>
+        </div>
+        <div class="toolbar-actions">
+          <button id="toolbarSearchButton" type="button">${icon("search")} <span>Search</span></button>
+          <button id="toolbarProjectsButton" type="button">${icon("folder")} <span>Projects</span></button>
+          <button id="toolbarExtensionsButton" type="button">${icon("plug")} <span>Extensions</span></button>
+          <button id="toolbarSettingsButton" type="button">${icon("gear")} <span>Settings</span></button>
+        </div>
+      </div>
+      <div class="chat-workspace">
+        <div class="chat-column empty-start" id="chatColumn">
+          <section class="thread-shell compact-header">
+            <div class="thread-feed" id="feed" aria-live="polite">
+              <div class="empty-thread remote-pairing" id="intro">
+                <div class="empty-icon-stage" aria-hidden="true">
+                  <span class="empty-icon app-icon-mark"></span>
+                </div>
+                <h1><span>Ready when you are</span></h1>
+                <p id="introText">Open PiAgent Desktop, enable Remote Access, scan the QR code, then approve this device on desktop.</p>
+              </div>
+            </div>
+          </section>
+          <form id="composer" class="composer hidden">
+            <textarea id="prompt" maxlength="12000" rows="1" placeholder="Ask anything..."></textarea>
+            <div class="composer-actions">
+              <div class="pill-menu-wrap add-menu-wrap">
+                <button class="round-button" id="addButton" type="button" aria-label="add tools and files" title="Add tools and files">${icon("plus")}</button>
+              </div>
+              <div class="tool-pills">
+                <button class="access-pill enabled" id="remoteAccessButton" type="button">
+                  ${icon("shield", 13)}
+                  Remote access
+                  ${icon("chevronDown", 12)}
+                </button>
+              </div>
+              <div class="composer-meta">
+                <span class="remote-status-pill" id="composerStatus">Desktop required</span>
+                <button class="model-pill" id="modelButton" type="button">5.5 High ${icon("chevronDown", 12)}</button>
+                <button class="round-button stop hidden" id="abortButton" type="button" aria-label="stop generation" title="Stop">${icon("stop")}</button>
+                <button class="send-button" id="sendButton" type="submit" aria-label="send" title="Send">${icon("arrowUp", 15)}</button>
+              </div>
+            </div>
+          </form>
+        </div>
+      </div>
     </main>
   </div>
   <script nonce="__CSP_NONCE__">
@@ -94,14 +304,17 @@ export const remoteAppHtml = `<!doctype html>
     var promptEl = document.getElementById('prompt');
     var sendButton = document.getElementById('sendButton');
     var abortButton = document.getElementById('abortButton');
-    var dot = document.getElementById('dot');
     var topStatus = document.getElementById('topStatus');
     var topDetail = document.getElementById('topDetail');
-    var modePill = document.getElementById('modePill');
-    var desktopPill = document.getElementById('desktopPill');
-    var railStatus = document.getElementById('railStatus');
-    var railMode = document.getElementById('railMode');
-    var railDesktop = document.getElementById('railDesktop');
+    var toolbarActivity = document.getElementById('toolbarActivity');
+    var toolbarDetail = document.getElementById('toolbarDetail');
+    var composerStatus = document.getElementById('composerStatus');
+    var sidebarStatus = document.getElementById('sidebarStatus');
+    var sidebarDot = document.getElementById('sidebarDot');
+    var chatColumn = document.getElementById('chatColumn');
+    var sidebar = document.getElementById('sidebar');
+    var remoteMenu = document.getElementById('remoteMenu');
+    var parametersButton = document.getElementById('parametersButton');
     var reconnectButton = document.getElementById('reconnectButton');
     var forgetButton = document.getElementById('forgetButton');
     var desktopId = localStorage.getItem('piagent.remote.desktopId') || '';
@@ -109,23 +322,9 @@ export const remoteAppHtml = `<!doctype html>
     var runActive = false;
     var assistantEl = null;
     var thinkingEl = null;
-    var thinkingBody = null;
-    var tools = {};
-
-    function setStatus(text, detail, state) {
-      topStatus.textContent = text;
-      topDetail.textContent = detail || '';
-      railStatus.textContent = text;
-      dot.classList.toggle('ok', state === 'ok');
-      dot.classList.toggle('run', state === 'run');
-    }
-
-    function setMode(mode, desktopConnected) {
-      modePill.textContent = mode || 'Remote';
-      railMode.textContent = mode || 'remote';
-      desktopPill.textContent = desktopConnected ? 'desktop online' : 'desktop offline';
-      railDesktop.textContent = desktopConnected ? 'online' : 'offline';
-    }
+    var thinkingPreview = null;
+    var thinkingDetail = null;
+    var toolRows = {};
 
     function token(bytes) {
       var array = new Uint8Array(bytes || 32);
@@ -141,109 +340,198 @@ export const remoteAppHtml = `<!doctype html>
       return JSON.parse(atob(base64));
     }
 
-    function scrollToBottom() {
-      feed.scrollTop = feed.scrollHeight;
+    function setStatus(text, detail, state) {
+      topStatus.textContent = text;
+      topDetail.textContent = detail || '';
+      topDetail.title = detail || '';
+      toolbarActivity.textContent = state === 'run' ? 'running' : state === 'ok' ? 'ready' : 'remote';
+      toolbarActivity.className = 'toolbar-activity ' + (state === 'run' ? 'running' : state === 'ok' ? 'ready' : 'idle');
+      toolbarDetail.textContent = detail || '';
+      toolbarDetail.title = detail || '';
+      sidebarStatus.textContent = detail ? text + ' - ' + detail : text;
+      composerStatus.textContent = state === 'ok' ? 'Pi Agent Ready' : state === 'run' ? 'Working' : 'Desktop required';
+      topStatus.className = 'toolbar-ready ' + (state === 'ok' ? 'ready' : state === 'run' ? 'running' : 'error');
+      sidebarDot.className = 'status-dot ' + (state === 'ok' ? 'done' : state === 'run' ? 'running' : 'error');
+      composer.classList.toggle('streaming', state === 'run');
+    }
+
+    function setRunActive(active) {
+      runActive = active;
+      sendButton.disabled = active;
+      abortButton.classList.toggle('hidden', !active);
+      composer.classList.toggle('streaming', active);
     }
 
     function showChat() {
       if (intro) intro.classList.add('hidden');
       composer.classList.remove('hidden');
+      chatColumn.classList.remove('empty-start');
+      chatColumn.classList.add('has-thread');
     }
 
-    function appendMessage(kind, text) {
+    function restoreIntro() {
+      if (intro) intro.classList.remove('hidden');
+      composer.classList.add('hidden');
+      chatColumn.classList.add('empty-start');
+      chatColumn.classList.remove('has-thread');
+    }
+
+    function scrollToBottom() {
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function appendStatus(text, error) {
       showChat();
-      var item = document.createElement('div');
-      item.className = 'message ' + kind;
-      item.textContent = text || '';
-      if (kind === 'assistant') {
-        var actions = document.createElement('div');
-        actions.className = 'message-actions';
-        var copy = document.createElement('button');
-        copy.type = 'button';
-        copy.title = 'Copy';
-        copy.textContent = 'Copy';
-        copy.addEventListener('click', function () {
-          navigator.clipboard && navigator.clipboard.writeText(item.firstChild ? item.firstChild.textContent || item.textContent : item.textContent);
-        });
-        actions.appendChild(copy);
-        item.appendChild(actions);
-      }
-      feed.appendChild(item);
+      var node = document.createElement('div');
+      node.className = 'thread-status' + (error ? ' error' : '');
+      node.textContent = text || '';
+      feed.appendChild(node);
       scrollToBottom();
-      return item;
+      return node;
+    }
+
+    function appendUser(text) {
+      showChat();
+      var article = document.createElement('article');
+      article.className = 'message user-message';
+      var body = document.createElement('div');
+      body.className = 'message-text';
+      body.textContent = text || '';
+      article.appendChild(body);
+      feed.appendChild(article);
+      scrollToBottom();
+      return article;
+    }
+
+    function createAgentMessage() {
+      var article = document.createElement('article');
+      article.className = 'message agent-message';
+      var body = document.createElement('div');
+      body.className = 'agent-text';
+      article.appendChild(body);
+      var actions = document.createElement('div');
+      actions.className = 'message-actions';
+      [['Copy','copy'],['Good response','thumbUp'],['Bad response','thumbDown']].forEach(function (entry) {
+        var button = document.createElement('button');
+        button.type = 'button';
+        button.title = entry[0];
+        button.setAttribute('aria-label', entry[0]);
+        button.innerHTML = entry[1] === 'copy' ? '${icon("copy", 13)}' : entry[1] === 'thumbUp' ? '${icon("thumbUp", 13)}' : '${icon("thumbDown", 13)}';
+        if (entry[1] === 'copy') {
+          button.addEventListener('click', function () {
+            if (navigator.clipboard) navigator.clipboard.writeText(body.textContent || '');
+          });
+        }
+        actions.appendChild(button);
+      });
+      article.appendChild(actions);
+      feed.appendChild(article);
+      return article;
     }
 
     function appendAssistantDelta(delta) {
-      if (!assistantEl) assistantEl = appendMessage('assistant', '');
-      var first = assistantEl.firstChild;
-      if (first && first.nodeType === Node.TEXT_NODE) first.textContent = (first.textContent || '') + delta;
-      else assistantEl.insertBefore(document.createTextNode(delta), assistantEl.firstChild);
+      showChat();
+      if (!assistantEl) assistantEl = createAgentMessage();
+      var body = assistantEl.querySelector('.agent-text');
+      body.textContent = (body.textContent || '') + delta;
       scrollToBottom();
     }
 
     function ensureThinking() {
+      showChat();
       if (thinkingEl) return thinkingEl;
-      thinkingEl = document.createElement('div');
-      thinkingEl.className = 'thinking-card';
-      var title = document.createElement('button');
-      title.type = 'button';
-      title.className = 'thinking-title icon-btn';
-      var titleStrong = document.createElement('strong');
-      titleStrong.textContent = 'Thinking';
-      var titleState = document.createElement('span');
-      titleState.textContent = 'Hide';
-      title.appendChild(titleStrong);
-      title.appendChild(titleState);
-      thinkingBody = document.createElement('div');
-      thinkingBody.className = 'thinking-body';
-      title.addEventListener('click', function () {
-        thinkingEl.classList.toggle('collapsed');
-        titleState.textContent = thinkingEl.classList.contains('collapsed') ? 'Show' : 'Hide';
+      thinkingEl = document.createElement('article');
+      thinkingEl.className = 'message thinking-message active';
+      var body = document.createElement('div');
+      body.className = 'thinking-body';
+      var head = document.createElement('button');
+      head.className = 'thinking-head';
+      head.type = 'button';
+      head.setAttribute('aria-expanded', 'false');
+      var pulse = document.createElement('span');
+      pulse.className = 'thinking-pulse';
+      pulse.setAttribute('aria-hidden', 'true');
+      var label = document.createElement('span');
+      label.className = 'thinking-label';
+      label.textContent = (navigator.language || '').toLowerCase().startsWith('fr') ? 'En reflexion' : 'Thinking';
+      var action = document.createElement('em');
+      action.textContent = 'Show';
+      head.appendChild(pulse);
+      head.appendChild(label);
+      head.appendChild(action);
+      thinkingPreview = document.createElement('div');
+      thinkingPreview.className = 'thinking-preview';
+      thinkingPreview.textContent = 'Working...';
+      thinkingDetail = document.createElement('div');
+      thinkingDetail.className = 'message-text hidden';
+      head.addEventListener('click', function () {
+        var expanded = thinkingEl.classList.toggle('expanded');
+        head.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        action.textContent = expanded ? 'Hide' : 'Show';
+        thinkingPreview.classList.toggle('hidden', expanded);
+        thinkingDetail.classList.toggle('hidden', !expanded);
       });
-      thinkingEl.appendChild(title);
-      thinkingEl.appendChild(thinkingBody);
+      body.appendChild(head);
+      body.appendChild(thinkingPreview);
+      body.appendChild(thinkingDetail);
+      thinkingEl.appendChild(body);
       feed.appendChild(thinkingEl);
+      scrollToBottom();
       return thinkingEl;
     }
 
     function appendThinking(delta) {
       ensureThinking();
-      thinkingBody.textContent = (thinkingBody.textContent || '') + delta;
+      thinkingDetail.textContent = (thinkingDetail.textContent || '') + delta;
+      thinkingPreview.textContent = (thinkingDetail.textContent || 'Working...').slice(0, 160);
       scrollToBottom();
     }
 
-    function toolLabel(event) {
+    function finishThinking() {
+      if (thinkingEl) {
+        thinkingEl.classList.remove('active');
+        thinkingEl.classList.add('settled');
+      }
+    }
+
+    function toolTitle(event) {
       return event.toolName || event.name || 'tool';
     }
 
     function upsertTool(event, status) {
       showChat();
-      var id = event.toolCallId || event.id || toolLabel(event);
-      var row = tools[id];
+      var id = event.toolCallId || event.id || toolTitle(event);
+      var row = toolRows[id];
       if (!row) {
         row = document.createElement('div');
         row.className = 'tool-row running';
-        var header = document.createElement('header');
-        var dotEl = document.createElement('span');
-        dotEl.className = 'tool-dot';
-        var title = document.createElement('strong');
-        title.textContent = toolLabel(event);
-        var state = document.createElement('span');
-        state.textContent = 'running';
-        header.appendChild(dotEl);
-        header.appendChild(title);
-        header.appendChild(state);
+        var button = document.createElement('button');
+        button.className = 'tool-summary';
+        button.type = 'button';
+        var iconSpan = document.createElement('span');
+        iconSpan.className = 'tool-icon';
+        iconSpan.innerHTML = '${icon("clock", 14)}';
+        var text = document.createElement('span');
+        text.className = 'tool-text';
+        text.textContent = toolTitle(event);
+        var elapsed = document.createElement('span');
+        elapsed.className = 'tool-elapsed';
+        elapsed.textContent = '';
+        button.appendChild(iconSpan);
+        button.appendChild(text);
+        button.appendChild(elapsed);
         var pre = document.createElement('pre');
-        row.appendChild(header);
+        pre.className = 'tool-args hidden';
+        button.addEventListener('click', function () { pre.classList.toggle('hidden'); });
+        row.appendChild(button);
         row.appendChild(pre);
-        row._state = state;
+        row._icon = iconSpan;
         row._pre = pre;
-        tools[id] = row;
+        toolRows[id] = row;
         feed.appendChild(row);
       }
-      row.classList.toggle('running', status === 'running');
-      row.classList.toggle('error', status === 'error');
-      row._state.textContent = status;
+      row.className = 'tool-row ' + status;
+      row._icon.innerHTML = status === 'error' ? '${icon("x", 14)}' : status === 'done' ? '${icon("check", 14)}' : '${icon("clock", 14)}';
       var details = status === 'running' ? event.args : event.result;
       if (details !== undefined) {
         try { row._pre.textContent = JSON.stringify(details, null, 2); }
@@ -261,7 +549,7 @@ export const remoteAppHtml = `<!doctype html>
 
     function sendCommand(command) {
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        appendMessage('status error', 'Remote socket is not connected.');
+        appendStatus('Remote socket is not connected.', true);
         return false;
       }
       ws.send(JSON.stringify(command));
@@ -271,6 +559,7 @@ export const remoteAppHtml = `<!doctype html>
     function connect() {
       if (!desktopId) {
         setStatus('Not paired', 'scan QR from desktop', 'bad');
+        restoreIntro();
         return;
       }
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -279,15 +568,12 @@ export const remoteAppHtml = `<!doctype html>
       ws = new WebSocket(scheme + location.host + '/relay/client?desktopId=' + encodeURIComponent(desktopId));
       ws.onopen = function () {
         setStatus('Connected', 'Pi Agent Ready', 'ok');
-        setMode('remote', true);
         showChat();
-        appendMessage('status', 'Connected to your desktop PiAgent.');
+        appendStatus('Connected to your desktop PiAgent.');
       };
       ws.onclose = function () {
         setStatus('Disconnected', 'open PiAgent desktop or reconnect', 'bad');
-        setMode(modePill.textContent, false);
-        runActive = false;
-        sendButton.disabled = false;
+        setRunActive(false);
       };
       ws.onerror = function () {
         setStatus('Connection error', 'pair again if needed', 'bad');
@@ -296,26 +582,23 @@ export const remoteAppHtml = `<!doctype html>
         var message = {};
         try { message = JSON.parse(event.data); } catch (error) { return; }
         if (message.type === 'remote_ready') {
-          setStatus('Connected', 'Pi Agent Ready', 'ok');
-          setMode(modePill.textContent, Boolean(message.desktopConnected));
+          setStatus('Connected', message.desktopConnected ? 'Pi Agent Ready' : 'desktop offline', message.desktopConnected ? 'ok' : 'bad');
+          if (message.desktopConnected) showChat();
           return;
         }
         if (message.type === 'desktop_status') {
-          var status = message.status || {};
-          setMode(status.mode || 'remote', true);
+          setStatus('Connected', 'Pi Agent Ready', 'ok');
           return;
         }
         if (message.type === 'desktop_offline') {
-          appendMessage('status error', message.error || 'Desktop is offline.');
-          setMode(modePill.textContent, false);
-          runActive = false;
-          sendButton.disabled = false;
-          dot.classList.remove('run');
+          appendStatus(message.error || 'Desktop is offline.', true);
+          setStatus('Disconnected', 'desktop offline', 'bad');
+          setRunActive(false);
           return;
         }
         if (message.type === 'command_response') {
-          if (!message.ok) appendMessage('status error', message.error || 'Command failed.');
-          if (message.ok === false || !runActive) sendButton.disabled = false;
+          if (!message.ok) appendStatus(message.error || 'Command failed.', true);
+          if (message.ok === false || !runActive) setRunActive(false);
           return;
         }
         if (message.type === 'pi_event') handlePiEvent(message.event || {});
@@ -325,8 +608,7 @@ export const remoteAppHtml = `<!doctype html>
     function handlePiEvent(event) {
       var assistantEvent = event.assistantMessageEvent || {};
       if (event.type === 'agent_start') {
-        runActive = true;
-        sendButton.disabled = true;
+        setRunActive(true);
         setStatus('Working', 'Pi Agent is running', 'run');
         ensureThinking();
         return;
@@ -344,10 +626,12 @@ export const remoteAppHtml = `<!doctype html>
         return;
       }
       if (event.type === 'message_update' && assistantEvent.type === 'text_delta' && typeof assistantEvent.delta === 'string') {
+        finishThinking();
         appendAssistantDelta(assistantEvent.delta);
         return;
       }
       if (event.type === 'tool_execution_start') {
+        finishThinking();
         upsertTool(event, 'running');
         return;
       }
@@ -356,20 +640,19 @@ export const remoteAppHtml = `<!doctype html>
         return;
       }
       if (event.type === 'agent_end') {
-        runActive = false;
-        sendButton.disabled = false;
+        setRunActive(false);
         setStatus('Connected', 'Pi Agent Ready', 'ok');
         assistantEl = null;
         thinkingEl = null;
-        thinkingBody = null;
-        appendMessage('status', 'Run complete.');
+        thinkingPreview = null;
+        thinkingDetail = null;
+        appendStatus('Run complete.');
         return;
       }
       if (event.type === 'process_exit' || event.type === 'process_error' || event.type === 'auth_required') {
-        runActive = false;
-        sendButton.disabled = false;
+        setRunActive(false);
         setStatus('Needs desktop', 'check PiAgent on the computer', 'bad');
-        appendMessage('status error', event.message || 'PiAgent process stopped.');
+        appendStatus(event.message || 'PiAgent process stopped.', true);
       }
     }
 
@@ -390,7 +673,8 @@ export const remoteAppHtml = `<!doctype html>
           deviceSecret: deviceSecret,
           deviceName: (navigator.platform || 'iPad') + ' remote'
         });
-        appendMessage('status', 'Pairing request sent. Approve this device in PiAgent Desktop.');
+        showChat();
+        appendStatus('Pairing request sent. Approve this device in PiAgent Desktop.');
         var started = Date.now();
         var poll = async function () {
           if (Date.now() - started > 10 * 60 * 1000) {
@@ -416,7 +700,7 @@ export const remoteAppHtml = `<!doctype html>
               return;
             }
           } catch (error) {
-            appendMessage('status error', error.message || 'Pairing failed.');
+            appendStatus(error.message || 'Pairing failed.', true);
             return;
           }
           setTimeout(poll, 1800);
@@ -428,48 +712,92 @@ export const remoteAppHtml = `<!doctype html>
       return true;
     }
 
+    function abortRun() {
+      if (!runActive) return;
+      sendCommand({ type:'abort', id: token(10) });
+      setRunActive(false);
+      setStatus('Stopping', 'abort requested', 'run');
+    }
+
     composer.addEventListener('submit', function (event) {
       event.preventDefault();
       var text = promptEl.value.trim();
       if (!text || runActive) return;
-      appendMessage('user', text);
+      appendUser(text);
       promptEl.value = '';
-      runActive = true;
-      sendButton.disabled = true;
+      setRunActive(true);
       assistantEl = null;
       thinkingEl = null;
-      thinkingBody = null;
-      tools = {};
+      thinkingPreview = null;
+      thinkingDetail = null;
+      toolRows = {};
       setStatus('Working', 'Pi Agent is running', 'run');
-      sendCommand({ type:'prompt', id: token(10), message: text });
+      if (!sendCommand({ type:'prompt', id: token(10), message: text })) {
+        setRunActive(false);
+        setStatus('Disconnected', 'open PiAgent desktop or reconnect', 'bad');
+      }
     });
 
-    promptEl.addEventListener('input', function () {
-      promptEl.style.height = 'auto';
-      promptEl.style.height = Math.min(180, promptEl.scrollHeight) + 'px';
-    });
-
-    abortButton.addEventListener('click', function () {
-      if (!runActive) return;
-      sendCommand({ type:'abort', id: token(10) });
-      runActive = false;
-      sendButton.disabled = false;
-      setStatus('Stopping', 'abort requested', 'run');
-    });
-
+    abortButton.addEventListener('click', abortRun);
     reconnectButton.addEventListener('click', connect);
+    document.getElementById('toggleSidebarButton').addEventListener('click', function () { sidebar.classList.toggle('collapsed'); });
+    document.getElementById('backButton').addEventListener('click', function () { history.back(); });
+    document.getElementById('forwardButton').addEventListener('click', function () { history.forward(); });
+    document.getElementById('newThreadButton').addEventListener('click', function () { showChat(); promptEl.focus(); });
+    document.getElementById('remoteTaskButton').addEventListener('click', function () { showChat(); scrollToBottom(); });
+    document.getElementById('pairingTaskButton').addEventListener('click', restoreIntro);
+    document.getElementById('remoteProjectButton').addEventListener('click', function () {
+      document.getElementById('remoteFolderChats').classList.toggle('hidden');
+    });
+    document.getElementById('collapseProjectButton').addEventListener('click', function () {
+      document.getElementById('remoteFolderChats').classList.toggle('hidden');
+    });
+    parametersButton.addEventListener('click', function () {
+      remoteMenu.classList.toggle('hidden');
+      parametersButton.classList.toggle('active', !remoteMenu.classList.contains('hidden'));
+    });
     forgetButton.addEventListener('click', function () {
       localStorage.removeItem('piagent.remote.desktopId');
       desktopId = '';
       if (ws) ws.close();
+      setRunActive(false);
       setStatus('Forgotten', 'scan a new QR', 'bad');
+      restoreIntro();
+      remoteMenu.classList.add('hidden');
+      parametersButton.classList.remove('active');
+    });
+    ['searchButton','extensionsButton','automationsButton','projectsButton','unassociatedButton','toolbarSearchButton','toolbarProjectsButton','toolbarExtensionsButton','toolbarSettingsButton','addButton','remoteAccessButton','modelButton'].forEach(function (id) {
+      var node = document.getElementById(id);
+      if (!node) return;
+      node.addEventListener('click', function () {
+        appendStatus('This remote surface uses the desktop UI shell. Full panels stay on the desktop app for now.');
+      });
     });
 
+    ${desktopBackdropScript}
+    (function startBackdrop() {
+      var canvas = document.getElementById('animatedBackdrop');
+      var shell = document.querySelector('.app-shell');
+      var runtime = window.PiAgentAnimatedBackdrop;
+      if (!canvas || !runtime || !runtime.startAnimatedBackdrop) return;
+      var style = getComputedStyle(shell || document.documentElement);
+      runtime.startAnimatedBackdrop(canvas, {
+        mode: shell && shell.getAttribute('data-background') || 'aurora-glass',
+        theme: shell && shell.getAttribute('data-theme') || 'dark',
+        palette: shell && shell.getAttribute('data-palette') || 'codex',
+        accent: style.getPropertyValue('--accent').trim() || '#58a6ff',
+        cursorLight: shell && shell.getAttribute('data-cursor-light') || 'subtle'
+      });
+    })();
+
     (async function boot() {
-      setMode('remote', false);
+      setRunActive(false);
       if (await pairFromHash()) return;
       if (desktopId) connect();
-      else setStatus('Not paired', 'scan QR from desktop', 'bad');
+      else {
+        setStatus('Not paired', 'scan QR from desktop', 'bad');
+        restoreIntro();
+      }
     })();
   </script>
 </body>

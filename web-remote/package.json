@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
-    "deploy:dry-run": "wrangler deploy --dry-run",
-    "deploy": "wrangler deploy",
-    "dev": "wrangler dev"
+    "sync:desktop-ui": "node scripts/sync-desktop-ui.mjs",
+    "build": "npm run sync:desktop-ui && tsc -p tsconfig.json --noEmit",
+    "deploy:dry-run": "npm run sync:desktop-ui && wrangler deploy --dry-run",
+    "deploy": "npm run sync:desktop-ui && wrangler deploy",
+    "dev": "npm run sync:desktop-ui && wrangler dev"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260529.0",
