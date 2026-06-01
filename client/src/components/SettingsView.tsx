@@ -22,6 +22,7 @@ const nav: Array<{ id: string; label: string; icon: IconName }> = [
 interface SettingsViewProps {
   settings: AppSettings;
   models: ProviderOption[];
+  initialActive?: string;
   onBack: () => void;
   onChange: (patch: Partial<AppSettings>) => void;
 }
@@ -33,6 +34,82 @@ interface ProviderAuthState {
   source?: string | null;
   envVar?: string;
   writable?: boolean;
+}
+
+type CapabilityStatus = "ready" | "configured" | "partial" | "missing" | "external" | "unsafe-by-default" | "backlog";
+
+interface CapabilityCheck {
+  label: string;
+  ok: boolean;
+  detail?: string;
+}
+
+interface CapabilityItem {
+  id: string;
+  label: string;
+  category: string;
+  status: CapabilityStatus;
+  configured: boolean;
+  available: boolean;
+  ready: boolean;
+  risk: "low" | "medium" | "high";
+  summary: string;
+  dependencies: string[];
+  evidence: string[];
+  nextAction: string;
+  checks: CapabilityCheck[];
+}
+
+interface CapabilityReport {
+  ok: boolean;
+  generatedAt: string;
+  readOnly: boolean;
+  note: string;
+  summary: {
+    total: number;
+    counts: Record<CapabilityStatus, number>;
+    ready: number;
+    risky: string[];
+    missing: string[];
+  };
+  settings: {
+    provider: string;
+    model: string;
+    accessMode: string;
+    approvalPolicy: string;
+    workspaceConfigured: boolean;
+    memoryMode: string;
+    subagentRoutingMode: string;
+  };
+  capabilities: CapabilityItem[];
+}
+
+type RunStatus = "starting" | "running" | "completed" | "failed" | "stopped" | "aborted" | "rejected";
+
+interface RunSummary {
+  id: string;
+  sessionId: string | null;
+  projectId: string | null;
+  requestId?: string;
+  status: RunStatus;
+  promptPreview?: string;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  eventCount: number;
+  lastEventType?: string;
+  lastError?: string;
+}
+
+interface RunsReport {
+  ok: boolean;
+  readOnly: boolean;
+  counts: {
+    total: number;
+    active: number;
+    failed: number;
+  };
+  runs: RunSummary[];
 }
 
 async function openTarget(target: string) {
@@ -223,6 +300,7 @@ const animatedBackgroundOptions: Array<SettingSelectOption<AppSettings["animated
   { value: "lunar-waves", label: "Lunar waves", note: "night sea" },
   { value: "sci-fi-grid", label: "Sci-fi grid", note: "reactive" },
   { value: "cartoon-beach", label: "Cartoon beach", note: "lights" },
+  { value: "nebula-rain", label: "Nebula rain", note: "cinematic" },
   { value: "midnight-ocean", label: "Midnight ocean", note: "deep" },
   { value: "liquid-prism", label: "Liquid prism", note: "bright" },
   { value: "solar-frost", label: "Solar frost", note: "light" }
@@ -245,18 +323,51 @@ const answerSurfaceOptions: Array<SettingSelectOption<AppSettings["answerSurface
   { value: "open", label: "Open text", note: "minimal" }
 ];
 
-export default function SettingsView({ settings, models, onBack, onChange }: SettingsViewProps) {
-  const [active, setActive] = useState("General");
+function shortId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : "none";
+}
+
+function formatRunTime(value: string | undefined) {
+  if (!value) return "unknown";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "unknown";
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatRunDuration(run: RunSummary) {
+  const start = Date.parse(run.startedAt);
+  const end = Date.parse(run.finishedAt || run.updatedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "unknown";
+  const seconds = Math.max(0, Math.round((end - start) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest ? `${minutes}m ${rest}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem ? `${hours}h ${rem}m` : `${hours}h`;
+}
+
+export default function SettingsView({ settings, models, initialActive = "General", onBack, onChange }: SettingsViewProps) {
+  const [active, setActive] = useState(initialActive);
   const [activeProviderPage, setActiveProviderPage] = useState(providerConnectionPages[0].id);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle", message: "" });
   const [actionStatus, setActionStatus] = useState("");
   const [providerAuth, setProviderAuth] = useState<Record<string, ProviderAuthState>>({});
   const [providerKeys, setProviderKeys] = useState<Record<string, string>>({});
   const [diagnostics, setDiagnostics] = useState<any>(null);
+  const [capabilities, setCapabilities] = useState<CapabilityReport | null>(null);
+  const [capabilitiesLoading, setCapabilitiesLoading] = useState(false);
+  const [capabilitiesError, setCapabilitiesError] = useState("");
+  const [runsReport, setRunsReport] = useState<RunsReport | null>(null);
+  const [runsLoading, setRunsLoading] = useState(false);
+  const [runsError, setRunsError] = useState("");
   const [gitName, setGitName] = useState("");
   const [gitEmail, setGitEmail] = useState("");
   const [githubStatus, setGithubStatus] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState<any>(null);
+  const [memoryAudit, setMemoryAudit] = useState<any>(null);
+  const [memoryQuery, setMemoryQuery] = useState("PiAgent preferences project release");
   const [advisorStatus, setAdvisorStatus] = useState<any>(null);
   const [subagentStatus, setSubagentStatus] = useState<any>(null);
   const [beautifulUiStatus, setBeautifulUiStatus] = useState<any>(null);
@@ -301,6 +412,10 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
     })))
   ];
 
+  useEffect(() => {
+    if (initialActive) setActive(initialActive);
+  }, [initialActive]);
+
   const refreshGithubStatus = async () => {
     const response = await fetch(apiUrl("/api/github/status")).catch(() => null);
     const data = response?.ok ? await response.json().catch(() => null) : null;
@@ -335,13 +450,55 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
     }
   };
 
+  const refreshCapabilities = async (announce = true) => {
+    setCapabilitiesLoading(true);
+    const response = await fetch(apiUrl("/api/capabilities")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (data?.ok) {
+      setCapabilities(data);
+      setCapabilitiesError("");
+      if (announce) setActionStatus("Capability Doctor refreshed.");
+    } else {
+      const message = data?.error ?? "Capability Doctor failed.";
+      setCapabilitiesError(message);
+      setActionStatus(message);
+    }
+    setCapabilitiesLoading(false);
+  };
+
+  const refreshRuns = async (announce = true) => {
+    setRunsLoading(true);
+    const response = await fetch(apiUrl("/api/runs?limit=18")).catch(() => null);
+    const data = response?.ok ? await response.json().catch(() => null) : null;
+    if (data?.ok && Array.isArray(data.runs)) {
+      setRunsReport(data);
+      setRunsError("");
+      if (announce) setActionStatus("Run history refreshed.");
+    } else {
+      const message = data?.error ?? "Run history failed.";
+      setRunsError(message);
+      setActionStatus(message);
+    }
+    setRunsLoading(false);
+  };
+
   useEffect(() => {
     void refreshGithubStatus();
     void refreshAdvisorStatus();
     void refreshSubagentStatus();
     void refreshBeautifulUiStatus();
     void refreshProviderAuth();
+    void refreshCapabilities(false);
   }, []);
+
+  useEffect(() => {
+    if (active === "Configuration" && !capabilities && !capabilitiesLoading) {
+      void refreshCapabilities(false);
+    }
+    if (active === "Configuration" && !runsReport && !runsLoading) {
+      void refreshRuns(false);
+    }
+  }, [active, capabilities, capabilitiesLoading, runsReport, runsLoading]);
 
   const saveProviderKey = async (provider: string) => {
     const apiKey = providerKeys[provider] ?? "";
@@ -410,6 +567,50 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
     const data = await response.json();
     setMemoryStatus(data);
     setActionStatus("Memory status refreshed.");
+  };
+
+  const refreshMemoryAudit = async () => {
+    setActionStatus("Reading sovereign memory audit...");
+    const [statusResponse, skillsResponse, explainResponse] = await Promise.all([
+      fetch(apiUrl("/api/memory/status")).catch(() => null),
+      fetch(apiUrl("/api/memory/skills?includeDisabled=1&limit=24")).catch(() => null),
+      fetch(apiUrl(`/api/memory/explain?q=${encodeURIComponent(memoryQuery)}&budgetTokens=${settings.memoryBudgetTokens}`)).catch(() => null)
+    ]);
+    const status = statusResponse?.ok ? await statusResponse.json().catch(() => null) : null;
+    const skills = skillsResponse?.ok ? await skillsResponse.json().catch(() => null) : null;
+    const explain = explainResponse?.ok ? await explainResponse.json().catch(() => null) : null;
+    setMemoryStatus(status);
+    setMemoryAudit({ status, skills, explain });
+    setActionStatus("Sovereign memory audit refreshed.");
+  };
+
+  const dryRunMemoryMigration = async () => {
+    setActionStatus("Running memory migration dry-run...");
+    const response = await fetch(apiUrl("/api/memory/migrate/dry-run"), { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    setMemoryAudit((current: any) => ({ ...(current ?? {}), migration: data }));
+    setActionStatus(data.ok ? `Dry-run: ${data.counts?.records ?? 0} records, ${data.duplicateGroups?.length ?? 0} duplicate groups.` : data.error ?? "Migration dry-run failed.");
+  };
+
+  const applyMemoryMigration = async () => {
+    if (!window.confirm("Apply Sovereign Memory migration? A local backup is created first.")) return;
+    setActionStatus("Applying memory migration...");
+    const response = await fetch(apiUrl("/api/memory/migrate/apply"), { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    setMemoryAudit((current: any) => ({ ...(current ?? {}), migration: data }));
+    setActionStatus(data.ok ? `Migration applied. Backup: ${data.backupPath ?? "created"}` : data.error ?? "Migration failed.");
+    await refreshMemoryAudit();
+  };
+
+  const changeSkillStatus = async (id: string, action: "promote" | "disable") => {
+    const response = await fetch(apiUrl(`/api/memory/skills/${encodeURIComponent(id)}/${action}`), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: action === "disable" ? "Disabled from PiAgent memory audit UI." : undefined })
+    });
+    const data = await response.json().catch(() => ({}));
+    setActionStatus(data.ok ? `Skill ${action === "promote" ? "promoted" : "disabled"}: ${id}` : data.error ?? "Skill update failed.");
+    await refreshMemoryAudit();
   };
 
   const consolidateMemory = async () => {
@@ -763,6 +964,8 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
               />
               <span>Status sous-agents</span>
               <button onClick={() => void refreshSubagentStatus()}><Icon name="plug" /> Verifier pi-subagents</button>
+              <span>Project OS</span>
+              <SettingSelect value={settings.projectSupervisorEnabled ? "on" : "off"} onChange={(value) => onChange({ projectSupervisorEnabled: value === "on" })} options={onOffOptions} />
               <span>Advisor</span>
               <SettingSelect
                 value={settings.advisorEnabled ? "on" : "off"}
@@ -855,6 +1058,12 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
               />
               <span>Memoire locale</span>
               <SettingSelect value={settings.memoryEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryEnabled: value === "on", memoryMode: value === "on" ? "deep" : "off" })} options={onOffOptions} />
+              <span>Sovereign Memory</span>
+              <SettingSelect value={settings.sovereignMemoryEnabled ? "on" : "off"} onChange={(value) => onChange({ sovereignMemoryEnabled: value === "on" })} options={onOffOptions} />
+              <span>Autopilote</span>
+              <SettingSelect value={settings.memoryAutopilot ? "on" : "off"} onChange={(value) => onChange({ memoryAutopilot: value === "on" })} options={onOffOptions} />
+              <span>Mode prive</span>
+              <SettingSelect value={settings.memoryPrivateMode ? "on" : "off"} onChange={(value) => onChange({ memoryPrivateMode: value === "on" })} options={onOffOptions} />
               <span>Injection automatique</span>
               <SettingSelect
                 value={settings.memoryAutoInject ? "on" : "off"}
@@ -878,6 +1087,12 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
               <SettingSelect value={settings.memoryHybridRecallEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryHybridRecallEnabled: value === "on" })} options={onOffOptions} />
               <span>Corrections</span>
               <SettingSelect value={settings.memoryCorrectionsEnabled ? "on" : "off"} onChange={(value) => onChange({ memoryCorrectionsEnabled: value === "on" })} options={onOffOptions} />
+              <span>Explain recall</span>
+              <SettingSelect value={settings.memoryExplainRecall ? "on" : "off"} onChange={(value) => onChange({ memoryExplainRecall: value === "on" })} options={onOffOptions} />
+              <span>Skills apprises</span>
+              <SettingSelect value={settings.memorySkillLearning ? "on" : "off"} onChange={(value) => onChange({ memorySkillLearning: value === "on" })} options={onOffOptions} />
+              <span>Prompt compiler</span>
+              <SettingSelect value={settings.promptCompilerEnabled ? "on" : "off"} onChange={(value) => onChange({ promptCompilerEnabled: value === "on" })} options={onOffOptions} />
               <span>Episodes injectes</span>
               <input type="number" min="0" max="30" step="1" value={settings.memoryMaxEpisodicHits} onChange={(e) => onChange({ memoryMaxEpisodicHits: Number(e.target.value) })} />
               <span>Confiance minimale</span>
@@ -888,6 +1103,14 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
               <span>Les souvenirs projet/session restent isoles. La couche globale ne stocke pas les secrets detectes et injecte seulement un contexte source-labelle.</span>
               <span>Etat</span>
               <button onClick={() => void refreshMemoryStatus()}><Icon name="search" /> Lire status memoire</button>
+              <span>Audit</span>
+              <button onClick={() => void refreshMemoryAudit()}><Icon name="shield" /> Lire audit souverain</button>
+              <span>Question audit</span>
+              <input value={memoryQuery} onChange={(e) => setMemoryQuery(e.target.value)} />
+              <span>Migration dry-run</span>
+              <button onClick={() => void dryRunMemoryMigration()}><Icon name="search" /> Simuler migration</button>
+              <span>Migration appliquee</span>
+              <button onClick={() => void applyMemoryMigration()}><Icon name="check" /> Appliquer avec backup</button>
               <span>Consolidation</span>
               <button onClick={() => void consolidateMemory()}><Icon name="spark" /> Apprendre depuis les anciennes sessions</button>
               <span>Dossier memoire</span>
@@ -897,17 +1120,46 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
               <pre className="diagnostics-output">{JSON.stringify({
                 backend: memoryStatus.backend,
                 version: memoryStatus.version,
+                externalMemoryServices: memoryStatus.externalMemoryServices,
                 count: memoryStatus.count,
                 activeCount: memoryStatus.activeCount,
                 episodeCount: memoryStatus.episodeCount,
                 eventCount: memoryStatus.eventCount,
                 correctionCount: memoryStatus.correctionCount,
+                skillCardCount: memoryStatus.skillCardCount,
                 byScope: memoryStatus.byScope,
                 byKind: memoryStatus.byKind,
                 byTier: memoryStatus.byTier,
                 byStatus: memoryStatus.byStatus,
                 architecture: memoryStatus.architecture,
-                profile: memoryStatus.profile
+                profile: memoryStatus.profile,
+                userModel: memoryStatus.userModel
+              }, null, 2)}</pre>
+            ) : null}
+            {memoryAudit?.skills?.cards?.length ? (
+              <div className="capability-grid">
+                {memoryAudit.skills.cards.map((skill: any) => (
+                  <article key={skill.id} className={`capability-card ${skill.status === "disabled" ? "missing" : skill.promoted ? "ready" : "partial"}`}>
+                    <strong>{skill.title}</strong>
+                    <p>{skill.description}</p>
+                    <span>{skill.id} · {skill.status} · c{Number(skill.confidence ?? 0).toFixed(2)} · {skill.successCount ?? 0}/{skill.failureCount ?? 0}</span>
+                    <div className="settings-actions">
+                      <button onClick={() => void changeSkillStatus(skill.id, "promote")}><Icon name="check" /> Promouvoir</button>
+                      <button onClick={() => void changeSkillStatus(skill.id, "disable")}><Icon name="stop" /> Desactiver</button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+            {memoryAudit ? (
+              <pre className="diagnostics-output">{JSON.stringify({
+                explain: memoryAudit.explain ? {
+                  selected: memoryAudit.explain.records?.filter((record: any) => record.selected).length,
+                  records: memoryAudit.explain.records?.slice(0, 12),
+                  skills: memoryAudit.explain.skills?.slice(0, 8),
+                  safety: memoryAudit.explain.safety
+                } : undefined,
+                migration: memoryAudit.migration
               }, null, 2)}</pre>
             ) : null}
           </section>
@@ -930,6 +1182,118 @@ export default function SettingsView({ settings, models, onBack, onChange }: Set
               <input value={settings.displayName} onChange={(e) => onChange({ displayName: e.target.value })} />
               <span>Revision automatique</span>
               <SettingSelect value={settings.autoReview ? "on" : "off"} onChange={(value) => onChange({ autoReview: value === "on" })} options={onOffOptions} />
+            </section>
+
+            <section className="settings-section capability-doctor">
+              <h2>Capability Doctor</h2>
+              <div className="settings-card">
+                <div>
+                  <strong>Etat reel des fonctions</strong>
+                  <p>Lecture seule. Ne lit pas le clipboard, n'ouvre pas de navigateur, ne modifie pas Git, ne lance pas Pi.</p>
+                </div>
+                <button disabled={capabilitiesLoading} onClick={() => void refreshCapabilities()}><Icon name="search" /> {capabilitiesLoading ? "Lecture..." : "Rafraichir"}</button>
+              </div>
+              {capabilities ? (
+                <>
+                  <div className="capability-summary">
+                    <span><strong>{capabilities.summary.ready}</strong> usable</span>
+                    <span><strong>{capabilities.summary.counts.partial}</strong> partial</span>
+                    <span><strong>{capabilities.summary.counts.missing}</strong> missing</span>
+                    <span><strong>{capabilities.summary.counts["unsafe-by-default"]}</strong> unsafe</span>
+                  </div>
+                  {capabilitiesError ? <p className="settings-status warning">Rapport ancien: {capabilitiesError}</p> : null}
+                  <div className="capability-grid">
+                    {capabilities.capabilities.map((item) => (
+                      <article key={item.id} className={`capability-card ${item.status}`}>
+                        <header>
+                          <div>
+                            <span>{item.category}</span>
+                            <strong>{item.label}</strong>
+                          </div>
+                          <em>{item.status}</em>
+                        </header>
+                        <p>{item.summary}</p>
+                        <div className="capability-meta">
+                          <span>risk</span><strong>{item.risk}</strong>
+                          <span>available</span><strong>{item.available ? "yes" : "no"}</strong>
+                          <span>configured</span><strong>{item.configured ? "yes" : "no"}</strong>
+                        </div>
+                        {item.checks.length ? (
+                          <div className="capability-checks">
+                            {item.checks.slice(0, 4).map((check) => (
+                              <span key={`${item.id}-${check.label}`} className={check.ok ? "ok" : "warn"} title={check.detail}>
+                                <Icon name={check.ok ? "check" : "circle"} size={12} /> {check.label}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                        <details>
+                          <summary>Evidence</summary>
+                          <ul>
+                            {item.evidence.map((entry) => <li key={entry}>{entry}</li>)}
+                          </ul>
+                          <p>{item.nextAction}</p>
+                        </details>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className={`settings-status${capabilitiesError ? " warning" : ""}`}>{capabilitiesError || "Aucun rapport charge."}</p>
+              )}
+            </section>
+
+            <section className="settings-section run-history">
+              <h2>Run History</h2>
+              <div className="settings-card">
+                <div>
+                  <strong>Runs locaux</strong>
+                  <p>Lecture seule depuis le run ledger. Les prompts sont reduits a un apercu nettoye.</p>
+                </div>
+                <button disabled={runsLoading} onClick={() => void refreshRuns()}>
+                  <Icon name="clock" /> {runsLoading ? "Lecture..." : "Rafraichir"}
+                </button>
+              </div>
+              {runsReport ? (
+                <>
+                  <div className="run-summary">
+                    <span><strong>{runsReport.counts.total}</strong> total</span>
+                    <span><strong>{runsReport.counts.active}</strong> active</span>
+                    <span><strong>{runsReport.counts.failed}</strong> failed/stopped</span>
+                    <span><strong>{runsReport.readOnly ? "on" : "off"}</strong> read-only</span>
+                  </div>
+                  {runsError ? <p className="settings-status warning">Rapport ancien: {runsError}</p> : null}
+                  {runsReport.runs.length ? (
+                    <div className="run-list">
+                      {runsReport.runs.map((run) => (
+                        <article key={run.id} className={`run-card ${run.status}`}>
+                          <header>
+                            <div>
+                              <span>{formatRunTime(run.startedAt)} · {formatRunDuration(run)}</span>
+                              <strong>{run.promptPreview || "No prompt preview"}</strong>
+                            </div>
+                            <em>{run.status}</em>
+                          </header>
+                          <div className="run-meta">
+                            <span>run</span><strong title={run.id}>{shortId(run.id)}</strong>
+                            <span>session</span><strong title={run.sessionId ?? ""}>{shortId(run.sessionId)}</strong>
+                            <span>project</span><strong title={run.projectId ?? ""}>{shortId(run.projectId)}</strong>
+                            <span>events</span><strong>{run.eventCount}</strong>
+                          </div>
+                          <footer>
+                            <span>{run.lastEventType || "no event"}</span>
+                            {run.lastError ? <strong title={run.lastError}>{run.lastError}</strong> : null}
+                          </footer>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="settings-status">Aucun run enregistre pour l'instant.</p>
+                  )}
+                </>
+              ) : (
+                <p className={`settings-status${runsError ? " warning" : ""}`}>{runsError || "Aucun run charge."}</p>
+              )}
             </section>
 
             <section className="settings-section">

@@ -8,6 +8,8 @@ import { sessionDisplayName } from "../lib/sessionNames";
 interface UtilityViewProps {
   view: "search" | "extensions" | "automations";
   sessions: Session[];
+  runningSessionIds?: string[];
+  queuedSessionIds?: string[];
   onOpenSettings: () => void;
   onBackToChat: () => void;
   onSelectSession: (session: Session) => void;
@@ -35,7 +37,7 @@ interface ExtensionCatalogEntry {
   recommended: boolean;
 }
 
-export default function UtilityView({ view, sessions, onOpenSettings, onBackToChat, onSelectSession, onNew, settings, extensionCommands, onSettingsChange, onRunCommand }: UtilityViewProps) {
+export default function UtilityView({ view, sessions, runningSessionIds = [], queuedSessionIds = [], onOpenSettings, onBackToChat, onSelectSession, onNew, settings, extensionCommands, onSettingsChange, onRunCommand }: UtilityViewProps) {
   const [query, setQuery] = useState("");
   const [extensionTab, setExtensionTab] = useState<"plugins" | "skills">("plugins");
   const [extensionFilter, setExtensionFilter] = useState<"all" | "built-in">("all");
@@ -46,6 +48,8 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
     if (!needle) return sessions;
     return sessions.filter((session) => `${sessionDisplayName(session.name)} ${session.name}`.toLowerCase().includes(needle));
   }, [query, sessions]);
+  const runningSessions = useMemo(() => new Set(runningSessionIds), [runningSessionIds]);
+  const queuedSessions = useMemo(() => new Set(queuedSessionIds), [queuedSessionIds]);
 
   useEffect(() => {
     if (view !== "extensions") return;
@@ -64,13 +68,24 @@ export default function UtilityView({ view, sessions, onOpenSettings, onBackToCh
         </header>
         <input autoFocus value={query} placeholder="Rechercher dans les sessions..." onChange={(event) => setQuery(event.target.value)} />
         <div className="utility-list">
-          {filteredSessions.map((session) => (
-            <button key={session.id} onClick={() => onSelectSession(session)}>
-              <Icon name="archive" />
-              <strong>{sessionDisplayName(session.name)}</strong>
-              <span>{session.messageCount} messages</span>
-            </button>
-          ))}
+          {filteredSessions.map((session) => {
+            const activity = runningSessions.has(session.id) ? "running" : queuedSessions.has(session.id) ? "queued" : session.status ?? "done";
+            const name = sessionDisplayName(session.name);
+            return (
+              <button
+                key={session.id}
+                className={activity}
+                onClick={() => onSelectSession(session)}
+                title={`${name}${activity === "running" ? " - Running now" : activity === "queued" ? " - Queued" : ""}`}
+                aria-label={`${name}${activity === "running" ? " - Running now" : activity === "queued" ? " - Queued" : ""}`}
+              >
+                <span className={`status-dot ${activity}`} />
+                <Icon name={activity === "running" ? "play" : "archive"} />
+                <strong>{name}</strong>
+                <span>{activity === "running" ? "Running now" : activity === "queued" ? "Queued" : `${session.messageCount} messages`}</span>
+              </button>
+            );
+          })}
           {!filteredSessions.length ? <span>Aucun resultat.</span> : null}
         </div>
       </section>

@@ -114,6 +114,102 @@ export interface MemoryProfile {
   updatedAt: number;
 }
 
+export interface MemoryEvidence {
+  id: string;
+  type: "record" | "episode" | "event" | "correction" | "skill";
+  source: MemorySource;
+  summary: string;
+  recordId?: string;
+  episodeId?: string;
+  eventId?: string;
+  confidence: number;
+  createdAt: number;
+}
+
+export type MemoryRecordV4 = MemoryRecord & {
+  schemaVersion?: number;
+  evidenceItems?: MemoryEvidence[];
+};
+
+export type MemoryEventLedgerEntry = MemoryEvent & {
+  schemaVersion?: number;
+  category?: "chat" | "tool" | "project" | "advisor" | "subagent" | "release" | "memory";
+};
+
+export interface UserPreferenceModel {
+  id: "global-user";
+  kind: "observable-collaboration-preferences";
+  summary: string;
+  language: string;
+  autonomy: "low" | "medium" | "high";
+  tone: string;
+  uiPreferences: string[];
+  verificationPreferences: string[];
+  riskTolerance: "low" | "medium" | "high";
+  correctionPatterns: string[];
+  evidenceMemoryIds: string[];
+  confidence: number;
+  updatedAt: number;
+  safetyBoundary: string;
+}
+
+export type SkillCardStatus = "draft" | "active" | "disabled" | "retired";
+
+export interface SkillCard {
+  id: string;
+  title: string;
+  description: string;
+  triggers: string[];
+  preconditions: string[];
+  steps: string[];
+  tools: string[];
+  permissions: string[];
+  verification: string[];
+  failureModes: string[];
+  examples: string[];
+  confidence: number;
+  successCount: number;
+  failureCount: number;
+  status: SkillCardStatus;
+  promoted: boolean;
+  sourceMemoryIds: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoryRecallPacket {
+  query: string;
+  generatedAt: number;
+  precedence: string[];
+  budgetTokens: number;
+  estimatedTokens: number;
+  records: Array<{
+    id: string;
+    title: string;
+    kind: MemoryKind;
+    tier: MemoryTier;
+    scope: MemoryScope;
+    score: number;
+    selected: boolean;
+    reasons: string[];
+    evidence: MemoryEvidence[];
+  }>;
+  episodes: Array<{
+    id: string;
+    title: string;
+    score: number;
+    selected: boolean;
+    reasons: string[];
+  }>;
+  skills: SkillCard[];
+  userModel: UserPreferenceModel;
+  safety: {
+    externalServices: "none";
+    sensitiveRecordsInjected: 0;
+    policy: string;
+  };
+}
+
 export interface MemorySearchOptions {
   query?: string;
   projectId?: string | null;
@@ -155,8 +251,11 @@ const EVENTS_PATH = path.join(MEMORY_DIR, "events.jsonl");
 const EPISODES_PATH = path.join(MEMORY_DIR, "episodes.jsonl");
 const CORRECTIONS_PATH = path.join(MEMORY_DIR, "corrections.jsonl");
 const PROFILE_PATH = path.join(MEMORY_DIR, "profile.json");
+const SOVEREIGN_STATE_PATH = path.join(MEMORY_DIR, "sovereign-state.json");
+const SKILL_CARDS_PATH = path.join(MEMORY_DIR, "skill-cards.json");
+const MIGRATIONS_DIR = path.join(MEMORY_DIR, "migrations");
 
-const MEMORY_VERSION = 3;
+const MEMORY_VERSION = 4;
 const MAX_EVENT_TEXT = 6_000;
 const MAX_CONTEXT_RECORDS = 24;
 const MAX_CONTEXT_EPISODES = 8;
@@ -178,8 +277,10 @@ function redactSecrets(text: string) {
     .replace(/\b(sk-[A-Za-z0-9_-]{16,})\b/g, "[redacted-openai-key]")
     .replace(/\b(gh[pousr]_[A-Za-z0-9_]{16,})\b/g, "[redacted-github-token]")
     .replace(/\b(xox[baprs]-[A-Za-z0-9-]{16,})\b/g, "[redacted-slack-token]")
+    .replace(/(authorization\s*[:=]\s*["']?bearer\s+)[A-Za-z0-9._-]{8,}/gi, "authorization: [redacted]")
+    .replace(/(bearer\s+)[A-Za-z0-9._-]{8,}/gi, "$1[redacted]")
     .replace(/(["']?(?:api[_-]?key|token|secret|password|authorization)["']?\s*[:=]\s*["']?)([^"',;\s}]+)/gi, "$1[redacted]")
-    .replace(/(bearer\s+)[A-Za-z0-9._-]{12,}/gi, "$1[redacted]");
+    .replace(/\b[A-Za-z0-9._-]{16,}\b/g, (value) => /[A-Za-z]/.test(value) && /[0-9]/.test(value) ? "[redacted-token-like]" : value);
 }
 
 function sensitivityFor(text: string): MemorySensitivity {
@@ -425,8 +526,10 @@ function upsertEpisode(input: Partial<MemoryEpisode> & { text: string }): Memory
 
 function appendEvent(input: Omit<MemoryEvent, "id" | "createdAt" | "hash" | "sensitivity"> & { text?: string }) {
   const text = redactSecrets(String(input.text ?? "").slice(0, MAX_EVENT_TEXT));
+  const sanitizedPayload = redactPayload(input.payload);
   const event: MemoryEvent = {
     ...input,
+    payload: sanitizedPayload,
     id: crypto.randomUUID(),
     text,
     createdAt: Date.now(),
@@ -435,6 +538,659 @@ function appendEvent(input: Omit<MemoryEvent, "id" | "createdAt" | "hash" | "sen
   };
   appendJsonl(EVENTS_PATH, event);
   return event;
+}
+
+function redactPayload(value: unknown, depth = 0): unknown {
+  if (depth > 8) return "[redacted-depth-limit]";
+  if (typeof value === "string") return redactSecrets(value).slice(0, 6_000);
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (Array.isArray(value)) return value.slice(0, 80).map((item) => redactPayload(item, depth + 1));
+  if (value && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, raw] of Object.entries(value as Record<string, unknown>).slice(0, 120)) {
+      if (/(api[_-]?key|token|secret|password|authorization|cookie|credential)/i.test(key)) {
+        output[key] = "[redacted]";
+      } else {
+        output[key] = redactPayload(raw, depth + 1);
+      }
+    }
+    return output;
+  }
+  return undefined;
+}
+
+function readJsonFile<T>(filePath: string, fallback: T): T {
+  ensureMemoryDir();
+  try {
+    if (!fs.existsSync(filePath)) return fallback;
+    return JSON.parse(fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "")) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeJsonFile(filePath: string, value: unknown) {
+  ensureMemoryDir();
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const tmpPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmpPath, JSON.stringify(value, null, 2));
+  fs.renameSync(tmpPath, filePath);
+  fs.chmodSync(filePath, 0o600);
+}
+
+function summarizeEvidence(record: MemoryRecord): MemoryEvidence[] {
+  const provenance = record.provenance ?? [];
+  const items: MemoryEvidence[] = provenance.slice(0, 3).map((item, index) => ({
+    id: stableHash(`${record.id}|${item.eventId ?? ""}|${item.messageHash ?? ""}|${index}`),
+    type: "record" as const,
+    source: item.source,
+    summary: item.note ?? item.filePath ?? item.sessionId ?? record.title,
+    recordId: record.id,
+    eventId: item.eventId ?? undefined,
+    confidence: record.confidence,
+    createdAt: item.createdAt
+  }));
+  if (!items.length) {
+    items.push({
+      id: stableHash(`${record.id}|fallback`),
+      type: "record" as const,
+      source: record.source,
+      summary: record.evidence?.[0] ?? record.title,
+      recordId: record.id,
+      confidence: record.confidence,
+      createdAt: record.createdAt
+    });
+  }
+  return items;
+}
+
+function defaultSkillCards(now = Date.now()): SkillCard[] {
+  const base: Array<Omit<SkillCard, "createdAt" | "updatedAt" | "confidence" | "successCount" | "failureCount" | "status" | "promoted" | "sourceMemoryIds" | "examples"> & { examples?: string[] }> = [
+    {
+      id: "project-architect",
+      title: "Project Architect",
+      description: "Turn a broad project request into an implementation architecture, milestones, ownership boundaries, and verification gates.",
+      triggers: ["new project", "large feature", "architecture", "roadmap", "phase plan"],
+      preconditions: ["Read existing repo structure", "Identify current branch and dirty files"],
+      steps: ["Map stack and entrypoints", "Define phases", "Choose smallest safe first slice", "Define tests and release gates"],
+      tools: ["rg", "git", "npm", "browser"],
+      permissions: ["read repo", "write plan artifacts when executing"],
+      verification: ["Plan has owner, files, tests, rollback, and release criteria"],
+      failureModes: ["Overplanning without executable slices", "Ignoring dirty worktree"],
+      examples: ["Plan a Tauri/React/backend feature across phases"]
+    },
+    {
+      id: "memory-curator",
+      title: "Memory Curator",
+      description: "Extract durable facts, preferences, corrections, warnings, and project decisions without storing secrets.",
+      triggers: ["remember", "correction", "preference", "project fact", "memory audit"],
+      preconditions: ["Redact secrets first", "Keep raw episode as evidence"],
+      steps: ["Classify candidate", "Score confidence and importance", "Attach evidence", "Supersede stale memory when corrected"],
+      tools: ["memory search", "memory correction"],
+      permissions: ["local memory only"],
+      verification: ["Memory has scope, evidence, confidence, and no secret"],
+      failureModes: ["Learning from hidden prompt text", "Promoting one-off noise"]
+    },
+    {
+      id: "skill-miner",
+      title: "Skill Miner",
+      description: "Promote repeated verified workflows into reusable procedural skills.",
+      triggers: ["same workflow succeeds repeatedly", "tool sequence", "release recipe", "debug recipe"],
+      preconditions: ["At least three successes or explicit approval", "Verification step is known"],
+      steps: ["Extract trigger", "Extract steps", "Record tools and failure modes", "Promote only after evidence"],
+      tools: ["memory", "run ledger"],
+      permissions: ["local skill library"],
+      verification: ["Skill card has trigger, preconditions, steps, and test"],
+      failureModes: ["Vague skill", "Auto-promoting an unverified pattern"]
+    },
+    {
+      id: "long-run-supervisor",
+      title: "Long Run Supervisor",
+      description: "Keep long project work resumable with checkpoints, queue state, pause/resume/cancel, and verification status.",
+      triggers: ["long-running work", "multi-hour task", "power outage", "resume project"],
+      preconditions: ["Project is selected", "Run ledger is writable"],
+      steps: ["Create task", "Record checkpoint", "Update run state", "Persist next action", "Resume from last verified state"],
+      tools: ["project graph", "run ledger", "git"],
+      permissions: ["write project state"],
+      verification: ["Restart backend and recover run/task state"],
+      failureModes: ["Mixing sessions", "Marking unverified work complete"]
+    },
+    {
+      id: "advisor-packet",
+      title: "Advisor Packet",
+      description: "Package goal, files, diff, tests, risks, and intended answer for advisor review.",
+      triggers: ["substantial change", "release", "security", "architecture", "review"],
+      preconditions: ["Concrete work or plan exists"],
+      steps: ["Collect goal", "List files read/changed", "Summarize diff", "List verification", "Ask for P0-P3 findings"],
+      tools: ["advisor", "git diff", "tests"],
+      permissions: ["read-only review"],
+      verification: ["P0/P1 fixed or reported"],
+      failureModes: ["Using advisor as substitute for tests"]
+    },
+    {
+      id: "subagent-orchestrator",
+      title: "Subagent Orchestrator",
+      description: "Delegate research/review/context in parallel while enforcing one-writer boundaries.",
+      triggers: ["subagents", "parallel research", "review loop", "large codebase"],
+      preconditions: ["Task is complex enough", "Dirty worktree risk is known"],
+      steps: ["Split read-only questions", "Assign disjoint scopes", "Collect outputs", "Centralize integration"],
+      tools: ["pi-subagents", "advisor", "git"],
+      permissions: ["read-only by default"],
+      verification: ["No overlapping writer scopes unless worktrees are used"],
+      failureModes: ["Parallel writers in same files", "Fake subagent output"]
+    },
+    {
+      id: "release-manager",
+      title: "Release Manager",
+      description: "Version, build, install, tag, push, and verify PiAgent updater releases.",
+      triggers: ["release", "update desktop", "publish", "tag"],
+      preconditions: ["Build passes", "Version target chosen", "Git status understood"],
+      steps: ["Set version", "Build desktop", "Generate latest.json", "Install local", "Push tag", "Verify release manifest"],
+      tools: ["npm", "tauri", "git", "GitHub Actions"],
+      permissions: ["release write access"],
+      verification: ["Installed exe version and latest.json match"],
+      failureModes: ["Pushing before install verification"]
+    },
+    {
+      id: "ui-qa-browser",
+      title: "UI QA Browser",
+      description: "Verify UI changes with responsive browser checks and screenshots.",
+      triggers: ["UI change", "layout", "dropdown", "responsive", "visual bug"],
+      preconditions: ["Dev server or backend URL is available"],
+      steps: ["Open page", "Check console", "Capture 1440/1024/390", "Verify interactions"],
+      tools: ["browser", "playwright"],
+      permissions: ["read local app"],
+      verification: ["Screenshots and DOM checks pass"],
+      failureModes: ["Relying on build only for UI"]
+    },
+    {
+      id: "git-safety",
+      title: "Git Safety",
+      description: "Protect user changes and avoid destructive operations in dirty repositories.",
+      triggers: ["git operation", "commit", "merge", "release", "worktree"],
+      preconditions: ["Run git status first"],
+      steps: ["Identify owned changes", "Avoid reset/checkout", "Stage only intended files", "Use non-interactive commands"],
+      tools: ["git"],
+      permissions: ["repo read/write as authorized"],
+      verification: ["git diff --check and status reviewed"],
+      failureModes: ["Reverting user work", "Staging unrelated files"]
+    },
+    {
+      id: "failure-doctor",
+      title: "Failure Doctor",
+      description: "Diagnose repeated tool/build/runtime failures and convert the fix into memory when verified.",
+      triggers: ["error", "build failed", "process exited", "black screen", "test failed"],
+      preconditions: ["Capture exact error and command"],
+      steps: ["Classify failure", "Find first broken boundary", "Patch smallest cause", "Rerun relevant check"],
+      tools: ["logs", "tests", "rg"],
+      permissions: ["local diagnostics"],
+      verification: ["Original failing command now passes or blocker is explicit"],
+      failureModes: ["Fixing symptoms without rerunning"]
+    },
+    {
+      id: "prompt-compiler",
+      title: "Prompt Compiler",
+      description: "Build a server-side prompt packet from objective, project context, memory, skills, tools, and safety policy.",
+      triggers: ["every prompt", "memory injection", "project context", "subagent policy"],
+      preconditions: ["Visible user message is kept separate"],
+      steps: ["Observe visible user text", "Recall memory", "Select skills", "Compile hidden context", "Emit explain event"],
+      tools: ["memory", "settings", "subagents"],
+      permissions: ["server-side prompt assembly"],
+      verification: ["Hidden packet does not appear as user text or get memorized"],
+      failureModes: ["Prompt contamination", "Over-injection"]
+    },
+    {
+      id: "artifact-manager",
+      title: "Artifact Manager",
+      description: "Keep screenshots, generated images, reports, and build artifacts indexed to project runs.",
+      triggers: ["screenshot", "generated image", "report", "artifact", "browser QA"],
+      preconditions: ["Artifact path or URL exists"],
+      steps: ["Store metadata", "Attach to run/project", "Expose reveal/download", "Keep chat summary compact"],
+      tools: ["artifact index", "browser", "filesystem"],
+      permissions: ["local artifact storage"],
+      verification: ["Artifact is reachable from chat/project UI"],
+      failureModes: ["Large artifact pasted into prompt"]
+    }
+  ];
+  return base.map((skill) => ({
+    ...skill,
+    examples: skill.examples ?? [],
+    confidence: 0.76,
+    successCount: 0,
+    failureCount: 0,
+    status: "active",
+    promoted: true,
+    sourceMemoryIds: [],
+    createdAt: now,
+    updatedAt: now
+  }));
+}
+
+function mergeSkillCards(cards: SkillCard[]) {
+  const byId = new Map<string, SkillCard>();
+  for (const card of defaultSkillCards()) byId.set(card.id, card);
+  for (const raw of cards) {
+    if (!raw?.id) continue;
+    const fallback = byId.get(raw.id);
+    byId.set(raw.id, {
+      ...(fallback ?? defaultSkillCards().find((item) => item.id === "memory-curator")!),
+      ...raw,
+      id: String(raw.id),
+      triggers: Array.isArray(raw.triggers) ? raw.triggers.map(String) : fallback?.triggers ?? [],
+      preconditions: Array.isArray(raw.preconditions) ? raw.preconditions.map(String) : fallback?.preconditions ?? [],
+      steps: Array.isArray(raw.steps) ? raw.steps.map(String) : fallback?.steps ?? [],
+      tools: Array.isArray(raw.tools) ? raw.tools.map(String) : fallback?.tools ?? [],
+      permissions: Array.isArray(raw.permissions) ? raw.permissions.map(String) : fallback?.permissions ?? [],
+      verification: Array.isArray(raw.verification) ? raw.verification.map(String) : fallback?.verification ?? [],
+      failureModes: Array.isArray(raw.failureModes) ? raw.failureModes.map(String) : fallback?.failureModes ?? [],
+      examples: Array.isArray(raw.examples) ? raw.examples.map(String) : fallback?.examples ?? [],
+      confidence: Math.min(1, Math.max(0, Number(raw.confidence ?? fallback?.confidence ?? 0.5))),
+      successCount: Math.max(0, Number(raw.successCount ?? 0)),
+      failureCount: Math.max(0, Number(raw.failureCount ?? 0)),
+      status: ["draft", "active", "disabled", "retired"].includes(String(raw.status)) ? raw.status : fallback?.status ?? "draft",
+      promoted: Boolean(raw.promoted ?? fallback?.promoted),
+      sourceMemoryIds: Array.isArray(raw.sourceMemoryIds) ? raw.sourceMemoryIds.map(String) : [],
+      createdAt: Number(raw.createdAt ?? fallback?.createdAt ?? Date.now()),
+      updatedAt: Number(raw.updatedAt ?? Date.now())
+    } as SkillCard);
+  }
+  return [...byId.values()].sort((a, b) => Number(b.promoted) - Number(a.promoted) || b.confidence - a.confidence || a.title.localeCompare(b.title));
+}
+
+function readStoredSkillCards() {
+  return mergeSkillCards(readJsonFile<SkillCard[]>(SKILL_CARDS_PATH, []));
+}
+
+function writeStoredSkillCards(cards: SkillCard[]) {
+  writeJsonFile(SKILL_CARDS_PATH, mergeSkillCards(cards));
+}
+
+function skillCardFromMemory(record: MemoryRecord): SkillCard {
+  const now = Date.now();
+  return {
+    id: `learned-${record.hash ?? stableHash(record.id)}`,
+    title: record.title,
+    description: record.text.slice(0, 280),
+    triggers: record.tags.slice(0, 8),
+    preconditions: ["Memory has procedural scope", "Use only when current task matches trigger terms"],
+    steps: [record.text.slice(0, 500)],
+    tools: record.kind === "tool" ? [record.title.replace(/^Tool:\s*/i, "")] : record.tags.filter((tag) => /git|npm|browser|advisor|subagent|memory|tool|pi/.test(tag)).slice(0, 8),
+    permissions: ["follow current access mode"],
+    verification: ["Run the task-specific verification before counting this skill as successful"],
+    failureModes: ["Stored procedure may be stale; prefer current repo evidence"],
+    examples: [],
+    confidence: Math.min(0.82, Math.max(0.35, record.confidence)),
+    successCount: Math.max(0, Number(record.useCount ?? 0)),
+    failureCount: record.kind === "warning" ? 1 : 0,
+    status: record.confidence >= 0.7 && Number(record.useCount ?? 0) >= 3 ? "active" : "draft",
+    promoted: record.confidence >= 0.7 && Number(record.useCount ?? 0) >= 3,
+    sourceMemoryIds: [record.id],
+    createdAt: record.createdAt ?? now,
+    updatedAt: record.updatedAt ?? now
+  };
+}
+
+export function listSkillCards(options: { includeDisabled?: boolean; query?: string; limit?: number } = {}) {
+  const queryTokens = new Set(tokenize(options.query ?? ""));
+  const learned = readAllMemory()
+    .filter((record) => record.tier === "procedural" && record.sensitivity !== "sensitive" && !record.archived && record.status === "active")
+    .slice(0, 80)
+    .map(skillCardFromMemory);
+  const cards = mergeSkillCards([...readStoredSkillCards(), ...learned])
+    .filter((card) => options.includeDisabled || (card.status !== "disabled" && card.status !== "retired"))
+    .map((card) => {
+      const haystack = `${card.title} ${card.description} ${card.triggers.join(" ")} ${card.tools.join(" ")}`;
+      const score = queryTokens.size
+        ? [...queryTokens].reduce((sum, token) => sum + (tokenize(haystack).includes(token) ? 1 : 0), 0)
+        : 1;
+      return { card, score };
+    })
+    .filter((item) => !queryTokens.size || item.score > 0)
+    .sort((a, b) => b.score - a.score || Number(b.card.promoted) - Number(a.card.promoted) || b.card.confidence - a.card.confidence)
+    .slice(0, Math.min(100, Math.max(1, Number(options.limit ?? 40))))
+    .map((item) => item.card);
+  return cards;
+}
+
+export function promoteSkillCard(id: string) {
+  const cards = readStoredSkillCards();
+  const index = cards.findIndex((card) => card.id === id);
+  const learned = listSkillCards({ includeDisabled: true }).find((card) => card.id === id);
+  const current = index >= 0 ? cards[index] : learned;
+  if (!current) throw new Error("Skill card not found.");
+  const next: SkillCard = {
+    ...current,
+    status: "active",
+    promoted: true,
+    confidence: Math.max(0.75, current.confidence),
+    successCount: Math.max(3, current.successCount),
+    updatedAt: Date.now()
+  };
+  if (index >= 0) cards[index] = next;
+  else cards.push(next);
+  writeStoredSkillCards(cards);
+  appendEvent({ type: "system", text: `skill_promoted:${id}` });
+  return next;
+}
+
+export function disableSkillCard(id: string, reason = "Disabled by user or regression policy.") {
+  const cards = readStoredSkillCards();
+  const index = cards.findIndex((card) => card.id === id);
+  const current = index >= 0 ? cards[index] : listSkillCards({ includeDisabled: true }).find((card) => card.id === id);
+  if (!current) throw new Error("Skill card not found.");
+  const next: SkillCard = {
+    ...current,
+    status: "disabled",
+    promoted: false,
+    failureCount: current.failureCount + 1,
+    failureModes: [...new Set([...current.failureModes, reason])].slice(0, 12),
+    updatedAt: Date.now()
+  };
+  if (index >= 0) cards[index] = next;
+  else cards.push(next);
+  writeStoredSkillCards(cards);
+  appendEvent({ type: "system", text: `skill_disabled:${id}:${reason}` });
+  return next;
+}
+
+function rawJsonlReport(filePath: string) {
+  ensureMemoryDir();
+  if (!fs.existsSync(filePath)) return { path: filePath, lines: 0, parseErrors: 0 };
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/).filter(Boolean);
+  let parseErrors = 0;
+  for (const line of lines) {
+    try {
+      JSON.parse(line);
+    } catch {
+      parseErrors += 1;
+    }
+  }
+  return { path: filePath, lines: lines.length, parseErrors };
+}
+
+function duplicateMemoryGroups(records: MemoryRecord[]) {
+  const groups = new Map<string, MemoryRecord[]>();
+  for (const record of records) {
+    const key = record.hash ?? stableHash(`${record.scope}|${record.kind}|${record.title}|${record.text}`);
+    groups.set(key, [...(groups.get(key) ?? []), record]);
+  }
+  return [...groups.entries()]
+    .filter(([, items]) => items.length > 1)
+    .map(([hash, items]) => ({ hash, ids: items.map((item) => item.id), title: items[0]?.title ?? "duplicate", count: items.length }));
+}
+
+function sensitiveMemoryFindings(records: MemoryRecord[], episodes: MemoryEpisode[], events: MemoryEvent[]) {
+  return [
+    ...records.filter((record) => record.sensitivity === "sensitive").map((record) => ({ type: "record", id: record.id, title: record.title })),
+    ...episodes.filter((episode) => episode.sensitivity === "sensitive").map((episode) => ({ type: "episode", id: episode.id, title: episode.title })),
+    ...events.filter((event) => event.sensitivity === "sensitive").map((event) => ({ type: "event", id: event.id, title: event.toolName ?? event.type }))
+  ].slice(0, 250);
+}
+
+function buildEntityGraph(records: MemoryRecord[], episodes: MemoryEpisode[]) {
+  const nodes = new Map<string, { id: string; label: string; type: string; count: number }>();
+  const edges = new Map<string, { source: string; target: string; type: string; count: number }>();
+  const addNode = (id: string, label: string, type: string) => {
+    const current = nodes.get(id) ?? { id, label, type, count: 0 };
+    current.count += 1;
+    nodes.set(id, current);
+  };
+  const addEdge = (source: string, target: string, type: string) => {
+    const id = `${source}->${target}:${type}`;
+    const current = edges.get(id) ?? { source, target, type, count: 0 };
+    current.count += 1;
+    edges.set(id, current);
+  };
+  for (const record of records.slice(0, 2000)) {
+    const memoryNode = `memory:${record.id}`;
+    addNode(memoryNode, record.title, record.kind);
+    for (const entity of record.entities ?? []) {
+      const entityNode = `entity:${entity.toLowerCase()}`;
+      addNode(entityNode, entity, "entity");
+      addEdge(memoryNode, entityNode, "mentions");
+    }
+    if (record.projectId) {
+      addNode(`project:${record.projectId}`, record.projectId, "project");
+      addEdge(memoryNode, `project:${record.projectId}`, "scoped_to");
+    }
+    if (record.sessionId) {
+      addNode(`session:${record.sessionId}`, record.sessionId, "session");
+      addEdge(memoryNode, `session:${record.sessionId}`, "scoped_to");
+    }
+  }
+  for (const episode of episodes.slice(-1000)) {
+    const episodeNode = `episode:${episode.id}`;
+    addNode(episodeNode, episode.title, episode.type);
+    for (const entity of episode.entities ?? []) {
+      const entityNode = `entity:${entity.toLowerCase()}`;
+      addNode(entityNode, entity, "entity");
+      addEdge(episodeNode, entityNode, "mentions");
+    }
+  }
+  return {
+    nodes: [...nodes.values()].sort((a, b) => b.count - a.count).slice(0, 350),
+    edges: [...edges.values()].sort((a, b) => b.count - a.count).slice(0, 600)
+  };
+}
+
+export function buildUserPreferenceModel(records = readAllMemory(), profile = readProfile()): UserPreferenceModel {
+  const active = records.filter((record) => !record.archived && record.status === "active" && record.sensitivity !== "sensitive");
+  const preferences = active.filter((record) => record.scope === "global" && ["preference", "identity"].includes(record.kind));
+  const corrections = active.filter((record) => record.kind === "correction").sort((a, b) => b.updatedAt - a.updatedAt);
+  const text = `${profile.summary}\n${preferences.map((item) => item.text).join("\n")}`.toLowerCase();
+  const language = /\b(fran[cç]ais|réponds en français|reponds en francais|parle en francais)\b/i.test(text) ? "fr" : /\benglish\b/i.test(text) ? "en" : "mixed";
+  const autonomy = /(autonom|sans demander|do not ask|continue|long|plein d.agent|subagent)/i.test(text) ? "high" : "medium";
+  const riskTolerance = /(release|push|desktop|danger|ne casse|don't break|safe|advisor|verify)/i.test(text) ? "medium" : "medium";
+  const uiPreferences = preferences
+    .filter((record) => /(ui|interface|glass|codex|transparent|animation|theme|cursor|dropdown|icone|icon)/i.test(record.text))
+    .slice(0, 8)
+    .map((record) => record.text);
+  const verificationPreferences = preferences
+    .filter((record) => /(test|verify|build|screenshot|release|github|desktop|advisor|subagent)/i.test(record.text))
+    .slice(0, 8)
+    .map((record) => record.text);
+  return {
+    id: "global-user",
+    kind: "observable-collaboration-preferences",
+    summary: profile.summary,
+    language,
+    autonomy,
+    tone: "direct, professional, concise, implementation-first",
+    uiPreferences,
+    verificationPreferences,
+    riskTolerance,
+    correctionPatterns: corrections.slice(0, 8).map((record) => record.text),
+    evidenceMemoryIds: [...new Set([...profile.sourceMemoryIds, ...preferences.slice(0, 12).map((record) => record.id), ...corrections.slice(0, 6).map((record) => record.id)])].slice(0, 30),
+    confidence: profile.confidence,
+    updatedAt: Date.now(),
+    safetyBoundary: "Only observable collaboration preferences are modeled. No clinical, sensitive, political, religious, intimate, or diagnostic profiling is inferred."
+  };
+}
+
+export function dryRunMemoryMigration() {
+  const records = readAllMemory();
+  const episodes = readAllEpisodes();
+  const events = readJsonl<MemoryEvent>(EVENTS_PATH);
+  const graph = buildEntityGraph(records, episodes);
+  const duplicateGroups = duplicateMemoryGroups(records);
+  const sensitiveFindings = sensitiveMemoryFindings(records, episodes, events);
+  const jsonl = [
+    rawJsonlReport(MEMORY_PATH),
+    rawJsonlReport(EPISODES_PATH),
+    rawJsonlReport(EVENTS_PATH),
+    rawJsonlReport(CORRECTIONS_PATH)
+  ];
+  return {
+    ok: true,
+    dryRun: true,
+    version: MEMORY_VERSION,
+    generatedAt: Date.now(),
+    storage: {
+      memoryPath: MEMORY_PATH,
+      episodesPath: EPISODES_PATH,
+      eventsPath: EVENTS_PATH,
+      correctionsPath: CORRECTIONS_PATH,
+      skillCardsPath: SKILL_CARDS_PATH,
+      sovereignStatePath: SOVEREIGN_STATE_PATH
+    },
+    counts: {
+      records: records.length,
+      episodes: episodes.length,
+      events: events.length,
+      skillCards: listSkillCards({ includeDisabled: true }).length,
+      graphNodes: graph.nodes.length,
+      graphEdges: graph.edges.length
+    },
+    jsonl,
+    duplicateGroups,
+    sensitiveFindings,
+    userModel: buildUserPreferenceModel(records),
+    graphPreview: {
+      nodes: graph.nodes.slice(0, 25),
+      edges: graph.edges.slice(0, 25)
+    },
+    willMutate: false,
+    rollback: "Apply creates a timestamped backup under memory/migrations; POST /api/memory/migrate/rollback restores the latest backup or a requested backup id."
+  };
+}
+
+export function applyMemoryMigration() {
+  const report = dryRunMemoryMigration();
+  fs.mkdirSync(MIGRATIONS_DIR, { recursive: true });
+  const backupPath = path.join(MIGRATIONS_DIR, `v${MEMORY_VERSION}-${Date.now()}-backup.json`);
+  const records = readAllMemory();
+  const episodes = readAllEpisodes();
+  const events = readJsonl<MemoryEvent>(EVENTS_PATH);
+  const corrections = readJsonl<Record<string, unknown>>(CORRECTIONS_PATH);
+  const skillCards = listSkillCards({ includeDisabled: true, limit: 100 });
+  const graph = buildEntityGraph(records, episodes);
+  writeJsonFile(backupPath, { records, episodes, events, corrections, profile: readProfile(), skillCards });
+  writeStoredSkillCards(skillCards);
+  writeJsonFile(SOVEREIGN_STATE_PATH, {
+    version: MEMORY_VERSION,
+    appliedAt: Date.now(),
+    backupPath,
+    counts: report.counts,
+    duplicateGroups: report.duplicateGroups,
+    sensitiveFindingCount: report.sensitiveFindings.length,
+    graph,
+    userModel: buildUserPreferenceModel(records),
+    policy: {
+      externalMemoryServices: "none",
+      recallPrecedence: ["recent correction", "active project", "security warning", "high-confidence user preference", "global durable memory", "old episode"],
+      sensitiveAutoInjection: false,
+      profileBoundary: "observable collaboration preferences only"
+    }
+  });
+  appendEvent({ type: "consolidation", text: `sovereign_memory_migration_v${MEMORY_VERSION}:backup=${backupPath}` });
+  return { ...report, dryRun: false, applied: true, backupPath, statePath: SOVEREIGN_STATE_PATH };
+}
+
+function resolveMigrationBackup(input?: string) {
+  fs.mkdirSync(MIGRATIONS_DIR, { recursive: true });
+  const backups = fs.readdirSync(MIGRATIONS_DIR)
+    .filter((file) => /^v\d+-\d+-backup\.json$/.test(file))
+    .sort()
+    .reverse();
+  const requested = input?.trim()
+    ? path.basename(input.trim())
+    : backups[0];
+  if (!requested) throw new Error("No memory migration backup is available.");
+  const resolved = path.resolve(MIGRATIONS_DIR, requested);
+  const root = path.resolve(MIGRATIONS_DIR);
+  if (!resolved.startsWith(`${root}${path.sep}`) || !fs.existsSync(resolved)) {
+    throw new Error("Invalid memory migration backup.");
+  }
+  return resolved;
+}
+
+export function rollbackMemoryMigration(input?: { backupPath?: string; backupId?: string }) {
+  const backupPath = resolveMigrationBackup(input?.backupId ?? input?.backupPath);
+  const backup = readJsonFile<{
+    records?: unknown[];
+    episodes?: unknown[];
+    events?: unknown[];
+    corrections?: unknown[];
+    profile?: MemoryProfile;
+    skillCards?: unknown[];
+  }>(backupPath, {});
+  const preRollbackBackupPath = path.join(MIGRATIONS_DIR, `v${MEMORY_VERSION}-${Date.now()}-pre-rollback.json`);
+  writeJsonFile(preRollbackBackupPath, {
+    records: readAllMemory(),
+    episodes: readAllEpisodes(),
+    events: readJsonl<MemoryEvent>(EVENTS_PATH),
+    corrections: readJsonl<Record<string, unknown>>(CORRECTIONS_PATH),
+    profile: readProfile(),
+    skillCards: listSkillCards({ includeDisabled: true, limit: 100 }),
+    reason: `pre-rollback snapshot before restoring ${backupPath}`
+  });
+  writeJsonl(MEMORY_PATH, Array.isArray(backup.records) ? backup.records.map((record) => normalizeRecord(record as Partial<MemoryRecord>)) : []);
+  writeJsonl(EPISODES_PATH, Array.isArray(backup.episodes) ? backup.episodes.map((episode) => normalizeEpisode(episode as Partial<MemoryEpisode>)) : []);
+  writeJsonl(EVENTS_PATH, Array.isArray(backup.events) ? backup.events.map((event) => ({
+    ...(event as MemoryEvent),
+    text: redactSecrets(String((event as MemoryEvent).text ?? "").slice(0, MAX_EVENT_TEXT)),
+    payload: redactPayload((event as MemoryEvent).payload)
+  } as MemoryEvent)) : []);
+  writeJsonl(CORRECTIONS_PATH, Array.isArray(backup.corrections) ? backup.corrections : []);
+  if (backup.profile && typeof backup.profile === "object") writeProfile({ ...defaultProfile(), ...backup.profile });
+  writeStoredSkillCards(Array.isArray(backup.skillCards) ? backup.skillCards as SkillCard[] : defaultSkillCards());
+  writeJsonFile(SOVEREIGN_STATE_PATH, {
+    version: MEMORY_VERSION,
+    rolledBackAt: Date.now(),
+    backupPath,
+    counts: {
+      records: Array.isArray(backup.records) ? backup.records.length : 0,
+      episodes: Array.isArray(backup.episodes) ? backup.episodes.length : 0,
+      events: Array.isArray(backup.events) ? backup.events.length : 0,
+      skillCards: Array.isArray(backup.skillCards) ? backup.skillCards.length : defaultSkillCards().length
+    }
+  });
+  appendEvent({ type: "consolidation", text: `sovereign_memory_rollback_v${MEMORY_VERSION}:backup=${backupPath}` });
+  return {
+    ok: true,
+    rolledBack: true,
+    backupPath,
+    preRollbackBackupPath,
+    statePath: SOVEREIGN_STATE_PATH
+  };
+}
+
+export function explainMemoryRecall(options: MemorySearchOptions & { budgetTokens?: number; includeProfile?: boolean } = {}): MemoryRecallPacket {
+  const context = buildMemoryContext({ ...options, touch: false });
+  const selectedRecordIds = new Set(context.records.map((record) => record.id));
+  const selectedEpisodeIds = new Set(context.episodes.map((episode) => episode.id));
+  return {
+    query: String(options.query ?? ""),
+    generatedAt: Date.now(),
+    precedence: ["recent correction", "active project", "security warning", "high-confidence user preference", "global durable memory", "old episode"],
+    budgetTokens: context.budgetTokens,
+    estimatedTokens: context.estimatedTokens,
+    records: context.hits.flatMap((hit) => hit.record ? [{
+      id: hit.record.id,
+      title: hit.record.title,
+      kind: hit.record.kind,
+      tier: hit.record.tier,
+      scope: hit.record.scope,
+      score: Math.round(hit.score * 100) / 100,
+      selected: selectedRecordIds.has(hit.record.id),
+      reasons: [...hit.reasons, hit.record.pinned ? "pinned" : "", hit.record.confidence >= 0.8 ? "high-confidence" : "", hit.record.importance >= 4.5 ? "high-importance" : ""].filter(Boolean),
+      evidence: summarizeEvidence(hit.record)
+    }] : []),
+    episodes: context.hits.flatMap((hit) => hit.episode ? [{
+      id: hit.episode.id,
+      title: hit.episode.title,
+      score: Math.round(hit.score * 100) / 100,
+      selected: selectedEpisodeIds.has(hit.episode.id),
+      reasons: hit.reasons
+    }] : []),
+    skills: listSkillCards({ query: String(options.query ?? ""), limit: 8 }),
+    userModel: buildUserPreferenceModel(),
+    safety: {
+      externalServices: "none",
+      sensitiveRecordsInjected: 0,
+      policy: "Sensitive records are never auto-injected; hidden prompt context is source-labelled and fallible."
+    }
+  };
 }
 
 function memoryVisible(record: MemoryRecord, options: MemorySearchOptions) {
@@ -702,7 +1458,7 @@ function classifyMemorySentence(sentence: string): { kind: MemoryKind; importanc
 }
 
 function extractUserMemories(text: string, projectId?: string | null, sessionId?: string | null) {
-  const cleaned = redactSecrets(text.replace(/\n\nPiAgent UI options:[\s\S]*$/m, "").replace(/\n\nAttached files:[\s\S]*$/m, "").trim());
+  const cleaned = redactSecrets(cleanPromptForMemory(text));
   const candidates: MemoryRecord[] = [];
   for (const sentence of splitSentences(cleaned)) {
     const classified = classifyMemorySentence(sentence);
@@ -735,6 +1491,17 @@ function extractUserMemories(text: string, projectId?: string | null, sessionId?
   return candidates;
 }
 
+function cleanPromptForMemory(text: string) {
+  return String(text ?? "")
+    .replace(/\n\nAttached files:[\s\S]*?(?=\n\nPiAgent UI options|\n\nPiAgent Prompt Compiler Context|\n\nPiAgent Sovereign Memory|\n\nPiAgent Global Memory|\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent UI options:[\s\S]*?(?=\n\nPiAgent Prompt Compiler Context|\n\nPiAgent Sovereign Memory|\n\nPiAgent Global Memory|\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Prompt Compiler Context[\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Sovereign Memory \([\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Global Memory \([\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Automatic Subagent Delegation Contract:[\s\S]*$/, "")
+    .trim();
+}
+
 function assistantSummaryText(event: any) {
   const messages = Array.isArray(event?.messages) ? event.messages : [];
   const assistant = [...messages].reverse().find((message) => message?.role === "assistant");
@@ -754,7 +1521,7 @@ export function addMemory(input: Partial<MemoryRecord> & { text: string; title?:
 }
 
 export function observeMemoryTurn(input: ObserveMemoryInput) {
-  const text = redactSecrets(String(input.text ?? "").trim());
+  const text = redactSecrets(cleanPromptForMemory(input.text));
   if (!text) return [];
   const source = input.source ?? "agent";
   let event: MemoryEvent | null = null;
@@ -808,7 +1575,7 @@ export function observeAgentEvent({ event, projectId, sessionId, logEvent = true
   if (!event || typeof event !== "object") return null;
   if (event.type === "tool_execution_start") {
     const toolName = String(event.toolName ?? event.name ?? "tool");
-    const argsText = JSON.stringify(event.args ?? {}).slice(0, 1_200);
+    const argsText = redactSecrets(JSON.stringify(redactPayload(event.args) ?? {})).slice(0, 1_200);
     const eventRecord = logEvent ? appendEvent({ type: "tool_start", toolName, payload: event.args, text: `${toolName} ${argsText}`, projectId, sessionId }) : null;
     if (learnEpisodes) {
       upsertEpisode({
@@ -835,7 +1602,7 @@ export function observeAgentEvent({ event, projectId, sessionId, logEvent = true
         }]
       });
     }
-    if (!learnTools) return null;
+    if (!learnTools) return eventRecord;
     return upsertMemory({
       kind: "tool",
       tier: "procedural",
@@ -861,7 +1628,7 @@ export function observeAgentEvent({ event, projectId, sessionId, logEvent = true
   }
   if (event.type === "tool_execution_end") {
     const toolName = String(event.toolName ?? event.name ?? "tool");
-    const outputText = String(event.output ?? event.result ?? event.error ?? "");
+    const outputText = redactSecrets(String(event.output ?? event.result ?? event.error ?? ""));
     const eventRecord = logEvent ? appendEvent({ type: "tool_end", toolName, text: `${toolName} ${event.isError ? "error" : "done"} ${outputText.slice(0, 1_000)}`, projectId, sessionId }) : null;
     if (learnEpisodes) {
       upsertEpisode({
@@ -888,7 +1655,7 @@ export function observeAgentEvent({ event, projectId, sessionId, logEvent = true
         }]
       });
     }
-    if (!learnTools) return null;
+    if (!learnTools) return eventRecord;
     if (event.isError) {
       return upsertMemory({
         kind: "warning",
@@ -1051,14 +1818,14 @@ export function buildMemoryContext(options: MemorySearchOptions & { budgetTokens
     ...options,
     query: query || "tool skill workflow",
     tiers: ["procedural"],
-    includeGlobal: true,
+    includeGlobal: options.includeGlobal !== false,
     limit: 8
   });
   const corrections = options.includeCorrections === false ? [] : searchMemories({
     ...options,
     query: query || "correction warning avoid prefer never",
     kinds: ["correction", "warning"],
-    includeGlobal: true,
+    includeGlobal: options.includeGlobal !== false,
     limit: 6
   });
   const selected: MemoryRecord[] = [];
@@ -1415,11 +2182,22 @@ memoryRouter.get("/status", (_req, res) => {
     version: MEMORY_VERSION,
     backend: "local-first-global-hybrid",
     architecture: {
+      sovereign: "PiAgent Sovereign Memory is local-only: event ledger, lexical/entity recall, graph preview, skill cards, and observable preference model.",
       durable: "memory.jsonl stores semantic/profile/procedural records with scope, confidence, provenance, status, and supersession.",
       episodic: "episodes.jsonl stores raw messages, tool events, task checkpoints, and corrections for session search.",
       recall: "hybrid lexical/entity/recency retrieval over durable records and episodes, then compact source-labelled prompt injection.",
-      correction: "explicit corrections create pinned correction records and supersede stale memories instead of silently deleting them."
+      correction: "explicit corrections create pinned correction records and supersede stale memories instead of silently deleting them.",
+      skillLearning: "verified procedural memories become skill cards only with evidence, confidence, and disable/promotion controls.",
+      profileBoundary: "profile is limited to observable collaboration preferences; no clinical or sensitive psychological profiling."
     },
+    externalMemoryServices: "none",
+    sovereignStatePath: SOVEREIGN_STATE_PATH,
+    skillCardsPath: SKILL_CARDS_PATH,
+    migrationDir: MIGRATIONS_DIR,
+    stateExists: fs.existsSync(SOVEREIGN_STATE_PATH),
+    lastMigration: fs.existsSync(MIGRATIONS_DIR)
+      ? fs.readdirSync(MIGRATIONS_DIR).filter((name) => name.endsWith(".json")).sort().slice(-1)[0] ?? null
+      : null,
     honchoReady: Boolean(process.env.HONCHO_API_KEY),
     memoryDir: MEMORY_DIR,
     memoryPath: MEMORY_PATH,
@@ -1436,7 +2214,9 @@ memoryRouter.get("/status", (_req, res) => {
     byKind,
     byTier,
     byStatus,
-    profile: readProfile()
+    skillCardCount: listSkillCards({ includeDisabled: true }).length,
+    profile: readProfile(),
+    userModel: buildUserPreferenceModel(activeRecords, readProfile())
   });
 });
 
@@ -1506,6 +2286,52 @@ memoryRouter.get("/context", (req, res, next) => {
   }
 });
 
+memoryRouter.get("/explain", (req, res, next) => {
+  try {
+    const packet = explainMemoryRecall({
+      query: String(req.query.q ?? ""),
+      projectId: typeof req.query.projectId === "string" ? req.query.projectId : null,
+      sessionId: typeof req.query.sessionId === "string" ? req.query.sessionId : null,
+      includeGlobal: req.query.global !== "0",
+      includeEpisodes: req.query.episodes !== "0",
+      includeCorrections: req.query.corrections !== "0",
+      minConfidence: req.query.minConfidence === undefined ? undefined : Number(req.query.minConfidence),
+      episodeLimit: Number(req.query.episodeLimit ?? MAX_CONTEXT_EPISODES),
+      budgetTokens: Number(req.query.budgetTokens ?? 1_200)
+    });
+    res.json({ ok: true, ...packet });
+  } catch (err) {
+    next(err);
+  }
+});
+
+memoryRouter.post("/migrate/dry-run", (_req, res, next) => {
+  try {
+    res.json(dryRunMemoryMigration());
+  } catch (err) {
+    next(err);
+  }
+});
+
+memoryRouter.post("/migrate/apply", (_req, res, next) => {
+  try {
+    res.json(applyMemoryMigration());
+  } catch (err) {
+    next(err);
+  }
+});
+
+memoryRouter.post("/migrate/rollback", (req, res, next) => {
+  try {
+    res.json(rollbackMemoryMigration({
+      backupPath: typeof req.body?.backupPath === "string" ? req.body.backupPath : undefined,
+      backupId: typeof req.body?.backupId === "string" ? req.body.backupId : undefined
+    }));
+  } catch (err) {
+    next(err);
+  }
+});
+
 memoryRouter.get("/profile", (_req, res) => {
   res.json({ ok: true, profile: readProfile() });
 });
@@ -1515,14 +2341,36 @@ memoryRouter.post("/profile/refresh", (_req, res) => {
 });
 
 memoryRouter.get("/skills", (req, res) => {
+  const query = String(req.query.q ?? "");
   const records = searchMemories({
-    query: String(req.query.q ?? "tool skill workflow"),
+    query: query || "tool skill workflow",
     includeGlobal: true,
     tiers: ["procedural"],
     limit: Number(req.query.limit ?? 40),
     touch: req.query.touch !== "0"
   });
-  res.json({ ok: true, skills: records });
+  const cards = listSkillCards({
+    query,
+    includeDisabled: req.query.includeDisabled === "1",
+    limit: Number(req.query.limit ?? 40)
+  });
+  res.json({ ok: true, cards, skills: records });
+});
+
+memoryRouter.post("/skills/:id/promote", (req, res, next) => {
+  try {
+    res.json({ ok: true, skill: promoteSkillCard(req.params.id) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+memoryRouter.post("/skills/:id/disable", (req, res, next) => {
+  try {
+    res.json({ ok: true, skill: disableSkillCard(req.params.id, String(req.body?.reason ?? "Disabled from memory audit UI.")) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 memoryRouter.get("/events", (req, res) => {

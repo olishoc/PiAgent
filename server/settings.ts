@@ -8,7 +8,7 @@ export type ProviderId = string;
 export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ThemePreset = "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
 export type TextDensity = "compact" | "codex" | "comfortable" | "custom";
-export type AnimatedBackground = "aurora-glass" | "midnight-ocean" | "liquid-prism" | "solar-frost" | "sci-fi-grid" | "lunar-waves" | "cartoon-beach";
+export type AnimatedBackground = "aurora-glass" | "midnight-ocean" | "liquid-prism" | "solar-frost" | "sci-fi-grid" | "lunar-waves" | "cartoon-beach" | "nebula-rain";
 export type LightDeflection = "balanced" | "strong" | "extreme";
 export type CursorLight = "off" | "subtle" | "strong";
 export type AnswerSurface = "open" | "glass";
@@ -49,6 +49,13 @@ export interface AppSettings {
   memoryEpisodicEnabled: boolean;
   memoryHybridRecallEnabled: boolean;
   memoryCorrectionsEnabled: boolean;
+  sovereignMemoryEnabled: boolean;
+  memoryAutopilot: boolean;
+  memoryPrivateMode: boolean;
+  memoryExplainRecall: boolean;
+  memorySkillLearning: boolean;
+  promptCompilerEnabled: boolean;
+  projectSupervisorEnabled: boolean;
   memoryMaxEpisodicHits: number;
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
@@ -116,6 +123,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   memoryEpisodicEnabled: true,
   memoryHybridRecallEnabled: true,
   memoryCorrectionsEnabled: true,
+  sovereignMemoryEnabled: true,
+  memoryAutopilot: true,
+  memoryPrivateMode: false,
+  memoryExplainRecall: true,
+  memorySkillLearning: true,
+  promptCompilerEnabled: true,
+  projectSupervisorEnabled: true,
   memoryMaxEpisodicHits: 8,
   memoryMinConfidence: 0.35,
   theme: "dark",
@@ -148,7 +162,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
 };
 
 const THEME_PRESETS: ThemePreset[] = ["codex", "graphite", "midnight", "ember", "absolute", "paper", "dawn", "contrast"];
-const ANIMATED_BACKGROUNDS: AnimatedBackground[] = ["aurora-glass", "midnight-ocean", "liquid-prism", "solar-frost", "sci-fi-grid", "lunar-waves", "cartoon-beach"];
+const ANIMATED_BACKGROUNDS: AnimatedBackground[] = ["aurora-glass", "midnight-ocean", "liquid-prism", "solar-frost", "sci-fi-grid", "lunar-waves", "cartoon-beach", "nebula-rain"];
 const LIGHT_DEFLECTIONS: LightDeflection[] = ["balanced", "strong", "extreme"];
 const CURSOR_LIGHTS: CursorLight[] = ["off", "subtle", "strong"];
 const ANSWER_SURFACES: AnswerSurface[] = ["open", "glass"];
@@ -179,6 +193,13 @@ const BOOLEAN_KEYS = new Set<keyof AppSettings>([
   "memoryEpisodicEnabled",
   "memoryHybridRecallEnabled",
   "memoryCorrectionsEnabled",
+  "sovereignMemoryEnabled",
+  "memoryAutopilot",
+  "memoryPrivateMode",
+  "memoryExplainRecall",
+  "memorySkillLearning",
+  "promptCompilerEnabled",
+  "projectSupervisorEnabled",
   "longRunningMode",
   "autoLaunchAdvisor",
   "autoLaunchSubagents",
@@ -241,6 +262,22 @@ function clampNumber(value: unknown, fallback: number, min: number, max: number)
   return Math.min(max, Math.max(min, numeric));
 }
 
+function readRawSettingsObject(): Record<string, unknown> {
+  try {
+    if (!fs.existsSync(SETTINGS_PATH)) return {};
+    const parsed = JSON.parse(fs.readFileSync(SETTINGS_PATH, "utf8").replace(/^\uFEFF/, ""));
+    return isPlainObject(parsed) ? parsed : {};
+  } catch {
+    try {
+      if (!fs.existsSync(SETTINGS_BACKUP_PATH)) return {};
+      const parsed = JSON.parse(fs.readFileSync(SETTINGS_BACKUP_PATH, "utf8").replace(/^\uFEFF/, ""));
+      return isPlainObject(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+}
+
 function normalizeSettings(raw: Partial<AppSettings>): AppSettings {
   const loaded = { ...DEFAULT_SETTINGS, ...raw };
   if (loaded.modelLabel === "openai/default") loaded.modelLabel = "gpt-5.5";
@@ -296,10 +333,13 @@ export function readSettings(): AppSettings {
 
 export function writeSettings(settings: Partial<AppSettings>): AppSettings {
   fs.mkdirSync(APP_CONFIG_DIR, { recursive: true });
+  const raw = readRawSettingsObject();
+  delete raw.speedMode;
   const next = normalizeSettings({ ...readSettings(), ...settings });
+  const persisted = { ...raw, ...next };
   if (fs.existsSync(SETTINGS_PATH)) fs.copyFileSync(SETTINGS_PATH, SETTINGS_BACKUP_PATH);
   const tmpPath = `${SETTINGS_PATH}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmpPath, JSON.stringify(next, null, 2));
+  fs.writeFileSync(tmpPath, JSON.stringify(persisted, null, 2));
   fs.renameSync(tmpPath, SETTINGS_PATH);
   fs.chmodSync(SETTINGS_PATH, 0o600);
   if (fs.existsSync(SETTINGS_BACKUP_PATH)) fs.chmodSync(SETTINGS_BACKUP_PATH, 0o600);

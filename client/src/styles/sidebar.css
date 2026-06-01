@@ -334,6 +334,16 @@
   box-shadow: inset 0 0 0 0.5px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+.task-row.running {
+  border-color: color-mix(in srgb, var(--accent-green) 26%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-green) 8%, transparent), transparent 54%),
+    color-mix(in srgb, var(--hover-bg) 72%, transparent);
+  box-shadow:
+    inset 0 0 0 0.5px color-mix(in srgb, var(--accent-green) 18%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent-green) 10%, transparent);
+}
+
 .task-row.folder-chat {
   min-height: 27px;
   padding: 3px 6px;
@@ -375,6 +385,22 @@
 
 .status-dot.queued {
   background: var(--dot-queued);
+}
+
+.session-progress-icon {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  place-items: center;
+  border: 0.5px solid color-mix(in srgb, var(--accent-green) 40%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-green) 11%, transparent);
+  color: var(--accent-green);
+  box-shadow:
+    0 0 14px color-mix(in srgb, var(--accent-green) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 10%, transparent);
+  animation: progressIconGlow 2.4s ease-in-out infinite;
 }
 
 .task-copy {
@@ -457,8 +483,9 @@
   font-size: 12px;
   font-weight: 500;
   box-shadow:
-    0 0 24px color-mix(in srgb, var(--neon-cyan) 10%, transparent),
-    inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
+    0 0 28px color-mix(in srgb, var(--neon-cyan) 14%, transparent),
+    0 0 54px color-mix(in srgb, var(--neon-violet) 7%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #ffffff 14%, transparent);
   text-shadow: var(--text-glow-strong);
 }
 
@@ -480,7 +507,13 @@
   flex: 0 0 22px;
   place-items: center;
   border-radius: 50%;
+  background:
+    radial-gradient(circle, color-mix(in srgb, #ffffff 12%, transparent), transparent 68%),
+    color-mix(in srgb, var(--neon-cyan) 7%, transparent);
   color: var(--text-primary);
+  box-shadow:
+    0 0 18px color-mix(in srgb, #ffffff 12%, transparent),
+    0 0 24px color-mix(in srgb, var(--neon-cyan) 12%, transparent);
 }
 
 .sidebar.collapsed .parameters-button {
@@ -517,4 +550,15 @@
   0% { box-shadow: 0 0 0 0 rgba(63,185,80,0.35); }
   70% { box-shadow: 0 0 0 7px rgba(63,185,80,0); }
   100% { box-shadow: 0 0 0 0 rgba(63,185,80,0); }
+}
+
+@keyframes progressIconGlow {
+  0%, 100% {
+    opacity: 0.82;
+    transform: scale(0.96);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
 }

@@ -7,8 +7,8 @@
   border: 0.5px solid var(--border);
   border-radius: 26px;
   background:
-    linear-gradient(145deg, color-mix(in srgb, var(--bg-composer) 30%, transparent), color-mix(in srgb, var(--surface) 18%, transparent)),
-    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--neon-cyan) 12%, transparent), transparent 38%);
+    linear-gradient(145deg, color-mix(in srgb, var(--bg-composer) 22%, transparent), color-mix(in srgb, var(--surface) 14%, transparent)),
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--neon-cyan) 9%, transparent), transparent 40%);
   box-shadow:
     0 18px 60px color-mix(in srgb, var(--shadow-color) 78%, transparent),
     inset 0 1px 0 color-mix(in srgb, #ffffff 12%, transparent);
@@ -25,9 +25,9 @@
   inset: 0;
   border-radius: inherit;
   background:
-    linear-gradient(135deg, color-mix(in srgb, #ffffff 12%, transparent), transparent 38%, color-mix(in srgb, var(--neon-cyan) 7%, transparent)),
-    radial-gradient(circle at 18% 0%, color-mix(in srgb, #ffffff 10%, transparent), transparent 38%),
-    linear-gradient(100deg, transparent 0 30%, color-mix(in srgb, var(--neon-violet) 7%, transparent) 50%, transparent 70%);
+    linear-gradient(135deg, color-mix(in srgb, #ffffff 9%, transparent), transparent 38%, color-mix(in srgb, var(--neon-cyan) 5%, transparent)),
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, #ffffff 8%, transparent), transparent 38%),
+    linear-gradient(100deg, transparent 0 30%, color-mix(in srgb, var(--neon-violet) 4%, transparent) 50%, transparent 70%);
   background-size: 100% 100%, 100% 100%, 190% 100%;
   background-attachment: local, local, local;
   backdrop-filter: var(--glass-backdrop-filter);
@@ -35,10 +35,10 @@
   backdrop-filter: var(--glass-refraction-filter);
   -webkit-backdrop-filter: var(--glass-refraction-filter);
   content: "";
-  opacity: min(0.58, var(--glass-overlay-opacity));
+  opacity: min(0.38, var(--glass-overlay-opacity));
   pointer-events: none;
   clip-path: inset(0 round 26px);
-  animation: composerGlassDrift 18s linear infinite;
+  animation: composerGlassDrift 26s ease-in-out infinite alternate;
 }
 
 .composer > * {
@@ -82,8 +82,8 @@
     repeating-linear-gradient(90deg, transparent 0 34px, color-mix(in srgb, #ffffff 5%, transparent) 35px 36px, transparent 37px 72px);
   background-size: 260% 100%, 180% 100%;
   content: "";
-  opacity: 0.5;
-  animation: composerWorking 13s linear infinite;
+  opacity: 0.36;
+  animation: composerWorking 18s linear infinite;
   will-change: background-position;
 }
 
@@ -560,7 +560,7 @@
 
 @keyframes composerWorking {
   from { background-position: 0% 0, 0% 0; }
-  to { background-position: 260% 0, -180% 0; }
+  to { background-position: 520% 0, -360% 0; }
 }
 
 @keyframes paletteIn {

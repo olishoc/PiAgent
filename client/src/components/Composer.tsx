@@ -25,6 +25,7 @@ const slashCommands = [
   { command: "/new", label: "Start a new thread" },
   { command: "/compact", label: "Ask Pi to compact the active context" },
   { command: "/permissions", label: "Open permissions and access mode" },
+  { command: "/capabilities", label: "Open the Capability Doctor" },
   { command: "/attach", label: "Attach files to the next message" },
   { command: "/advisor ask", label: "Consult the real pi-advisor extension now" },
   { command: "/advisor on", label: "Enable the real pi-advisor extension" },
@@ -34,6 +35,8 @@ const slashCommands = [
   { command: "/parallel-review", label: "Run fresh-context parallel reviewers" },
   { command: "/review-loop", label: "Run worker/reviewer/fix loop until capped or clean" },
   { command: "/beautiful-ui", label: "Run the Beautiful UI Mode scan, brief, browser QA, and patch loop" },
+  { command: "/open ", label: "Open a safe http/https URL" },
+  { command: "/screenshot ", label: "Capture a localhost screenshot artifact" },
   { command: "/image ", label: "Generate an image in this chat" },
   { command: "/projects", label: "Open project workspaces and Git state" },
   { command: "/sessions", label: "Open session search" },
@@ -407,6 +410,7 @@ export default function Composer({ onSend, onCommand, onAbort, disabled, isStrea
         ref={ref}
         value={text}
         placeholder={canSteer ? "Steer the current run..." : queueMode ? "Queue the next prompt..." : "Ask anything..."}
+        disabled={disabled || submitting}
         onChange={(event) => {
           setText(event.target.value);
           setShowCommands(event.target.value.startsWith("/"));

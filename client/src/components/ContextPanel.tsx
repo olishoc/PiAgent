@@ -39,7 +39,8 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
   const [memory, setMemory] = useState<Array<{ id: string; title: string; text: string; kind: string; tier?: string; scope: string; status?: string; confidence?: number; importance?: number; provenance?: Array<{ source?: string; sessionId?: string; projectId?: string; note?: string }>; tags?: string[]; updatedAt: number }>>([]);
   const [memoryEpisodes, setMemoryEpisodes] = useState<Array<{ id: string; title: string; text: string; type: string; role?: string; toolName?: string; outcome?: string; confidence?: number; projectId?: string | null; sessionId?: string | null; updatedAt: number }>>([]);
   const [memoryProfile, setMemoryProfile] = useState<any>(null);
-  const [memorySkills, setMemorySkills] = useState<Array<{ id: string; title: string; text: string; kind: string; scope: string; updatedAt: number }>>([]);
+  const [memorySkills, setMemorySkills] = useState<Array<{ id: string; title: string; text?: string; description?: string; kind?: string; scope?: string; status?: string; confidence?: number; updatedAt: number }>>([]);
+  const [memoryExplain, setMemoryExplain] = useState<any>(null);
   const [memoryStats, setMemoryStats] = useState<any>(null);
   const [memoryStatus, setMemoryStatus] = useState("");
   const [clipboardStatus, setClipboardStatus] = useState("");
@@ -108,11 +109,23 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
       .catch(() => {});
     fetch(apiUrl("/api/memory/skills?limit=12"))
       .then((r) => r.json())
-      .then((data) => setMemorySkills(data.skills ?? []))
+      .then((data) => setMemorySkills(data.cards ?? data.skills ?? []))
+      .catch(() => {});
+    fetch(apiUrl(`/api/memory/explain?${params.toString()}`))
+      .then((r) => r.json())
+      .then((data) => setMemoryExplain(data?.ok ? data : null))
       .catch(() => {});
   }, [open, tab, memoryQuery, activeProject?.id, activeSessionId, memoryScope, settings.memoryEpisodicEnabled, settings.memoryHybridRecallEnabled, settings.memoryCorrectionsEnabled, settings.memoryMaxEpisodicHits, settings.memoryMinConfidence]);
 
   if (!open) return null;
+  const effectiveAutoInject = Boolean(
+    settings.memoryEnabled
+    && settings.memoryAutoInject
+    && settings.sovereignMemoryEnabled
+    && settings.memoryAutopilot
+    && !settings.memoryPrivateMode
+    && (settings.memoryMode === "assistive" || settings.memoryMode === "deep")
+  );
   const lastTools = messages.flatMap((message) => {
     if (message.kind === "tool") return [message];
     if (message.kind === "tool_group") return message.tools;
@@ -307,6 +320,8 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
           <div className="context-kv"><span>Episodes</span><strong>{memoryStats?.episodeCount ?? 0}</strong></div>
           <div className="context-kv"><span>Events</span><strong>{memoryStats?.eventCount ?? 0}</strong></div>
           <div className="context-kv"><span>Recall</span><strong>{settings.memoryHybridRecallEnabled ? "hybrid" : "records only"}</strong></div>
+          <div className="context-kv"><span>Sovereign</span><strong>{settings.sovereignMemoryEnabled ? "on" : "off"}</strong></div>
+          <div className="context-kv"><span>Private</span><strong>{settings.memoryPrivateMode ? "on" : "off"}</strong></div>
           <div className="context-kv"><span>Profile</span><strong>{Math.round((memoryProfile?.confidence ?? 0) * 100)}%</strong></div>
           {memoryProfile?.summary ? <p>{memoryProfile.summary}</p> : null}
           <select className="context-input" value={memoryScope} onChange={(event) => setMemoryScope(event.target.value as "project" | "session" | "global")}>
@@ -314,7 +329,7 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
             <option value="session">Current chat memory</option>
             <option value="global">Global memory</option>
           </select>
-          <div className="context-kv"><span>Injection</span><strong>{settings.memoryEnabled && settings.memoryAutoInject ? `${settings.memoryBudgetTokens} token budget` : "off"}</strong></div>
+          <div className="context-kv"><span>Injection</span><strong>{effectiveAutoInject ? `${settings.memoryBudgetTokens} token budget` : "off"}</strong></div>
           <input className="context-input" value={memoryQuery} placeholder="Search memory..." onChange={(event) => setMemoryQuery(event.target.value)} />
           <textarea className="context-textarea" value={memoryDraft} placeholder="Remember a tool, preference, decision, or project fact..." onChange={(event) => setMemoryDraft(event.target.value)} />
           <button onClick={() => void remember()}><Icon name="plus" /> Remember</button>
@@ -337,13 +352,30 @@ export default function ContextPanel({ open, settings, activeProject, activeSess
             {memorySkills.slice(0, 8).map((item) => (
               <article key={item.id}>
                 <header><strong>{item.title}</strong></header>
-                <p>{item.text}</p>
-                <em>{item.scope} / {item.kind}</em>
+                <p>{item.description ?? item.text}</p>
+                <em>{item.status ?? item.scope} / {item.kind ?? "skill"}{item.confidence ? ` / ${Math.round(item.confidence * 100)}%` : ""}</em>
               </article>
             ))}
             {!memorySkills.length ? <p>No learned tool memory yet.</p> : null}
           </div>
         </section>
+        {memoryExplain ? (
+          <section>
+            <h2><Icon name="shield" /> Why recalled</h2>
+            <div className="context-kv"><span>Selected</span><strong>{memoryExplain.records?.filter((item: any) => item.selected).length ?? 0}</strong></div>
+            <div className="context-kv"><span>Skills</span><strong>{memoryExplain.skills?.length ?? 0}</strong></div>
+            <p>{memoryExplain.safety?.policy}</p>
+            <div className="memory-list">
+              {(memoryExplain.records ?? []).slice(0, 8).map((item: any) => (
+                <article key={item.id}>
+                  <header><strong>{item.title}</strong></header>
+                  <p>{item.reasons?.join(", ") || "ranked by recall"}</p>
+                  <em>{item.selected ? "selected" : "available"} / score {item.score}</em>
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
         <section>
           <h2><Icon name="archive" /> Retrieved memories</h2>
           <div className="memory-list">

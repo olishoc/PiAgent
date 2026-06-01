@@ -26,6 +26,8 @@ interface SidebarProps {
   projects: ProjectInfo[];
   activeProjectId: string;
   collapsed?: boolean;
+  runningSessionIds?: string[];
+  queuedSessionIds?: string[];
   onSelect: (session: Session) => void;
   onSelectProject: (project: ProjectInfo) => void;
   onSelectUnassigned: () => void;
@@ -66,6 +68,8 @@ export default function Sidebar({
   projects,
   activeProjectId,
   collapsed,
+  runningSessionIds = [],
+  queuedSessionIds = [],
   onSelect,
   onSelectProject,
   onSelectUnassigned,
@@ -87,6 +91,8 @@ export default function Sidebar({
   const visibleSessions = (allSessions?.length ? allSessions : sessions).filter((session) => !session.archived);
   const unassignedSessions = visibleSessions.filter((session) => !session.projectId);
   const projectSessions = (projectId: string) => visibleSessions.filter((session) => session.projectId === projectId);
+  const runningSessions = new Set(runningSessionIds);
+  const queuedSessions = new Set(queuedSessionIds);
   useEffect(() => {
     if (!activeProjectId) return;
     setExpandedProjectIds((current) => new Set([...current, activeProjectId]));
@@ -104,19 +110,26 @@ export default function Sidebar({
     });
   };
   const renderSession = (session: Session) => {
-    const status = session.status ?? "done";
+    const status = runningSessions.has(session.id) ? "running" : queuedSessions.has(session.id) ? "queued" : session.status ?? "done";
     const displayName = sessionDisplayName(session.name);
+    const activityLabel = status === "running" ? "Running now" : status === "queued" ? "Queued" : ageLabel({ ...session, status });
     return (
       <button
         key={session.id}
-        className={`task-row folder-chat ${session.id === activeId ? "active" : ""}`}
+        className={`task-row folder-chat ${status} ${session.id === activeId ? "active" : ""}`}
         onClick={() => onSelect(session)}
-        title={displayName}
+        title={`${displayName} - ${activityLabel}`}
+        aria-label={`${displayName} - ${activityLabel}`}
       >
         <span className={`status-dot ${status}`} />
+        {status === "running" ? (
+          <span className="session-progress-icon" title="Running now" aria-hidden="true">
+            <Icon name="play" size={9} />
+          </span>
+        ) : null}
         <span className="task-copy">
           <span className="task-name">{displayName}</span>
-          <span className="task-time">{ageLabel({ ...session, status })}</span>
+          <span className="task-time">{activityLabel}</span>
         </span>
         <span className="task-actions">
           <span

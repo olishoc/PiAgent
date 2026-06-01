@@ -255,6 +255,32 @@ function drawSciFi(ctx: CanvasRenderingContext2D, width: number, height: number,
   ctx.restore();
 }
 
+function drawNebulaRain(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, colors: string[], light: boolean) {
+  ctx.save();
+  ctx.globalCompositeOperation = light ? "source-over" : "screen";
+  drawPrism(ctx, width, height, time * 0.42, colors);
+  const rainCount = Math.max(28, Math.floor(width / 34));
+  for (let i = 0; i < rainCount; i += 1) {
+    const seed = i * 37.3;
+    const x = fract(Math.sin(seed) * 15423.33) * (width + 280) - 140;
+    const speed = 70 + fract(Math.sin(seed * 1.7) * 283.7) * 140;
+    const y = ((time * speed + seed * 19) % (height + 220)) - 160;
+    const length = 54 + fract(Math.sin(seed * 2.2) * 991.9) * 130;
+    const alpha = light ? 0.08 : 0.16;
+    const gradient = ctx.createLinearGradient(x, y, x + length * 0.34, y + length);
+    gradient.addColorStop(0, "rgba(255,255,255,0)");
+    gradient.addColorStop(0.36, rgba(colors[i % colors.length], alpha));
+    gradient.addColorStop(0.82, "rgba(255,255,255,0)");
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 0.7 + fract(Math.sin(seed * 3.1) * 444.4) * 1.4;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + length * 0.34, y + length);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawCartoonBeach(ctx: CanvasRenderingContext2D, width: number, height: number, time: number, colors: string[], light: boolean) {
   ctx.save();
   const sunX = width * 0.18;
@@ -288,9 +314,9 @@ function drawCartoonBeach(ctx: CanvasRenderingContext2D, width: number, height: 
 function drawPointerLight(ctx: CanvasRenderingContext2D, pointer: PointerState, width: number, height: number, time: number, colors: string[], cursorLight: AppSettings["cursorLight"]) {
   if (cursorLight === "off" || !pointer.active || pointer.x < 0 || pointer.y < 0 || pointer.x > width || pointer.y > height) return;
   const elapsed = performance.now() - pointer.lastSeen;
-  if (elapsed > 1400) return;
-  const intensity = (cursorLight === "strong" ? 0.34 : 0.18) + (pointer.down ? 0.24 : 0) + (pointer.nearInteractive ? 0.13 : 0);
-  const radius = (cursorLight === "strong" ? 170 : 92) * (pointer.down ? 1.16 : 1);
+  if (elapsed > 720) return;
+  const intensity = (cursorLight === "strong" ? 0.24 : 0.12) + (pointer.down ? 0.18 : 0) + (pointer.nearInteractive ? 0.12 : 0);
+  const radius = (cursorLight === "strong" ? 118 : 66) * (pointer.down ? 1.12 : 1);
   const gradient = ctx.createRadialGradient(pointer.x, pointer.y, 0, pointer.x, pointer.y, radius);
   gradient.addColorStop(0, `rgba(255,255,255,${Math.min(0.72, intensity + 0.14)})`);
   gradient.addColorStop(0.13, rgba(colors[0], intensity));
@@ -398,6 +424,10 @@ export default function AnimatedBackdrop({ mode, theme, palette, accent, cursorL
         drawOcean(ctx, width, height, time, colors, false, true);
       }
       if (mode === "cartoon-beach") drawCartoonBeach(ctx, width, height, time, colors, light);
+      if (mode === "nebula-rain") {
+        drawAurora(ctx, width, height, time * 0.42, colors, light);
+        drawNebulaRain(ctx, width, height, time, colors, light);
+      }
       drawMotionWash(ctx, width, height, time, colors, light);
       drawPointerLight(ctx, pointer, width, height, time, colors, cursorLight);
       animationFrame = window.requestAnimationFrame(draw);
@@ -406,8 +436,10 @@ export default function AnimatedBackdrop({ mode, theme, palette, accent, cursorL
     resize();
     window.addEventListener("resize", resize);
     window.addEventListener("pointermove", move, { passive: true });
+    window.addEventListener("pointerover", move, { passive: true });
     window.addEventListener("pointerdown", down, { passive: true });
     window.addEventListener("pointerup", up, { passive: true });
+    window.addEventListener("pointercancel", leave);
     window.addEventListener("mousemove", move, { passive: true });
     window.addEventListener("mousedown", down, { passive: true });
     window.addEventListener("mouseup", up, { passive: true });
@@ -419,8 +451,10 @@ export default function AnimatedBackdrop({ mode, theme, palette, accent, cursorL
       window.cancelAnimationFrame(animationFrame);
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerover", move);
       window.removeEventListener("pointerdown", down);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", leave);
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mousedown", down);
       window.removeEventListener("mouseup", up);

@@ -87,6 +87,50 @@ export interface ContextUsage {
   model?: string;
 }
 
+export type RunStatus = "starting" | "running" | "completed" | "failed" | "stopped" | "aborted" | "rejected";
+
+export interface RunSummary {
+  id: string;
+  sessionId: string | null;
+  projectId: string | null;
+  requestId?: string;
+  status: RunStatus;
+  promptPreview?: string;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  eventCount: number;
+  lastEventType?: string;
+  lastError?: string;
+}
+
+const ACTIVE_RUN_STATUSES = new Set<RunStatus>(["starting", "running"]);
+
+function normalizeRunSummary(raw: any): RunSummary | null {
+  if (!raw || typeof raw !== "object" || typeof raw.id !== "string") return null;
+  const status = String(raw.status ?? "");
+  if (!ACTIVE_RUN_STATUSES.has(status as RunStatus) && !["completed", "failed", "stopped", "aborted", "rejected"].includes(status)) return null;
+  return {
+    id: raw.id,
+    sessionId: typeof raw.sessionId === "string" ? raw.sessionId : null,
+    projectId: typeof raw.projectId === "string" ? raw.projectId : null,
+    requestId: typeof raw.requestId === "string" ? raw.requestId : undefined,
+    status: status as RunStatus,
+    promptPreview: typeof raw.promptPreview === "string" ? raw.promptPreview : undefined,
+    startedAt: typeof raw.startedAt === "string" ? raw.startedAt : "",
+    updatedAt: typeof raw.updatedAt === "string" ? raw.updatedAt : "",
+    finishedAt: typeof raw.finishedAt === "string" ? raw.finishedAt : undefined,
+    eventCount: Number.isFinite(Number(raw.eventCount)) ? Number(raw.eventCount) : 0,
+    lastEventType: typeof raw.lastEventType === "string" ? raw.lastEventType : undefined,
+    lastError: typeof raw.lastError === "string" ? raw.lastError : undefined
+  };
+}
+
+function normalizeRunList(raw: unknown) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(normalizeRunSummary).filter(Boolean) as RunSummary[];
+}
+
 function usageFromMessage(message: any, fallback?: ContextUsage | null): ContextUsage | null {
   const usage = message?.usage;
   const limit = message?.model?.contextWindow ?? fallback?.limit ?? 0;
@@ -147,9 +191,38 @@ function lastCheckpointItem(messages: DisplayMessage[]) {
   return undefined;
 }
 
+function lastThinkingIndexInTurn(messages: DisplayMessage[]) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const item = messages[i];
+    if (item.kind === "user") break;
+    if (item.kind === "thinking") return i;
+  }
+  return -1;
+}
+
+function appendUniqueThinkingDetail(detail: string, text: string) {
+  const next = text.trim();
+  if (!next) return detail;
+  if (!detail.trim()) return next;
+  if (detail.includes(next)) return detail;
+  return `${detail}\n${next}`;
+}
+
 function addCheckpointThinking(messages: DisplayMessage[], text: string, active = true) {
-  const last = lastCheckpointItem(messages);
-  if (last?.kind === "thinking" && last.phase === "checkpoint" && last.text === text) return messages;
+  const existingIndex = lastThinkingIndexInTurn(messages);
+  if (existingIndex >= 0) {
+    const next = [...messages];
+    const current = next[existingIndex] as TextMessage;
+    const detail = appendUniqueThinkingDetail(current.detail ?? current.text, text);
+    next[existingIndex] = {
+      ...current,
+      text: current.phase?.startsWith("model") ? current.text : latestThinkingLine(detail),
+      detail,
+      phase: current.phase?.startsWith("model") ? current.phase : active ? "thinking" : "thought",
+      active: Boolean(current.active || active)
+    };
+    return next;
+  }
   return [...messages, {
     id: crypto.randomUUID(),
     kind: "thinking" as const,
@@ -227,6 +300,12 @@ function replaceThinkingDetail(messages: DisplayMessage[], detail: string, activ
   return next;
 }
 
+function settleThinking(messages: DisplayMessage[]) {
+  return messages.map((message) => message.kind === "thinking" && message.active
+    ? { ...message, active: false, phase: message.phase?.replace("thinking", "thought") ?? "thought" }
+    : message);
+}
+
 function extractTextContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -248,7 +327,10 @@ function extractTextContent(content: unknown): string {
 function cleanDisplayText(text: string, role?: string) {
   if (role !== "user") return text;
   return text
-    .replace(/\n\nPiAgent UI options:[\s\S]*?(?=\n\nPiAgent Global Memory|\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nAttached files:[\s\S]*?(?=\n\nPiAgent UI options|\n\nPiAgent Prompt Compiler Context|\n\nPiAgent Sovereign Memory|\n\nPiAgent Global Memory|\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent UI options:[\s\S]*?(?=\n\nPiAgent Prompt Compiler Context|\n\nPiAgent Sovereign Memory|\n\nPiAgent Global Memory|\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Prompt Compiler Context[\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
+    .replace(/\n\nPiAgent Sovereign Memory \([\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
     .replace(/\n\nPiAgent Global Memory \([\s\S]*?(?=\n\nPiAgent Automatic Subagent Delegation Contract:|$)/, "")
     .replace(/\n\nPiAgent Automatic Subagent Delegation Contract:[\s\S]*$/, "")
     .trim();
@@ -557,6 +639,7 @@ export function handlePiEvent(
 
   if (event.type === "agent_end") {
     setIsStreaming(false);
+    setMessages((items) => settleThinking(items));
     const lastAssistant = Array.isArray(event.messages) ? [...event.messages].reverse().find((message) => message.role === "assistant") : null;
     if (lastAssistant) setContextUsage((current) => usageFromMessage(lastAssistant, current));
     if (lastAssistant?.stopReason === "error" && typeof lastAssistant.errorMessage === "string") {
@@ -675,13 +758,19 @@ export function handlePiEvent(
     return;
   }
 
-  if (event.type === "error" || event.type === "process_error" || event.type === "parse_error") {
-    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: event.message ?? event.line ?? "agent error" }]);
+  if (event.type === "error" || event.type === "process_error") {
+    setMessages((items) => [...settleThinking(items), { id: crypto.randomUUID(), kind: "status", text: event.message ?? event.line ?? "agent error" }]);
+    return;
+  }
+
+  if (event.type === "parse_error") {
+    setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: event.message ?? event.line ?? "agent parse warning" }]);
     return;
   }
 
   if (event.type === "process_exit") {
     setIsStreaming(false);
+    setMessages((items) => settleThinking(items));
     if ((typeof event.code === "number" && event.code !== 0) || event.signal) {
       const reason = event.signal ? `signal ${event.signal}` : `code ${event.code}`;
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: `Pi process stopped unexpectedly with ${reason}` }]);
@@ -845,25 +934,47 @@ function normalizeMessages(rawMessages: any[], showThinking = true): DisplayMess
 const noopMessages: Dispatch<SetStateAction<DisplayMessage[]>> = () => {};
 const noopString: Dispatch<SetStateAction<string>> = () => {};
 const noopContext: Dispatch<SetStateAction<ContextUsage | null>> = () => {};
+const noopStreaming: Dispatch<SetStateAction<boolean>> = () => {};
 
 export function useAgent(enabled = true, showThinking = true, activeSessionId = "") {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [runningSessionId, setRunningSessionId] = useState("");
+  const [runningSessionIds, setRunningSessionIds] = useState<string[]>([]);
+  const [runningRunIds, setRunningRunIds] = useState<string[]>([]);
+  const [activeRuns, setActiveRuns] = useState<RunSummary[]>([]);
+  const [recentRuns, setRecentRuns] = useState<RunSummary[]>([]);
   const [footerStatus, setFooterStatus] = useState("");
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const activeSessionIdRef = useRef(activeSessionId);
   const runningSessionIdRef = useRef("");
+  const runningSessionIdsRef = useRef(new Set<string>());
+  const runningRunIdsRef = useRef(new Set<string>());
+  const optimisticSessionIdsRef = useRef(new Set<string>());
   const pendingRef = useRef(new Map<string, (value: any) => void>());
-  const pendingPromptRef = useRef(new Map<string, { message: TextMessage; resolve: (accepted: boolean) => void; sessionId?: string; timeout: number; timedOut: boolean; clientPromptId?: string }>());
+  const pendingPromptRef = useRef(new Map<string, { message: TextMessage; resolve: (accepted: boolean) => void; sessionId?: string; timeout: number; cleanupTimeout?: number; timedOut: boolean; clientPromptId?: string }>());
   const showThinkingRef = useRef(showThinking);
+
+  const clearOptimisticSession = useCallback((sessionId?: string) => {
+    if (!sessionId || !optimisticSessionIdsRef.current.has(sessionId)) return;
+    optimisticSessionIdsRef.current.delete(sessionId);
+    runningSessionIdsRef.current.delete(sessionId);
+    const nextIds = [...runningSessionIdsRef.current];
+    setRunningSessionIds(nextIds);
+    setIsStreaming(nextIds.length > 0);
+    if (!nextIds.length || runningSessionIdRef.current === sessionId) {
+      runningSessionIdRef.current = nextIds[0] ?? "";
+      setRunningSessionId(nextIds[0] ?? "");
+    }
+  }, []);
 
   const settlePrompt = useCallback((id: string, accepted: boolean, error?: string) => {
     const pending = pendingPromptRef.current.get(id);
     if (!pending) return;
     window.clearTimeout(pending.timeout);
+    if (pending.cleanupTimeout) window.clearTimeout(pending.cleanupTimeout);
     pendingPromptRef.current.delete(id);
     if (accepted) {
       if (!pending.sessionId || pending.sessionId === activeSessionIdRef.current) {
@@ -882,9 +993,17 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
     for (const id of Array.from(pendingPromptRef.current.keys())) settlePrompt(id, accepted, error);
   }, [settlePrompt]);
 
-  const clearPendingPrompts = useCallback(() => {
+  const settlePromptsForSession = useCallback((sessionId: string | undefined, accepted: boolean, error?: string) => {
     for (const [id, pending] of Array.from(pendingPromptRef.current.entries())) {
+      if ((pending.sessionId || "") === (sessionId || "")) settlePrompt(id, accepted, error);
+    }
+  }, [settlePrompt]);
+
+  const clearPendingPrompts = useCallback((sessionId?: string) => {
+    for (const [id, pending] of Array.from(pendingPromptRef.current.entries())) {
+      if (sessionId !== undefined && (pending.sessionId || "") !== sessionId) continue;
       window.clearTimeout(pending.timeout);
+      if (pending.cleanupTimeout) window.clearTimeout(pending.cleanupTimeout);
       pendingPromptRef.current.delete(id);
       if (!pending.timedOut) pending.resolve(false);
     }
@@ -911,26 +1030,71 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
     };
     ws.onmessage = (e) => {
       const event = JSON.parse(e.data);
-      const visibleRun = !runningSessionIdRef.current || runningSessionIdRef.current === activeSessionIdRef.current;
-      if (event.type === "agent_start") settleAllPrompts(true);
+      const scopedSessionId = typeof event.sessionId === "string" ? event.sessionId : "";
+      const eventSessionId = scopedSessionId || runningSessionIdRef.current;
+      const visibleRun = Boolean(scopedSessionId && scopedSessionId === activeSessionIdRef.current);
+      const visibleGlobal = !scopedSessionId && (event.type === "agent_ready" || event.type === "auth_required");
+      if (event.type === "runtime_state") {
+        const runs = normalizeRunList(event.activeRuns);
+        const recent = normalizeRunList(event.recentRuns);
+        const ids = runs.length
+          ? [...new Set(runs.map((run) => run.sessionId).filter(Boolean) as string[])]
+          : Array.isArray(event.runningSessionIds) ? event.runningSessionIds.map(String).filter(Boolean) : [];
+        const runIds = runs.length
+          ? runs.map((run) => run.id)
+          : Array.isArray(event.runningRunIds) ? event.runningRunIds.map(String).filter(Boolean) : [];
+        ids.forEach((id: string) => optimisticSessionIdsRef.current.delete(id));
+        runningSessionIdsRef.current = new Set(ids);
+        runningRunIdsRef.current = new Set(runIds);
+        setRunningSessionIds(ids);
+        setRunningRunIds(runIds);
+        setActiveRuns(runs);
+        setRecentRuns(recent);
+        setIsStreaming(ids.length > 0);
+        const nextRunningSessionId = ids.includes(activeSessionIdRef.current) ? activeSessionIdRef.current : ids[0] ?? "";
+        runningSessionIdRef.current = nextRunningSessionId;
+        setRunningSessionId(nextRunningSessionId);
+        return;
+      }
+      if (event.type === "agent_start") {
+        if (eventSessionId) optimisticSessionIdsRef.current.delete(eventSessionId);
+        if (event.requestId && pendingPromptRef.current.has(event.requestId)) settlePrompt(event.requestId, true);
+        else settlePromptsForSession(eventSessionId, true);
+      }
       if (event.type === "response" && event.id && pendingPromptRef.current.has(event.id)) {
         settlePrompt(event.id, event.success !== false, event.error ?? "Pi rejected this prompt.");
+        if (event.success === false && eventSessionId) clearOptimisticSession(eventSessionId);
       }
       if (event.type === "response" && event.id && pendingRef.current.has(event.id)) {
         pendingRef.current.get(event.id)?.(event);
         pendingRef.current.delete(event.id);
       }
-      if (event.type === "agent_start") setIsStreaming(true);
-      if (event.type === "agent_end" || event.type === "process_exit") {
-        setIsStreaming(false);
-        runningSessionIdRef.current = "";
-        setRunningSessionId("");
+      if (event.type === "agent_start") {
+        if (eventSessionId) runningSessionIdsRef.current.add(eventSessionId);
+        if (typeof event.runId === "string") runningRunIdsRef.current.add(event.runId);
+        setRunningSessionIds([...runningSessionIdsRef.current]);
+        setRunningRunIds([...runningRunIdsRef.current]);
+        setIsStreaming(true);
+        runningSessionIdRef.current = eventSessionId || runningSessionIdRef.current;
+        setRunningSessionId(runningSessionIdRef.current);
+      }
+      if (event.type === "agent_end" || event.type === "process_exit" || event.type === "process_error") {
+        if (eventSessionId) runningSessionIdsRef.current.delete(eventSessionId);
+        if (typeof event.runId === "string") runningRunIdsRef.current.delete(event.runId);
+        const nextIds = [...runningSessionIdsRef.current];
+        setRunningSessionIds(nextIds);
+        setRunningRunIds([...runningRunIdsRef.current]);
+        setIsStreaming(nextIds.length > 0);
+        if (!nextIds.length || runningSessionIdRef.current === eventSessionId) {
+          runningSessionIdRef.current = nextIds[0] ?? "";
+          setRunningSessionId(nextIds[0] ?? "");
+        }
       }
       handlePiEvent(
         event,
         visibleRun ? setMessages : noopMessages,
-        setIsStreaming,
-        visibleRun ? setFooterStatus : noopString,
+        noopStreaming,
+        visibleRun || visibleGlobal ? setFooterStatus : noopString,
         visibleRun ? setContextUsage : noopContext,
         showThinkingRef.current
       );
@@ -941,6 +1105,12 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
     };
     ws.onclose = () => {
       setIsStreaming(false);
+      runningSessionIdsRef.current.clear();
+      runningRunIdsRef.current.clear();
+      optimisticSessionIdsRef.current.clear();
+      setRunningSessionIds([]);
+      setRunningRunIds([]);
+      setActiveRuns([]);
       runningSessionIdRef.current = "";
       setRunningSessionId("");
       setConnectionState((current) => current === "error" ? "error" : "closed");
@@ -948,7 +1118,7 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
       settleAllPrompts(false, "Pi disconnected before it accepted this message.");
     };
     return () => ws.close();
-  }, [enabled, settleAllPrompts, settlePrompt]);
+  }, [clearOptimisticSession, enabled, settleAllPrompts, settlePrompt, settlePromptsForSession]);
 
   const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -976,30 +1146,30 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is still connecting. Wait for the connected status, then send again." }]);
       return Promise.resolve(false);
     }
-    clearPendingPrompts();
     const id = crypto.randomUUID();
     const sessionId = meta?.sessionId;
+    clearPendingPrompts(sessionId ?? "");
     runningSessionIdRef.current = sessionId ?? "";
+    if (sessionId) {
+      runningSessionIdsRef.current.add(sessionId);
+      optimisticSessionIdsRef.current.add(sessionId);
+    }
+    setRunningSessionIds([...runningSessionIdsRef.current]);
     setRunningSessionId(sessionId ?? "");
+    setIsStreaming(true);
     const userMessage: TextMessage = { id: crypto.randomUUID(), kind: "user", text, attachments, createdAt: Date.now() };
-    const isSlashCommand = text.trimStart().startsWith("/");
-    const attachmentContext = attachments.length
-      ? "\n\nAttached files:\n" + attachments.map((file) => {
-        const location = file.path ? `\nPath: ${file.path}` : "";
-        const preview = file.text ? `\nContent preview:\n${file.text.slice(0, 12000)}` : "";
-        return `- ${file.name}${file.size ? `, ${file.size} bytes` : ""}${location}${preview}`;
-      }).join("\n")
-      : "";
-    const optionContext = options && !isSlashCommand
-      ? `\n\nPiAgent UI options:\n- web guidance: ${options.web ? "enabled; use browsing/search tools only if this runtime exposes them, otherwise state that web access is unavailable" : "disabled"}\n- advisor: ${options.advisor ? "enabled through the real pi-advisor extension; call the advisor tool for strategic guidance when the task warrants it" : "disabled"}\n- auto review: ${options.autoReview ? "enabled; run a compact review pass before final answers for non-trivial code, UX, security, or deployment work when advisor/review tools are available" : "disabled"}\n- subagents: ${options.subagentsEnabled === false ? "disabled" : options.autoLaunchSubagents ? `automatic via real pi-subagents, routing=${options.subagentRoutingMode ?? "automatic"}, maxParallel=${options.subagentMaxParallel ?? 3}` : "manual; use pi-subagents only when explicitly asked"}\n- long-running mode: ${options.longRunningMode ? "enabled; keep state, milestones, verification, and resumable next steps explicit" : "disabled"}\n- context: ${options.context ? "enabled; prefer local files, Git state, and current workspace context" : "disabled"}\n- clipboard: system clipboard tools are available for explicit copy/paste workflows and exact reuse of non-secret unchanged text\n- access: ${options.accessMode ?? "full"}\n- approval: ${options.approvalPolicy ?? "on-request"}`
-      : "";
     try {
       const accepted = new Promise<boolean>((resolve) => {
         const timeout = window.setTimeout(() => {
           const pending = pendingPromptRef.current.get(id);
           if (!pending) return;
-          pendingPromptRef.current.delete(id);
           pending.timedOut = true;
+          pending.cleanupTimeout = window.setTimeout(() => {
+            const stale = pendingPromptRef.current.get(id);
+            if (!stale?.timedOut) return;
+            pendingPromptRef.current.delete(id);
+          }, 10 * 60_000);
+          clearOptimisticSession(pending.sessionId);
           setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: "Pi is taking longer than expected to start this message. The draft was kept unless the run starts." }]);
           resolve(false);
         }, 45_000);
@@ -1008,7 +1178,10 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
       wsRef.current.send(JSON.stringify({
         type: "prompt",
         id,
-        message: text + (isSlashCommand ? "" : attachmentContext) + optionContext,
+        message: text,
+        userText: text,
+        attachments,
+        options,
         ...(options?.steering ? { streamingBehavior: "steer" } : {}),
         projectId: meta?.projectId,
         sessionId: meta?.sessionId
@@ -1021,13 +1194,14 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
         pending.resolve(false);
       }
       pendingPromptRef.current.delete(id);
+      clearOptimisticSession(sessionId);
       setMessages((items) => [...items, { id: crypto.randomUUID(), kind: "status", text: error instanceof Error ? error.message : "Pi could not send this message." }]);
       return Promise.resolve(false);
     }
-  }, [clearPendingPrompts]);
+  }, [clearOptimisticSession, clearPendingPrompts]);
 
   const abort = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: "abort" }));
+    if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.send(JSON.stringify({ type: "abort", sessionId: activeSessionIdRef.current || runningSessionIdRef.current || undefined }));
   }, []);
 
   const replaceMessages = useCallback((next: DisplayMessage[]) => setMessages(next), []);
@@ -1039,5 +1213,5 @@ export function useAgent(enabled = true, showThinking = true, activeSessionId = 
     setMessages(normalizeMessages(rawMessages, showThinkingRef.current));
   }, []);
 
-  return { messages, isStreaming, runningSessionId, footerStatus, connectionState, contextUsage, sendPrompt, abort, sendCommand, replaceMessages, clearVisibleRunState, loadMessages };
+  return { messages, isStreaming, runningSessionId, runningSessionIds, runningRunIds, activeRuns, recentRuns, footerStatus, connectionState, contextUsage, sendPrompt, abort, sendCommand, replaceMessages, clearVisibleRunState, loadMessages };
 }

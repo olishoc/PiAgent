@@ -32,12 +32,23 @@ interface ProjectSubagentState {
   tasks?: Array<{ id: string; title: string; profileId: string; status: string; mode: string; updatedAt: number; lastEvent?: string }>;
 }
 
+interface ProjectOsReport {
+  ok?: boolean;
+  projectId?: string;
+  graph?: { nodes?: Array<{ id: string; type: string; label: string; status?: string }>; edges?: unknown[]; counts?: Record<string, number> };
+  tasks?: Array<{ id: string; source: string; title: string; status: string; owner?: string; updatedAt: number }>;
+  runs?: Array<{ id: string; title: string; status: string; taskIds?: string[]; linkedRunId?: string; updatedAt: number }>;
+  statePath?: string;
+}
+
 interface ProjectsViewProps {
   projects: ProjectInfo[];
   activeProjectId: string;
   activeSessionId: string;
   settings: AppSettings;
   sessions: Session[];
+  runningSessionIds?: string[];
+  queuedSessionIds?: string[];
   onBackToChat: () => void;
   onNewChat: (projectId?: string | null) => Promise<void>;
   onCreate: (payload: { name: string; rootPath?: string; repoUrl?: string; defaultBranch: string; initGit: boolean }) => Promise<void>;
@@ -64,7 +75,7 @@ function visibleProjectName(name: string) {
   return name.replace(/Pi\s*Agent/gi, "App").replace(/PiAgent/gi, "App");
 }
 
-export default function ProjectsView({ projects, activeProjectId, activeSessionId, settings, sessions, onBackToChat, onNewChat, onCreate, onSelect, onSelectSession, onArchive, onRefresh }: ProjectsViewProps) {
+export default function ProjectsView({ projects, activeProjectId, activeSessionId, settings, sessions, runningSessionIds = [], queuedSessionIds = [], onBackToChat, onNewChat, onCreate, onSelect, onSelectSession, onArchive, onRefresh }: ProjectsViewProps) {
   const [name, setName] = useState("New project");
   const [rootPath, setRootPath] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
@@ -75,29 +86,36 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
   const [github, setGithub] = useState<GitHubStatus | null>(null);
   const [subagents, setSubagents] = useState<ProjectSubagentState | null>(null);
   const [subagentStatus, setSubagentStatus] = useState<any>(null);
+  const [projectOs, setProjectOs] = useState<ProjectOsReport | null>(null);
   const [remoteDraft, setRemoteDraft] = useState("");
   const [workflowName, setWorkflowName] = useState("");
   const [delegatePrompt, setDelegatePrompt] = useState("Plan the next milestone and identify safe parallel work.");
   const [status, setStatus] = useState("");
   const activeProject = useMemo(() => projects.find((project) => project.id === activeProjectId) ?? projects[0], [activeProjectId, projects]);
+  const runningSessions = useMemo(() => new Set(runningSessionIds), [runningSessionIds]);
+  const queuedSessions = useMemo(() => new Set(queuedSessionIds), [queuedSessionIds]);
+  const sessionActivity = (session: Session) => runningSessions.has(session.id) ? "running" : queuedSessions.has(session.id) ? "queued" : session.status ?? "done";
 
   const refreshProjectData = async (project = activeProject) => {
     if (!project) return;
-    const [treeResponse, gitResponse, githubResponse, subagentResponse] = await Promise.all([
+    const [treeResponse, gitResponse, githubResponse, subagentResponse, projectOsResponse] = await Promise.all([
       fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/tree?depth=4&limit=500`)).catch(() => null),
       fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/git/status`)).catch(() => null),
       fetch(apiUrl("/api/github/status")).catch(() => null),
-      fetch(apiUrl(`/api/subagents/projects/${encodeURIComponent(project.id)}`)).catch(() => null)
+      fetch(apiUrl(`/api/subagents/projects/${encodeURIComponent(project.id)}`)).catch(() => null),
+      fetch(apiUrl(`/api/projects/${encodeURIComponent(project.id)}/os?limit=80`)).catch(() => null)
     ]);
     const treeData = treeResponse?.ok ? await treeResponse.json().catch(() => null) : null;
     const gitData = gitResponse?.ok ? await gitResponse.json().catch(() => null) : null;
     const githubData = githubResponse?.ok ? await githubResponse.json().catch(() => null) : null;
     const subagentData = subagentResponse?.ok ? await subagentResponse.json().catch(() => null) : null;
+    const projectOsData = projectOsResponse?.ok ? await projectOsResponse.json().catch(() => null) : null;
     setTree(treeData?.entries ?? []);
     setGit(gitData);
     setGithub(githubData);
     setSubagents(subagentData?.state ?? null);
     setSubagentStatus(subagentData?.status ?? null);
+    setProjectOs(projectOsData?.ok ? projectOsData : null);
     setRemoteDraft(project.repoUrl ?? gitData?.remotes?.match(/origin\s+(\S+)/)?.[1] ?? "");
   };
 
@@ -299,18 +317,24 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
                       <button onClick={() => void onNewChat(activeProject.id)}><Icon name="plus" size={12} /> New</button>
                     </div>
                     <div className="project-chat-list embedded">
-                      {sessions.map((session) => (
-                        <button
-                          key={session.id}
-                          className={session.id === activeSessionId ? "active" : ""}
-                          onClick={() => onSelectSession(session)}
-                          title={session.path}
-                        >
-                          <Icon name="file" size={13} />
-                          <span>{sessionDisplayName(session.name)}</span>
-                          <em>{session.messageCount}</em>
-                        </button>
-                      ))}
+                      {sessions.map((session) => {
+                        const activity = sessionActivity(session);
+                        const name = sessionDisplayName(session.name);
+                        return (
+                          <button
+                            key={session.id}
+                            className={`${session.id === activeSessionId ? "active" : ""} ${activity}`}
+                            onClick={() => onSelectSession(session)}
+                            title={`${name}${activity === "running" ? " - Running now" : activity === "queued" ? " - Queued" : ""}`}
+                            aria-label={`${name}${activity === "running" ? " - Running now" : activity === "queued" ? " - Queued" : ""}`}
+                          >
+                            <span className={`status-dot ${activity}`} />
+                            <Icon name={activity === "running" ? "play" : "file"} size={13} />
+                            <span>{name}</span>
+                            <em>{activity === "running" ? "now" : activity === "queued" ? "queue" : session.messageCount}</em>
+                          </button>
+                        );
+                      })}
                       {!sessions.length ? <p>No chats in this project yet.</p> : null}
                     </div>
                   </div>
@@ -338,6 +362,38 @@ export default function ProjectsView({ projects, activeProjectId, activeSessionI
                       <strong>{workflow.name}</strong>
                       <span>{workflow.description}</span>
                       <em>{workflow.steps.join(" -> ")}</em>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="project-panel">
+                <div className="panel-title">
+                  <h2><Icon name="layout" /> Project OS</h2>
+                  <button onClick={() => void refreshProjectData()}><Icon name="search" /> Audit</button>
+                </div>
+                <div className="project-kpis">
+                  <span><strong>{projectOs?.graph?.counts?.task ?? projectOs?.tasks?.length ?? 0}</strong> tasks</span>
+                  <span><strong>{projectOs?.runs?.length ?? 0}</strong> runs</span>
+                  <span><strong>{projectOs?.graph?.edges?.length ?? 0}</strong> links</span>
+                  <span><strong>{settings.projectSupervisorEnabled ? "on" : "off"}</strong> supervisor</span>
+                </div>
+                <div className="subagent-task-list">
+                  {(projectOs?.tasks ?? []).slice(0, 10).map((task) => (
+                    <article key={task.id}>
+                      <strong>{task.title}</strong>
+                      <span>{task.source}{task.owner ? ` / ${task.owner}` : ""}</span>
+                      <em>{task.status}</em>
+                    </article>
+                  ))}
+                  {!(projectOs?.tasks ?? []).length ? <p>No Project OS tasks yet. Workflows, runs, and subagents will appear here.</p> : null}
+                </div>
+                <div className="subagent-task-list">
+                  {(projectOs?.runs ?? []).slice(0, 6).map((run) => (
+                    <article key={run.id}>
+                      <strong>{run.title}</strong>
+                      <span>{run.linkedRunId ? `ledger ${run.linkedRunId.slice(0, 8)}` : "supervisor run"}</span>
+                      <em>{run.status}</em>
                     </article>
                   ))}
                 </div>

@@ -3,9 +3,21 @@ import { StringDecoder } from "node:string_decoder";
 import fs from "node:fs";
 import path from "node:path";
 import { APP_CONFIG_DIR, providerEnvironment } from "./tokenStore.js";
+import { createPromptContextPath } from "./promptCompilerBridge.js";
+
+function envArgs(value: string | undefined) {
+  if (!value?.trim()) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed.map(String);
+  } catch {
+    // Fall back to a simple split for local smoke harnesses.
+  }
+  return value.split(/\s+/).filter(Boolean);
+}
 
 function piCommand(): { command: string; argsPrefix: string[] } {
-  if (process.env.PI_BIN) return { command: process.env.PI_BIN, argsPrefix: [] };
+  if (process.env.PI_BIN) return { command: process.env.PI_BIN, argsPrefix: envArgs(process.env.PI_BIN_ARGS) };
   const candidates = [
     path.resolve(process.cwd(), "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"),
     path.resolve(process.cwd(), "..", "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js")
@@ -30,6 +42,7 @@ export class PiSession {
   private decoder = new StringDecoder("utf8");
   private pendingRequests: Map<string, (r: any) => void> = new Map();
   private alive = true;
+  public readonly promptContextPath = createPromptContextPath();
   public onEvent: (event: any) => void = () => {};
 
   constructor(sessionDir: string, accessToken: string, options: PiSessionOptions = {}) {
@@ -57,7 +70,8 @@ export class PiSession {
         ...(accessToken ? { OPENAI_ACCESS_TOKEN: accessToken } : {}),
         ...providerEnvironment(options.provider || "openai-codex"),
         PI_CODING_AGENT_DIR: APP_CONFIG_DIR,
-        PIAGENT_WORKSPACE: cwd
+        PIAGENT_WORKSPACE: cwd,
+        PIAGENT_PROMPT_CONTEXT_PATH: this.promptContextPath
       },
       cwd,
       stdio: ["pipe", "pipe", "pipe"]
@@ -157,6 +171,11 @@ export class PiSession {
 
   kill() {
     if (!this.alive) return;
+    try {
+      fs.rmSync(this.promptContextPath, { force: true });
+    } catch {
+      // Best effort cleanup for the per-runtime prompt compiler context file.
+    }
     this.proc.kill();
   }
 }

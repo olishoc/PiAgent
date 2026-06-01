@@ -54,12 +54,12 @@
   --glass-refraction-filter: url("#piagent-glass-refraction-strong") blur(30px) saturate(1.55) contrast(1.1);
   --glass-overlay-opacity: 0.82;
   --background-energy: 1;
-  --cursor-light-alpha: 0.12;
-  --cursor-light-size: 18px;
-  --cursor-light-field: 72px;
-  --cursor-surface-light: 6%;
-  --text-glow-soft: 0 0 13px color-mix(in srgb, var(--text-primary) 18%, transparent), 0 0 30px color-mix(in srgb, var(--neon-cyan) 8%, transparent);
-  --text-glow-strong: 0 0 16px color-mix(in srgb, var(--text-primary) 24%, transparent), 0 0 36px color-mix(in srgb, var(--neon-cyan) 14%, transparent);
+  --cursor-light-alpha: 0.08;
+  --cursor-light-size: 15px;
+  --cursor-light-field: 52px;
+  --cursor-surface-light: 4%;
+  --text-glow-soft: 0 0 9px color-mix(in srgb, var(--text-primary) 28%, transparent), 0 0 26px color-mix(in srgb, var(--neon-cyan) 12%, transparent);
+  --text-glow-strong: 0 0 14px color-mix(in srgb, var(--text-primary) 38%, transparent), 0 0 34px color-mix(in srgb, var(--neon-cyan) 18%, transparent);
 }
 
 * { box-sizing: border-box; }
@@ -213,12 +213,12 @@ button:active {
 
 .app-shell.cursor-interactive {
   --cursor-react: 1.08;
-  --cursor-surface-light: 10%;
+  --cursor-surface-light: 8%;
 }
 
 .app-shell.cursor-pressing {
   --cursor-react: 1.22;
-  --cursor-surface-light: 16%;
+  --cursor-surface-light: 13%;
 }
 
 .app-shell[data-palette="ember"],
@@ -274,17 +274,22 @@ button:active {
 }
 
 .app-shell[data-cursor-light="subtle"] {
-  --cursor-light-alpha: 0.12;
-  --cursor-light-size: 18px;
-  --cursor-light-field: 72px;
-  --cursor-surface-light: 6%;
+  --cursor-light-alpha: 0.08;
+  --cursor-light-size: 15px;
+  --cursor-light-field: 52px;
+  --cursor-surface-light: 4%;
 }
 
 .app-shell[data-cursor-light="strong"] {
-  --cursor-light-alpha: 0.22;
-  --cursor-light-size: 30px;
-  --cursor-light-field: 118px;
-  --cursor-surface-light: 11%;
+  --cursor-light-alpha: 0.16;
+  --cursor-light-size: 24px;
+  --cursor-light-field: 84px;
+  --cursor-surface-light: 8%;
+}
+
+.app-shell[data-theme="light"] {
+  --text-glow-soft: 0 0 8px color-mix(in srgb, #ffffff 36%, transparent), 0 0 18px color-mix(in srgb, var(--neon-cyan) 8%, transparent);
+  --text-glow-strong: 0 0 11px color-mix(in srgb, #ffffff 44%, transparent), 0 0 22px color-mix(in srgb, var(--neon-cyan) 12%, transparent);
 }
 
 .neon-cursor {
@@ -323,6 +328,10 @@ button:active {
 .app-shell.cursor-pressing .neon-cursor {
   opacity: calc(var(--cursor-light-alpha) + 0.18);
   filter: blur(0) brightness(1.35) saturate(1.65);
+}
+
+.app-shell[data-theme="dark"] :is(.toolbar-title strong, .toolbar-ready, .toolbar-thread, .task-name, .parameters-button, .message-text, .settings-content h1, .settings-content h2, .setting-select > button span, .composer textarea) {
+  text-shadow: var(--text-glow-strong);
 }
 
 .animated-backdrop-canvas {
@@ -1404,6 +1413,25 @@ button:active {
   cursor: pointer;
 }
 
+.utility-list button.running,
+.utility-grid button.running {
+  border-color: color-mix(in srgb, var(--accent-green) 32%, var(--border-hover));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-green) 9%, transparent), transparent 60%),
+    var(--subtle-bg);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--accent-green) 10%, transparent);
+}
+
+.utility-list button > .status-dot,
+.utility-grid button > .status-dot {
+  align-self: flex-start;
+}
+
+.utility-list button:not(.running):not(.queued) > .status-dot,
+.utility-grid button:not(.running):not(.queued) > .status-dot {
+  display: none;
+}
+
 .utility-list button .icon,
 .utility-grid button .icon {
   color: var(--accent);
@@ -1729,7 +1757,9 @@ button:active {
 
 .project-chat-list button {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: auto 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
   height: 30px;
   min-height: 30px;
   border-color: transparent;
@@ -1741,6 +1771,18 @@ button:active {
 .project-chat-list button:hover {
   border-color: var(--border);
   background: var(--hover-bg);
+}
+
+.project-chat-list button.running {
+  border-color: color-mix(in srgb, var(--accent-green) 30%, var(--border));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-green) 8%, transparent), transparent 62%),
+    var(--subtle-bg);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent-green) 9%, transparent);
+}
+
+.project-chat-list button:not(.running):not(.queued) > .status-dot {
+  display: none;
 }
 
 .project-chat-list span,

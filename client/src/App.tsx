@@ -154,11 +154,18 @@ export interface AppSettings {
   memoryEpisodicEnabled: boolean;
   memoryHybridRecallEnabled: boolean;
   memoryCorrectionsEnabled: boolean;
+  sovereignMemoryEnabled: boolean;
+  memoryAutopilot: boolean;
+  memoryPrivateMode: boolean;
+  memoryExplainRecall: boolean;
+  memorySkillLearning: boolean;
+  promptCompilerEnabled: boolean;
+  projectSupervisorEnabled: boolean;
   memoryMaxEpisodicHits: number;
   memoryMinConfidence: number;
   theme: "dark" | "light" | "system";
   themePreset: "codex" | "graphite" | "midnight" | "ember" | "absolute" | "paper" | "dawn" | "contrast";
-  animatedBackground: "aurora-glass" | "midnight-ocean" | "liquid-prism" | "solar-frost" | "sci-fi-grid" | "lunar-waves" | "cartoon-beach";
+  animatedBackground: "aurora-glass" | "midnight-ocean" | "liquid-prism" | "solar-frost" | "sci-fi-grid" | "lunar-waves" | "cartoon-beach" | "nebula-rain";
   lightDeflection: "balanced" | "strong" | "extreme";
   cursorLight: "off" | "subtle" | "strong";
   answerSurface: "open" | "glass";
@@ -313,6 +320,7 @@ export default function App() {
   const [allSessions, setAllSessions] = useState<Session[]>([]);
   const [activeId, setActiveId] = useState("");
   const [view, setView] = useState<"chat" | "settings" | "search" | "extensions" | "automations" | "projects">("chat");
+  const [settingsInitialActive, setSettingsInitialActive] = useState("General");
   const [viewHistory, setViewHistory] = useState<Array<typeof view>>(["chat"]);
   const [viewIndex, setViewIndex] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -354,6 +362,13 @@ export default function App() {
     memoryEpisodicEnabled: true,
     memoryHybridRecallEnabled: true,
     memoryCorrectionsEnabled: true,
+    sovereignMemoryEnabled: true,
+    memoryAutopilot: true,
+    memoryPrivateMode: false,
+    memoryExplainRecall: true,
+    memorySkillLearning: true,
+    promptCompilerEnabled: true,
+    projectSupervisorEnabled: true,
     memoryMaxEpisodicHits: 8,
     memoryMinConfidence: 0.35,
     theme: "dark",
@@ -425,16 +440,22 @@ export default function App() {
 
   const loadSavedSessionMessages = async (session: Session, requestId = sessionOpenRequestRef.current) => {
     if (!isCurrentSessionOpen(session.id, requestId)) return false;
-    if (session.messageCount === 0) {
+    const localMessages = readLocalChatMessages(session.id);
+    if (!session.path && session.messageCount === 0) {
       if (!isCurrentSessionOpen(session.id, requestId)) return false;
       agent.clearVisibleRunState();
-      agent.replaceMessages(readLocalChatMessages(session.id));
+      agent.replaceMessages(localMessages);
       return true;
     }
     const response = await fetch(apiUrl(`/api/sessions/${encodeURIComponent(session.id)}/messages`));
     const data = await response.json().catch(() => ({}));
     if (!isCurrentSessionOpen(session.id, requestId)) return false;
     if (!response.ok || !Array.isArray(data.messages)) {
+      if (localMessages.length) {
+        agent.clearVisibleRunState();
+        agent.replaceMessages(localMessages);
+        return true;
+      }
       agent.replaceMessages([{ id: crypto.randomUUID(), kind: "status", text: data.error ?? "Pi could not read this chat from disk." }]);
       return false;
     }
@@ -443,9 +464,14 @@ export default function App() {
     return true;
   };
 
-  const canSwitchAgentRuntime = (sessionId?: string) => (
-    !agent.isStreaming || !agent.runningSessionId || agent.runningSessionId === sessionId
-  );
+  const isSessionRunning = (sessionId?: string) => Boolean(sessionId && agent.runningSessionIds?.includes(sessionId));
+  const canSwitchAgentRuntime = (_sessionId?: string) => true;
+  const switchSessionPayload = (session: Session) => ({
+    type: "switch_session",
+    sessionPath: session.path,
+    sessionId: session.id,
+    projectId: session.projectId || undefined
+  });
 
   useEffect(() => {
     settingsRef.current = settings;
@@ -599,8 +625,13 @@ export default function App() {
         loadedSessionRef.current = "";
         return;
       }
+      if (isSessionRunning(session.id)) {
+        runtimeSessionRef.current = session.id;
+        void agent.sendCommand({ type: "replay_session", sessionId: session.id, projectId: session.projectId || undefined });
+        return;
+      }
       if (!canSwitchAgentRuntime(session.id)) return;
-      void agent.sendCommand({ type: "switch_session", sessionPath: session.path }).then((switchResult) => {
+      void agent.sendCommand(switchSessionPayload(session)).then((switchResult) => {
         if (!isCurrentSessionOpen(activeId, requestId)) return;
         if (switchResult?.success === false) {
           loadedSessionRef.current = "";
@@ -749,8 +780,8 @@ export default function App() {
         if (!messagesLoaded) {
           loadedSessionRef.current = "";
           setActiveSessionId("");
-        } else if (canSwitchAgentRuntime(nextSession.id)) {
-          void agent.sendCommand({ type: "switch_session", sessionPath: nextSession.path }).then((result) => {
+        } else if (!isSessionRunning(nextSession.id) && canSwitchAgentRuntime(nextSession.id)) {
+          void agent.sendCommand(switchSessionPayload(nextSession)).then((result) => {
             if (!isCurrentSessionOpen(nextSession.id, openRequestId)) return;
             if (result?.success !== false) runtimeSessionRef.current = nextSession.id;
           });
@@ -793,7 +824,7 @@ export default function App() {
     if (!isCurrentSessionOpen(session.id, requestId)) return "";
     setAllSessions(allItems);
     if (canSwitchAgentRuntime(session.id)) {
-      const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: session.path });
+      const switchResult = await agent.sendCommand(switchSessionPayload(session));
       if (!isCurrentSessionOpen(session.id, requestId)) return "";
       if (switchResult?.success === false) {
         setOpeningSessionId("");
@@ -818,7 +849,7 @@ export default function App() {
     applySettings(data.settings ?? { workspacePath: data.project.rootPath });
     await refreshProjects();
     navigate("chat");
-    if (canSwitchAgentRuntime(data.project.id)) {
+    if (!agent.isStreaming) {
       await reloadAgentRuntime();
       void agent.sendCommand({ type: "get_state" });
     }
@@ -836,7 +867,7 @@ export default function App() {
     setActiveSessionId("");
     navigate(destination);
     agent.replaceMessages([]);
-    if (canSwitchAgentRuntime()) {
+    if (!agent.isStreaming) {
       await reloadAgentRuntime();
       if (!isCurrentSessionRequest(requestId)) return;
       void agent.sendCommand({ type: "get_state" });
@@ -861,8 +892,8 @@ export default function App() {
       if (!messagesLoaded) {
         loadedSessionRef.current = "";
         setActiveSessionId("");
-      } else if (canSwitchAgentRuntime(items[0].id)) {
-        void agent.sendCommand({ type: "switch_session", sessionPath: items[0].path }).then((result) => {
+      } else if (!isSessionRunning(items[0].id) && canSwitchAgentRuntime(items[0].id)) {
+        void agent.sendCommand(switchSessionPayload(items[0])).then((result) => {
           if (!isCurrentSessionOpen(items[0].id, requestId)) return;
           if (result?.success !== false) runtimeSessionRef.current = items[0].id;
         });
@@ -911,8 +942,8 @@ export default function App() {
         if (!messagesLoaded) {
           loadedSessionRef.current = "";
           setActiveSessionId("");
-        } else if (canSwitchAgentRuntime(items[0].id)) {
-          void agent.sendCommand({ type: "switch_session", sessionPath: items[0].path }).then((result) => {
+        } else if (!isSessionRunning(items[0].id) && canSwitchAgentRuntime(items[0].id)) {
+          void agent.sendCommand(switchSessionPayload(items[0])).then((result) => {
             if (!isCurrentSessionOpen(items[0].id, requestId)) return;
             if (result?.success !== false) runtimeSessionRef.current = items[0].id;
           });
@@ -999,11 +1030,9 @@ export default function App() {
           if (data.settings) applySettings(data.settings);
           setActiveProjectId(project.id);
           setSessions(await fetchSessions(project.id));
-          if (canSwitchAgentRuntime(session.id)) {
-            if (canSwitchAgentRuntime(session.id)) {
-              await reloadAgentRuntime();
-              void agent.sendCommand({ type: "get_state" });
-            }
+          if (!agent.isStreaming) {
+            await reloadAgentRuntime();
+            void agent.sendCommand({ type: "get_state" });
           }
         }
       } else {
@@ -1012,9 +1041,13 @@ export default function App() {
       }
     }
     if (!isCurrentSessionOpen(session.id, requestId)) return;
-    if (!canSwitchAgentRuntime(session.id)) return;
-    if (!canSwitchAgentRuntime(session.id)) return;
-    void agent.sendCommand({ type: "switch_session", sessionPath: session.path }).then((switchResult) => {
+    if (isSessionRunning(session.id)) {
+      runtimeSessionRef.current = session.id;
+      setActiveSessionId(session.id);
+      void agent.sendCommand({ type: "replay_session", sessionId: session.id, projectId: session.projectId || undefined });
+      return;
+    }
+    void agent.sendCommand(switchSessionPayload(session)).then((switchResult) => {
       if (!isCurrentSessionOpen(session.id, requestId)) return;
       if (switchResult?.success === false) {
         loadedSessionRef.current = "";
@@ -1032,6 +1065,12 @@ export default function App() {
       return;
     }
     if (command === "/settings" || command === "/permissions") {
+      setSettingsInitialActive("General");
+      navigate("settings");
+      return;
+    }
+    if (command === "/capabilities") {
+      setSettingsInitialActive("Configuration");
       navigate("settings");
       return;
     }
@@ -1058,6 +1097,18 @@ export default function App() {
       void sendScopedPrompt(`/skill:beautiful-ui${args ? ` ${args}` : ""}`);
       return;
     }
+    if (command === "/open" || command.startsWith("/open ")) {
+      navigate("chat");
+      const url = command.replace(/^\/open\s*/i, "").trim();
+      void openUrlInChat(url);
+      return;
+    }
+    if (command === "/screenshot" || command.startsWith("/screenshot ")) {
+      navigate("chat");
+      const url = command.replace(/^\/screenshot\s*/i, "").trim();
+      void captureScreenshotInChat(url);
+      return;
+    }
     if (command === "/image" || command.startsWith("/image ")) {
       navigate("chat");
       const prompt = command.replace(/^\/image\s*/i, "").trim();
@@ -1082,8 +1133,94 @@ export default function App() {
         {
           id: crypto.randomUUID(),
           kind: "status",
-          text: "Commands: /new, /attach, /compact, /image, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /beautiful-ui, /permissions, /projects, /sessions, /settings."
+          text: "Commands: /new, /attach, /compact, /capabilities, /open <url>, /screenshot <local-url>, /image, /advisor ask, /subagents, /subagents-doctor, /parallel-review, /review-loop, /beautiful-ui, /permissions, /projects, /sessions, /settings."
         }
+      ]);
+    }
+  };
+
+  const createLocalCommandSession = async () => {
+    let targetSessionId = activeIdRef.current || activeId;
+    if (!targetSessionId) targetSessionId = await createScopedSession(activeProjectId || null);
+    return targetSessionId;
+  };
+
+  const openUrlInChat = async (url: string) => {
+    if (!url) {
+      agent.replaceMessages([
+        ...agent.messages,
+        { id: crypto.randomUUID(), kind: "status", text: "Use /open followed by an http or https URL." }
+      ]);
+      return;
+    }
+    const targetSessionId = await createLocalCommandSession();
+    if (!targetSessionId) return;
+    const userMessage = { id: crypto.randomUUID(), kind: "user" as const, text: `/open ${url}`, createdAt: Date.now() };
+    const pendingMessage = { id: crypto.randomUUID(), kind: "status" as const, text: "Opening URL...", createdAt: Date.now() };
+    const baseMessages = [...agent.messages, userMessage, pendingMessage];
+    agent.replaceMessages(baseMessages);
+    try {
+      const response = await fetch(apiUrl("/api/open-url"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok) throw new Error(typeof data?.error === "string" ? data.error : "Unable to open URL.");
+      const statusMessage = {
+        id: crypto.randomUUID(),
+        kind: "status" as const,
+        text: `Opened ${data.local ? "local " : ""}URL: ${data.url}`,
+        createdAt: Date.now()
+      };
+      appendLocalChatMessages(targetSessionId, [userMessage, statusMessage]);
+      agent.replaceMessages([...baseMessages.filter((message) => message.id !== pendingMessage.id), statusMessage]);
+    } catch (err) {
+      agent.replaceMessages([
+        ...baseMessages.filter((message) => message.id !== pendingMessage.id),
+        { id: crypto.randomUUID(), kind: "status", text: err instanceof Error ? err.message : "Unable to open URL." }
+      ]);
+    }
+  };
+
+  const captureScreenshotInChat = async (url: string) => {
+    if (!url) {
+      agent.replaceMessages([
+        ...agent.messages,
+        { id: crypto.randomUUID(), kind: "status", text: "Use /screenshot followed by a localhost URL." }
+      ]);
+      return;
+    }
+    const targetSessionId = await createLocalCommandSession();
+    if (!targetSessionId) return;
+    const userMessage = { id: crypto.randomUUID(), kind: "user" as const, text: `/screenshot ${url}`, createdAt: Date.now() };
+    const pendingMessage = { id: crypto.randomUUID(), kind: "status" as const, text: "Capturing screenshot...", createdAt: Date.now() };
+    const baseMessages = [...agent.messages, userMessage, pendingMessage];
+    agent.replaceMessages(baseMessages);
+    try {
+      const response = await fetch(apiUrl("/api/screenshots/capture"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, width: 1440, height: 900 })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.ok || !data?.artifact?.url) {
+        throw new Error(typeof data?.error === "string" ? data.error : "Screenshot capture failed.");
+      }
+      const openedUrl = String(data.url ?? url);
+      const alt = `Screenshot of ${openedUrl}`.replace(/[\]\r\n]+/g, " ").slice(0, 160);
+      const agentMessage = {
+        id: crypto.randomUUID(),
+        kind: "agent" as const,
+        text: `Screenshot captured\n\n![${alt}](${data.artifact.url})\n\n${openedUrl}`,
+        createdAt: Date.now()
+      };
+      appendLocalChatMessages(targetSessionId, [userMessage, agentMessage]);
+      agent.replaceMessages([...baseMessages.filter((message) => message.id !== pendingMessage.id), agentMessage]);
+    } catch (err) {
+      agent.replaceMessages([
+        ...baseMessages.filter((message) => message.id !== pendingMessage.id),
+        { id: crypto.randomUUID(), kind: "status", text: err instanceof Error ? err.message : "Screenshot capture failed." }
       ]);
     }
   };
@@ -1173,29 +1310,10 @@ export default function App() {
     }
     const backgroundSend = Boolean(route?.background && activeIdRef.current !== targetSessionId);
     const wantsSteering = Boolean(options?.steering);
-    const runningSessionId = agent.runningSessionId || runtimeSessionRef.current;
-    const runningInAnotherChat = Boolean(agent.isStreaming && runningSessionId && runningSessionId !== targetSessionId);
-    if (runningInAnotherChat && !route?.fromQueue) {
-      if (!backgroundSend) {
-        const runningSession = [...sessions, ...allSessions].find((session) => session.id === runningSessionId);
-        const runningLabel = runningSession ? sessionDisplayName(runningSession.name) : "the running chat";
-        agent.replaceMessages([
-          ...agent.messages,
-          {
-            id: crypto.randomUUID(),
-            kind: "status",
-            text: wantsSteering
-              ? `Steering is only available in ${runningLabel}. This message was not sent.`
-              : `Pi is already working in ${runningLabel}. This message was not queued in this chat. Open the running chat to steer it, or wait for it to finish.`
-          }
-        ]);
-      }
-      return false;
-    }
-    if (agent.isStreaming && !wantsSteering && !route?.fromQueue) {
+    const targetRunning = isSessionRunning(targetSessionId);
+    if (targetRunning && !wantsSteering && !route?.fromQueue) {
       setPromptQueue((current) => {
-        const sameSession = current.filter((item) => item.sessionId !== targetSessionId);
-        const queued = [...current, {
+        const nextItem: QueuedPrompt = {
           id: crypto.randomUUID(),
           text,
           attachments: attachments ?? [],
@@ -1203,30 +1321,24 @@ export default function App() {
           sessionId: targetSessionId,
           projectId: targetProjectId,
           createdAt: Date.now()
-        }];
-        return [...sameSession, ...queued.filter((item) => item.sessionId === targetSessionId).slice(-6)].slice(-12);
+        };
+        const next = [...current, nextItem];
+        const keptSessionIds = new Set(next.filter((item) => item.sessionId === targetSessionId).slice(-6).map((item) => item.id));
+        return next.filter((item) => item.sessionId !== targetSessionId || keptSessionIds.has(item.id)).slice(-12);
       });
       return true;
     }
-    if (agent.isStreaming && wantsSteering && !canSwitchAgentRuntime(targetSessionId)) {
+    if (wantsSteering && !targetRunning) {
       agent.replaceMessages([
         ...agent.messages,
-        { id: crypto.randomUUID(), kind: "status", text: "Steering is only available in the chat that is currently running. This message was not sent." }
+        { id: crypto.randomUUID(), kind: "status", text: "Steering is only available while this chat is currently running. This message was not sent." }
       ]);
       return false;
     }
     if (!backgroundSend) loadedSessionRef.current = targetSessionId;
-    if (activeScopedSession?.path && runtimeSessionRef.current !== targetSessionId) {
+    if (activeScopedSession?.path && runtimeSessionRef.current !== targetSessionId && !targetRunning) {
       if (!backgroundSend) setOpeningSessionId(targetSessionId);
-      if (!canSwitchAgentRuntime(targetSessionId)) {
-        if (!backgroundSend) setOpeningSessionId((current) => current === targetSessionId ? "" : current);
-        agent.replaceMessages([
-          ...agent.messages,
-          { id: crypto.randomUUID(), kind: "status", text: "Pi is still working in another chat. Open that chat to follow the run, or wait for it to finish." }
-        ]);
-        return false;
-      }
-      const switchResult = await agent.sendCommand({ type: "switch_session", sessionPath: activeScopedSession.path });
+      const switchResult = await agent.sendCommand(switchSessionPayload(activeScopedSession));
       if (!backgroundSend) setOpeningSessionId((current) => current === targetSessionId ? "" : current);
       if (!backgroundSend && activeIdRef.current !== targetSessionId) return false;
       if (switchResult?.success === false) {
@@ -1243,7 +1355,7 @@ export default function App() {
     if (!accepted) return false;
     const current = sessions.find((session) => session.id === targetSessionId);
     if (!current || current.messageCount < 2 || current.name === "New thread") {
-      void agent.sendCommand({ type: "set_session_name", name: generatedTitle(text) })
+      void agent.sendCommand({ type: "set_session_name", name: generatedTitle(text), sessionId: targetSessionId, projectId: targetProjectId || undefined })
         .then(() => {
           void fetchSessions(activeProjectId || null).then(setSessions).catch(() => {});
           void fetchSessions(undefined, true).then(setAllSessions).catch(() => {});
@@ -1257,8 +1369,9 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (agent.isStreaming || agent.connectionState !== "ready" || processingQueuedPromptRef.current || promptQueue.length === 0) return;
-    const next = promptQueue[0];
+    if (agent.connectionState !== "ready" || processingQueuedPromptRef.current || promptQueue.length === 0) return;
+    const next = promptQueue.find((item) => !isSessionRunning(item.sessionId));
+    if (!next) return;
     processingQueuedPromptRef.current = true;
     setPromptQueue((current) => current.filter((item) => item.id !== next.id));
     const queuedOptions = next.options ? { ...next.options, steering: false, clientPromptId: crypto.randomUUID() } : undefined;
@@ -1271,7 +1384,7 @@ export default function App() {
       processingQueuedPromptRef.current = false;
       setPromptQueue((current) => [...current]);
     });
-  }, [agent.connectionState, agent.isStreaming, promptQueue]);
+  }, [agent.connectionState, agent.runningSessionIds, promptQueue]);
 
   const compactContext = () => {
     agent.replaceMessages([
@@ -1314,9 +1427,9 @@ export default function App() {
   const visibleMessages = settings.thinkingLevel === "off" ? agent.messages.filter((message) => message.kind !== "thinking") : agent.messages;
   const activeProject = projects.find((project) => project.id === activeProjectId);
   const projectViewProjectId = activeProjectId || projects[0]?.id || "";
-  const projectViewSessions = allSessions.filter((session) => session.projectId === projectViewProjectId);
   const activeSession = sessions.find((session) => session.id === activeId) ?? allSessions.find((session) => session.id === activeId);
-  const visibleStreaming = agent.isStreaming && (!agent.runningSessionId || agent.runningSessionId === activeId);
+  const activeRun = agent.activeRuns?.find((run) => run.sessionId === activeId);
+  const visibleStreaming = Boolean(activeRun || isSessionRunning(activeId));
   const thinkingCount = visibleMessages.filter((message) => message.kind === "thinking").length;
   const runningToolCount = visibleMessages.reduce((count, message) => {
     if (message.kind === "tool" && message.status === "running") return count + 1;
@@ -1324,6 +1437,13 @@ export default function App() {
     return count;
   }, 0);
   const activeQueuedCount = activeId ? promptQueue.filter((item) => item.sessionId === activeId).length : promptQueue.length;
+  const runningSessionSet = new Set([
+    ...(agent.runningSessionIds ?? []),
+    ...((agent.activeRuns ?? []).filter((run) => run.status === "starting" || run.status === "running").flatMap((run) => run.sessionId ? [run.sessionId] : []))
+  ]);
+  const runningSessionIds = [...runningSessionSet];
+  const queuedSessionIds = [...new Set(promptQueue.map((item) => item.sessionId).filter(Boolean))];
+  const projectViewSessions = allSessions.filter((session) => session.projectId === projectViewProjectId);
   const hasRunError = agent.connectionState === "error" || visibleMessages.some((message) => message.kind === "status" && /error|failed|stopped|timed out/i.test(message.text));
   const toolbarStatus = agent.connectionState === "ready"
     ? "Ready"
@@ -1347,6 +1467,7 @@ export default function App() {
             : "";
   const toolbarDetail = [
     agent.footerStatus && !/^connected$/i.test(agent.footerStatus) ? agent.footerStatus : "",
+    activeRun ? `run ${activeRun.status}` : "",
     activeQueuedCount ? `${activeQueuedCount} queued` : "",
     runningToolCount > 0 ? `${runningToolCount} tools` : "",
     (agent.contextUsage?.percent ?? 0) > 0 ? `${agent.contextUsage?.percent}% context` : ""
@@ -1377,8 +1498,10 @@ export default function App() {
     };
     const hide = () => shell.classList.remove("cursor-active", "cursor-interactive", "cursor-pressing");
     window.addEventListener("pointermove", setCursor, { passive: true });
+    window.addEventListener("pointerover", setCursor, { passive: true });
     window.addEventListener("pointerdown", press, { passive: true });
     window.addEventListener("pointerup", release, { passive: true });
+    window.addEventListener("pointercancel", hide);
     window.addEventListener("mousemove", setCursor, { passive: true });
     window.addEventListener("mousedown", press, { passive: true });
     window.addEventListener("mouseup", release, { passive: true });
@@ -1387,8 +1510,10 @@ export default function App() {
     document.addEventListener("visibilitychange", hide);
     return () => {
       window.removeEventListener("pointermove", setCursor);
+      window.removeEventListener("pointerover", setCursor);
       window.removeEventListener("pointerdown", press);
       window.removeEventListener("pointerup", release);
+      window.removeEventListener("pointercancel", hide);
       window.removeEventListener("mousemove", setCursor);
       window.removeEventListener("mousedown", press);
       window.removeEventListener("mouseup", release);
@@ -1511,6 +1636,8 @@ export default function App() {
       <Sidebar
         sessions={sessions}
         allSessions={allSessions}
+        runningSessionIds={runningSessionIds}
+        queuedSessionIds={queuedSessionIds}
         activeId={activeId}
         accountId={auth.accountId}
         displayName={settings.displayName}
@@ -1550,11 +1677,11 @@ export default function App() {
             <button onClick={() => navigate("search")}><Icon name="search" /> Search</button>
             <button onClick={() => navigate("projects")}><Icon name="folder" /> Projects</button>
             <button onClick={() => navigate("extensions")}><Icon name="plug" /> Extensions</button>
-            <button onClick={() => navigate("settings")}><Icon name="gear" /> Settings</button>
+            <button onClick={() => { setSettingsInitialActive("General"); navigate("settings"); }}><Icon name="gear" /> Settings</button>
           </div>
         </div>
         {view === "settings" && settings ? (
-          <SettingsView settings={settings} models={models} onBack={() => navigate("chat")} onChange={updateSettings} />
+          <SettingsView settings={settings} models={models} initialActive={settingsInitialActive} onBack={() => navigate("chat")} onChange={updateSettings} />
         ) : view === "projects" ? (
           <ProjectsView
             projects={projects}
@@ -1562,6 +1689,8 @@ export default function App() {
             activeSessionId={activeId}
             settings={settings}
             sessions={projectViewSessions}
+            runningSessionIds={runningSessionIds}
+            queuedSessionIds={queuedSessionIds}
             onBackToChat={() => navigate("chat")}
             onNewChat={async (projectId) => {
               await createScopedSession(projectId ?? (projectViewProjectId || null));
@@ -1576,6 +1705,8 @@ export default function App() {
           <UtilityView
             view={view}
             sessions={view === "search" ? allSessions : sessions}
+            runningSessionIds={runningSessionIds}
+            queuedSessionIds={queuedSessionIds}
             onOpenSettings={() => navigate("settings")}
             onBackToChat={() => navigate("chat")}
             onSelectSession={selectSession}
@@ -1607,7 +1738,7 @@ export default function App() {
                 onSend={sendPrompt}
                 onCommand={runComposerCommand}
                 onAbort={agent.abort}
-                disabled={agent.connectionState !== "ready"}
+                disabled={agent.connectionState !== "ready" || Boolean(openingSessionId)}
                 isStreaming={visibleStreaming}
                 isAgentBusy={visibleStreaming}
                 queuedCount={activeQueuedCount}

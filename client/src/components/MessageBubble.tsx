@@ -91,7 +91,7 @@ function renderTextWithMath(text: string) {
 
 function renderTextWithImagesAndMath(text: string) {
   const nodes: ReactNode[] = [];
-  const imagePattern = /!\[([^\]]*)\]\((data:image\/[^)\s]+|https?:\/\/[^)\s]+|\/api\/images\/generated\/[^)\s]+)\)/g;
+  const imagePattern = /!\[([^\]]*)\]\((data:image\/[^)\s]+|https?:\/\/[^)\s]+|\/api\/images\/generated\/[^)\s]+|\/api\/artifacts\/[^)\s]+\/file)\)/g;
   let cursor = 0;
   let match: RegExpExecArray | null;
   while ((match = imagePattern.exec(text)) !== null) {
@@ -114,6 +114,21 @@ function renderTextWithImagesAndMath(text: string) {
   return nodes.length ? nodes : renderTextWithMath(text);
 }
 
+async function writeClipboardText(text: string) {
+  const response = await fetch(apiUrl("/api/clipboard/write"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  }).catch(() => null);
+  if (response?.ok) return true;
+  try {
+    await navigator.clipboard?.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function renderCodeAware(text: string): ReactNode[] {
   const chunks = text.split(/```/g);
   return chunks.map((chunk, index) => {
@@ -121,7 +136,7 @@ function renderCodeAware(text: string): ReactNode[] {
       const code = chunk.replace(/^[a-zA-Z0-9_-]+\n/, "");
       return (
         <div className="code-block-wrap" key={index}>
-          <button onClick={() => void navigator.clipboard?.writeText(code)} title="Copy code"><Icon name="copy" size={12} /></button>
+          <button onClick={() => void writeClipboardText(code)} title="Copy code"><Icon name="copy" size={12} /></button>
           <pre><code>{code}</code></pre>
         </div>
       );
@@ -137,6 +152,16 @@ function textHash(text: string) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16);
+}
+
+function localizedThinkingCopy(expanded: boolean) {
+  const language = (typeof document !== "undefined" && document.documentElement.lang)
+    || (typeof navigator !== "undefined" ? navigator.language : "");
+  const french = /^fr\b/i.test(language);
+  return {
+    label: french ? "En réflexion" : "Thinking",
+    action: french ? expanded ? "Masquer" : "Afficher" : expanded ? "Hide" : "Show"
+  };
 }
 
 export default function MessageBubble({ message, sessionId = "" }: { message: TextMessage; sessionId?: string }) {
@@ -178,21 +203,13 @@ export default function MessageBubble({ message, sessionId = "" }: { message: Te
   };
   const copyAttachment = async (text?: string, label = "attachment") => {
     if (!text) return;
-    await fetch(apiUrl("/api/clipboard/write"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text })
-    }).catch(() => navigator.clipboard?.writeText(text));
+    await writeClipboardText(text);
   };
   const copyMessage = async () => {
     const text = message.detail && expanded ? message.detail : message.text;
-    await fetch(apiUrl("/api/clipboard/write"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text })
-    }).catch(() => navigator.clipboard?.writeText(text));
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1200);
+    const ok = await writeClipboardText(text);
+    setCopied(ok);
+    if (ok) window.setTimeout(() => setCopied(false), 1200);
   };
   const responseActions = (
     <div className="message-actions">
@@ -235,15 +252,18 @@ export default function MessageBubble({ message, sessionId = "" }: { message: Te
   }
 
   if (message.kind === "thinking") {
-    const label = message.phase?.startsWith("model") ? "Thinking / En réflexion" : "Thinking / En réflexion";
+    const copy = localizedThinkingCopy(expanded);
+    const detail = message.detail ?? message.text;
     return (
-      <article className={`message thinking-message ${expanded ? "expanded" : ""}`}>
+      <article className={`message thinking-message ${expanded ? "expanded" : ""} ${message.active ? "active" : "settled"}`}>
         <div className="thinking-body">
-          <button className="thinking-head" onClick={() => setExpanded((current) => !current)}>
-            <span>{label}</span>
-            <em>{expanded ? "Hide" : "Show"}</em>
+          <button className="thinking-head" type="button" aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+            <span className="thinking-pulse" aria-hidden="true" />
+            <span className="thinking-label">{copy.label}</span>
+            <em>{copy.action}</em>
           </button>
-          {expanded ? <div className="message-text">{message.detail ?? message.text}</div> : null}
+          {!expanded ? <div className="thinking-preview">{message.text}</div> : null}
+          {expanded ? <div className="message-text">{detail}</div> : null}
         </div>
       </article>
     );
