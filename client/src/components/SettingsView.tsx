@@ -120,7 +120,7 @@ interface RemoteAccessStatus {
   relayUrl: string;
   desktopId: string;
   desktopName: string;
-  mode: "off" | "safe-chat";
+  mode: "off" | "safe-chat" | "full-agent";
   safeMode: boolean;
   protocolVersion: string;
   lastError?: string;
@@ -992,13 +992,17 @@ export default function SettingsView({ settings, models, initialActive = "Genera
                 onChange={(value) => onChange({ remoteAccessMode: value })}
                 options={[
                   { value: "safe-chat", label: "Safe chat", note: "no tools" },
+                  { value: "full-agent", label: "Full agent", note: "desktop policy" },
                   { value: "off", label: "Off" }
                 ]}
               />
               <span>Access</span>
               <SettingSelect
                 value={settings.remoteAccessEnabled ? "on" : "off"}
-                onChange={(value) => onChange({ remoteAccessEnabled: value === "on", remoteAccessMode: value === "on" ? "safe-chat" : settings.remoteAccessMode })}
+                onChange={(value) => onChange({
+                  remoteAccessEnabled: value === "on",
+                  remoteAccessMode: value === "on" && settings.remoteAccessMode === "off" ? "safe-chat" : settings.remoteAccessMode
+                })}
                 options={[
                   { value: "off", label: "Disabled", note: "default" },
                   { value: "on", label: "Enabled", note: "outbound only" }
@@ -1013,7 +1017,7 @@ export default function SettingsView({ settings, models, initialActive = "Genera
               <span>Last event</span>
               <em>{remoteStatus?.lastEventAt ? formatRunTime(remoteStatus.lastEventAt) : "none"}</em>
               <span>Security</span>
-              <span>Remote web is safe-chat only: no shell, no file read/write, no browser automation, no clipboard, no credentials. Pairing requires desktop approval.</span>
+              <span>Safe chat blocks tools. Full agent lets paired devices send prompts to this desktop using the desktop access policy; the relay still cannot run tools directly. Pairing requires QR plus desktop approval, and devices can be revoked.</span>
               <span>Actions</span>
               <div className="split-setting">
                 <button disabled={remoteLoading} onClick={() => void refreshRemoteStatus(true)}><Icon name="plug" /> Refresh</button>

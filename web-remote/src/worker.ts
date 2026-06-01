@@ -1,3 +1,5 @@
+import { remoteAppHtml } from "./remoteAppHtml";
+
 export interface Env {
   REMOTE_DESKTOP: DurableObjectNamespace;
   REMOTE_TOKEN_PEPPER?: string;
@@ -54,24 +56,39 @@ const PAIR_TTL_MS = 5 * 60 * 1000;
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
 const DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_PROMPT_CHARS = 6000;
+const MAX_JSON_BODY_BYTES = 16 * 1024;
 const COOKIE_NAME = "piagent_remote";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
 
-function securityHeaders(extra: HeadersInit = {}) {
+class HttpError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+function securityHeaders(extra: HeadersInit = {}, nonce?: string) {
+  const scriptSrc = nonce ? `'self' 'nonce-${nonce}'` : "'self' 'unsafe-inline'";
+  const styleSrc = nonce ? `'self' 'nonce-${nonce}'` : "'self' 'unsafe-inline'";
   return {
-    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' wss:; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'",
+    "Content-Security-Policy": `default-src 'self'; script-src ${scriptSrc}; style-src ${styleSrc}; connect-src 'self' wss:; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests`,
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains; preload",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+    "X-Robots-Tag": "noindex, nofollow",
     ...extra
   };
 }
 
 function textResponse(body: string, init: ResponseInit = {}) {
-  return new Response(body, {
+  const nonce = body.includes("__CSP_NONCE__") ? randomToken(18) : undefined;
+  const responseBody = nonce ? body.replaceAll("__CSP_NONCE__", nonce) : body;
+  return new Response(responseBody, {
     ...init,
-    headers: securityHeaders({ "Content-Type": "text/html; charset=utf-8", ...(init.headers ?? {}) })
+    headers: securityHeaders({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store", ...(init.headers ?? {}) }, nonce)
   });
 }
 
@@ -150,12 +167,23 @@ function pepper(env: Env) {
 }
 
 async function readJson(request: WorkerRequest) {
+  const contentLength = Number(request.headers.get("Content-Length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) throw new HttpError(413, "Request body too large.");
   try {
-    const parsed = await request.json();
+    const text = await request.text();
+    if (text.length > MAX_JSON_BODY_BYTES) throw new HttpError(413, "Request body too large.");
+    if (!text.trim()) return {};
+    const parsed = JSON.parse(text);
     return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
-  } catch {
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
     return {};
   }
+}
+
+function errorJson(error: unknown, fallback: string) {
+  if (error instanceof HttpError) return jsonResponse({ ok: false, error: error.message }, { status: error.status });
+  return jsonResponse({ ok: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
 }
 
 function remoteIdFromRequest(request: WorkerRequest, body?: Record<string, unknown>) {
@@ -278,19 +306,23 @@ const appHtml = `<!doctype html>
 
 export default {
   async fetch(request: WorkerRequest, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    if (request.method === "OPTIONS") return new Response(null, { headers: securityHeaders() });
-    if (url.pathname === "/" || url.pathname === "/app") return textResponse(appHtml);
-    if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-    if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events. It does not store PiAgent prompts, local files, OAuth tokens, or API keys by default.</p>");
-    if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private remote access for paired PiAgent devices only.</p>");
+    try {
+      const url = new URL(request.url);
+      if (request.method === "OPTIONS") return new Response(null, { headers: securityHeaders() });
+      if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
+      if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events. It does not store PiAgent prompts, local files, OAuth tokens, or API keys by default.</p>");
+      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private remote access for paired PiAgent devices only.</p>");
 
-    if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/relay/")) {
-      const needsBody = request.method !== "GET" && request.method !== "HEAD" && request.headers.get("Upgrade")?.toLowerCase() !== "websocket";
-      const body = needsBody ? await readJson(request.clone()) : undefined;
-      return routeToDesktopObject(request, env, body);
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/relay/")) {
+        const needsBody = request.method !== "GET" && request.method !== "HEAD" && request.headers.get("Upgrade")?.toLowerCase() !== "websocket";
+        const body = needsBody ? await readJson(request.clone()) : undefined;
+        return routeToDesktopObject(request, env, body);
+      }
+      return textResponse(remoteAppHtml, { status: 404 });
+    } catch (error) {
+      return errorJson(error, "Remote access error.");
     }
-    return textResponse(appHtml, { status: 404 });
   }
 };
 
@@ -316,7 +348,7 @@ export class RemoteDesktop {
       if (url.pathname === "/relay/client" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return this.acceptClientSocket(request);
       return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
     } catch (error) {
-      return jsonResponse({ ok: false, error: error instanceof Error ? error.message : "Remote access error." }, { status: 500 });
+      return errorJson(error, "Remote access error.");
     }
   }
 

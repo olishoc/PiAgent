@@ -164,7 +164,7 @@ export interface AppSettings {
   remoteAccessEnabled: boolean;
   remoteAccessRelayUrl: string;
   remoteAccessDesktopName: string;
-  remoteAccessMode: "off" | "safe-chat";
+  remoteAccessMode: "off" | "safe-chat" | "full-agent";
   remoteAccessMaxPromptChars: number;
   memoryMaxEpisodicHits: number;
   memoryMinConfidence: number;

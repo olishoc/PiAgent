@@ -15,7 +15,7 @@ export type AnswerSurface = "open" | "glass";
 export type MemoryMode = "off" | "manual" | "assistive" | "deep";
 export type SubagentRoutingMode = "manual" | "assistive" | "automatic";
 export type SubagentIntercomMode = "off" | "fork-only" | "always";
-export type RemoteAccessMode = "off" | "safe-chat";
+export type RemoteAccessMode = "off" | "safe-chat" | "full-agent";
 
 export interface AppSettings {
   onboardingComplete: boolean;
@@ -184,7 +184,7 @@ const APPROVAL_POLICIES: ApprovalPolicy[] = ["on-request", "on-failure", "never"
 const MEMORY_MODES: MemoryMode[] = ["off", "manual", "assistive", "deep"];
 const SUBAGENT_ROUTING_MODES: SubagentRoutingMode[] = ["manual", "assistive", "automatic"];
 const SUBAGENT_INTERCOM_MODES: SubagentIntercomMode[] = ["off", "fork-only", "always"];
-const REMOTE_ACCESS_MODES: RemoteAccessMode[] = ["off", "safe-chat"];
+const REMOTE_ACCESS_MODES: RemoteAccessMode[] = ["off", "safe-chat", "full-agent"];
 const THEMES: Array<AppSettings["theme"]> = ["dark", "light", "system"];
 const DENSITIES: Array<AppSettings["density"]> = ["comfortable", "compact"];
 const BOOLEAN_KEYS = new Set<keyof AppSettings>([

@@ -6,7 +6,7 @@ import QRCode from "qrcode";
 import { WebSocket } from "ws";
 import { maybeRefresh } from "./auth.js";
 import { PiSession } from "./piProcess.js";
-import { readSettings, writeSettings, piArgsForAccess } from "./settings.js";
+import { readSettings, writeSettings, piArgsForAccess, type AppSettings, type RemoteAccessMode } from "./settings.js";
 import { APP_CONFIG_DIR, hasProviderCredential } from "./tokenStore.js";
 import { SESSION_DIR } from "./sessions.js";
 
@@ -57,6 +57,7 @@ let auditEvents: RemoteAuditEvent[] = [];
 let currentPairing: { pairId: string; pairUrl: string; qrSvg: string; expiresAt: string } | null = null;
 let remoteSession: PiSession | null = null;
 let remoteRun: { deviceId: string; commandId?: string } | null = null;
+let remoteSessionConfigKey = "";
 
 function randomSecret(bytes = 32) {
   return crypto.randomBytes(bytes).toString("base64url");
@@ -107,6 +108,18 @@ function sendBridge(message: Record<string, unknown>) {
   if (bridge?.readyState === WebSocket.OPEN) bridge.send(JSON.stringify(message));
 }
 
+function sendRemoteDesktopStatus() {
+  const settings = readSettings();
+  sendBridge({
+    type: "desktop_status",
+    status: {
+      protocolVersion: REMOTE_PROTOCOL_VERSION,
+      desktopName: settings.remoteAccessDesktopName,
+      mode: settings.remoteAccessMode
+    }
+  });
+}
+
 function stopReconnectTimer() {
   if (!reconnectTimer) return;
   clearTimeout(reconnectTimer);
@@ -115,29 +128,67 @@ function stopReconnectTimer() {
 
 function scheduleReconnect() {
   stopReconnectTimer();
-  if (!readSettings().remoteAccessEnabled) return;
+  const settings = readSettings();
+  if (!settings.remoteAccessEnabled || settings.remoteAccessMode === "off") return;
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     void syncRemoteAccessWithSettings();
   }, RECONNECT_DELAY_MS);
 }
 
-function closeRemoteSession() {
+function closeRemoteSession(preserveRun = false) {
   if (!remoteSession) return;
   remoteSession.onEvent = () => {};
   remoteSession.kill();
   remoteSession = null;
-  remoteRun = null;
+  if (!preserveRun) remoteRun = null;
+  remoteSessionConfigKey = "";
 }
 
-async function ensureRemoteSession(deviceId: string, commandId?: string) {
-  if (remoteSession?.isAlive()) return remoteSession;
-  const settings = readSettings();
+function activeRemoteMode(settings: AppSettings): Exclude<RemoteAccessMode, "off"> {
+  return settings.remoteAccessMode === "full-agent" ? "full-agent" : "safe-chat";
+}
+
+function remoteSessionKey(settings: AppSettings, mode: Exclude<RemoteAccessMode, "off">) {
+  return JSON.stringify({
+    mode,
+    provider: settings.provider,
+    model: settings.modelLabel,
+    thinkingLevel: settings.thinkingLevel,
+    accessMode: settings.accessMode,
+    workspacePath: settings.workspacePath
+  });
+}
+
+function remotePromptForMode(mode: Exclude<RemoteAccessMode, "off">, message: string) {
+  if (mode === "safe-chat") {
+    return [
+      "Remote web request received through PiAgent Remote safe mode.",
+      "Security boundary: do not use shell commands, file writes, file reads, browser automation, local network access, clipboard access, credentials, plugin installs, or destructive actions. If the user asks for those, explain that desktop full-agent mode is required.",
+      "",
+      "User request:",
+      message
+    ].join("\n");
+  }
+  return [
+    "Authenticated PiAgent Remote request from an approved paired device.",
+    "Run on this desktop using the desktop's configured PiAgent access policy. Do not reveal stored credentials, OAuth tokens, API keys, cookies, or private file contents unless the user explicitly asks and the desktop policy allows it.",
+    "",
+    "User request:",
+    message
+  ].join("\n");
+}
+
+async function ensureRemoteSession(deviceId: string, settings: AppSettings, mode: Exclude<RemoteAccessMode, "off">, commandId?: string) {
+  const configKey = remoteSessionKey(settings, mode);
+  if (remoteSession?.isAlive() && remoteSessionConfigKey === configKey) return remoteSession;
+  if (remoteSession) closeRemoteSession(true);
   const provider = settings.provider || "openai-codex";
   const accessToken = await providerAccessToken(provider);
   if (accessToken === null) throw new Error("The selected provider is not connected on this desktop.");
+  const sessionSettings = mode === "safe-chat" ? { ...settings, accessMode: "read-only" as const } : settings;
   const session = new PiSession(SESSION_DIR, accessToken, {
-    extraArgs: piArgsForAccess({ ...settings, accessMode: "read-only" }),
+    extraArgs: piArgsForAccess(sessionSettings),
     provider,
     model: settings.modelLabel || "gpt-5.5",
     thinkingLevel: settings.thinkingLevel || "medium",
@@ -151,12 +202,13 @@ async function ensureRemoteSession(deviceId: string, commandId?: string) {
     }
   };
   remoteSession = session;
+  remoteSessionConfigKey = configKey;
   return session;
 }
 
 async function runRemotePrompt(deviceId: string, command: Record<string, unknown>) {
   const settings = readSettings();
-  if (!settings.remoteAccessEnabled || settings.remoteAccessMode !== "safe-chat") {
+  if (!settings.remoteAccessEnabled || settings.remoteAccessMode === "off") {
     sendBridge({ type: "command_response", deviceId, id: command.id, ok: false, error: "Remote access is disabled on the desktop." });
     return;
   }
@@ -170,17 +222,12 @@ async function runRemotePrompt(deviceId: string, command: Record<string, unknown
     sendBridge({ type: "command_response", deviceId, id: command.id, ok: false, error: "Remote prompt is empty." });
     return;
   }
-  const safePrompt = [
-    "Remote web request received through PiAgent Remote safe mode.",
-    "Security boundary: do not use shell commands, file writes, file reads, browser automation, local network access, clipboard access, credentials, plugin installs, or destructive actions. If the user asks for those, explain that desktop approval is required.",
-    "",
-    "User request:",
-    message
-  ].join("\n");
+  const mode = activeRemoteMode(settings);
+  const remotePrompt = remotePromptForMode(mode, message);
   try {
     remoteRun = { deviceId, commandId: typeof command.id === "string" ? command.id : undefined };
-    const session = await ensureRemoteSession(deviceId, remoteRun.commandId);
-    const result = await session.prompt(safePrompt);
+    const session = await ensureRemoteSession(deviceId, settings, mode, remoteRun.commandId);
+    const result = await session.prompt(remotePrompt);
     sendBridge({ type: "command_response", deviceId, id: command.id, ok: result?.success !== false, error: result?.error });
   } catch (error) {
     remoteRun = null;
@@ -245,7 +292,7 @@ function handleBridgeMessage(raw: string) {
 
 export function syncRemoteAccessWithSettings() {
   const settings = readSettings();
-  if (!settings.remoteAccessEnabled) {
+  if (!settings.remoteAccessEnabled || settings.remoteAccessMode === "off") {
     stopReconnectTimer();
     connected = false;
     if (bridge?.readyState === WebSocket.OPEN || bridge?.readyState === WebSocket.CONNECTING) bridge.close();
@@ -253,7 +300,12 @@ export function syncRemoteAccessWithSettings() {
     closeRemoteSession();
     return;
   }
-  if (bridge?.readyState === WebSocket.OPEN || bridge?.readyState === WebSocket.CONNECTING) return;
+  if (bridge?.readyState === WebSocket.OPEN) {
+    sendRemoteDesktopStatus();
+    void refreshRemoteCloudStatus().catch(() => {});
+    return;
+  }
+  if (bridge?.readyState === WebSocket.CONNECTING) return;
   const identity = readIdentity();
   try {
     bridge = new WebSocket(bridgeUrl(identity.desktopId), {
@@ -266,14 +318,7 @@ export function syncRemoteAccessWithSettings() {
       connected = true;
       lastError = "";
       lastEventAt = new Date().toISOString();
-      sendBridge({
-        type: "desktop_status",
-        status: {
-          protocolVersion: REMOTE_PROTOCOL_VERSION,
-          desktopName: readSettings().remoteAccessDesktopName,
-          mode: readSettings().remoteAccessMode
-        }
-      });
+      sendRemoteDesktopStatus();
       void refreshRemoteCloudStatus().catch(() => {});
     });
     bridge.on("message", (raw) => handleBridgeMessage(raw.toString()));
@@ -321,7 +366,7 @@ export function remoteAccessPublicStatus() {
   const identity = readIdentity();
   return {
     ok: true,
-    enabled: settings.remoteAccessEnabled,
+    enabled: settings.remoteAccessEnabled && settings.remoteAccessMode !== "off",
     connected,
     relayUrl: settings.remoteAccessRelayUrl,
     desktopId: identity.desktopId,
@@ -343,7 +388,8 @@ export const remoteAccessRouter = express.Router();
 remoteAccessRouter.get("/status", async (_req, res) => {
   try {
     syncRemoteAccessWithSettings();
-    if (readSettings().remoteAccessEnabled) await refreshRemoteCloudStatus().catch((error) => { lastError = error instanceof Error ? error.message : String(error); });
+    const settings = readSettings();
+    if (settings.remoteAccessEnabled && settings.remoteAccessMode !== "off") await refreshRemoteCloudStatus().catch((error) => { lastError = error instanceof Error ? error.message : String(error); });
     res.json(remoteAccessPublicStatus());
   } catch (error) {
     res.status(500).json({ ok: false, error: error instanceof Error ? error.message : "Unable to read remote access status." });
@@ -353,7 +399,7 @@ remoteAccessRouter.get("/status", async (_req, res) => {
 remoteAccessRouter.post("/pairing", async (_req, res) => {
   try {
     const settings = readSettings();
-    if (!settings.remoteAccessEnabled) {
+    if (!settings.remoteAccessEnabled || settings.remoteAccessMode === "off") {
       res.status(409).json({ ok: false, error: "Enable remote access before creating a pairing QR." });
       return;
     }
