@@ -63,6 +63,15 @@ interface MobileOAuthPending {
   createdAt: number;
 }
 
+interface MobileDesktopAuthRequest {
+  state: string;
+  requestId: string;
+  createdAt: number;
+  expiresAt: number;
+  sessionId?: string;
+  error?: string;
+}
+
 interface MobileChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -107,6 +116,7 @@ const OPENAI_CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/respon
 const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-5.5";
 const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
 const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MOBILE_DESKTOP_AUTH_TTL_MS = 90 * 1000;
 const MOBILE_SESSION_COOKIE_VERSION = "mobile-v1";
 const MOBILE_OAUTH_COOKIE_VERSION = "mobile-oauth-v1";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
@@ -570,11 +580,26 @@ export default {
       if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. Mobile OAuth is restricted to the OpenAI owner account registered by PiAgent Desktop or by the Cloudflare account allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
       if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile chat requires the owner OpenAI account; desktop coding requires QR pairing and desktop approval.</p>");
       if (url.pathname.startsWith("/api/mobile")) {
-        const stub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
         const needsBody = request.method !== "GET" && request.method !== "HEAD";
-        if (!needsBody) return stub.fetch(request);
+        if (!needsBody) {
+          const desktopId = remoteIdFromRequest(request);
+          if (desktopId) return routeToDesktopObject(request, env);
+          const stub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
+          return stub.fetch(request);
+        }
         const headers = new Headers(request.headers);
         const body = await request.text();
+        const parsedBody = (() => {
+          try {
+            const parsed = JSON.parse(body);
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : undefined;
+          } catch {
+            return undefined;
+          }
+        })();
+        const desktopId = remoteIdFromRequest(request, parsedBody);
+        if (desktopId && parsedBody) return routeToDesktopObject(request, env, parsedBody);
+        const stub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
         return stub.fetch(new Request(request.url, { method: request.method, headers, body }));
       }
 
@@ -602,6 +627,7 @@ export class RemoteDesktop {
     try {
       if (url.pathname.startsWith("/api/mobile/")) {
         if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return this.mobileAuthStart(request);
+        if (url.pathname === "/api/mobile/auth/claim" && request.method === "POST") return this.mobileAuthClaim(request);
         if (url.pathname === "/api/mobile/auth/complete" && request.method === "POST") return this.mobileAuthComplete(request);
         if (url.pathname === "/api/mobile/auth/status" && request.method === "GET") return this.mobileAuthStatus(request);
         if (url.pathname === "/api/mobile/auth/logout" && request.method === "POST") return this.mobileAuthLogout(request);
@@ -651,6 +677,10 @@ export class RemoteDesktop {
 
   private mobilePendingKey(state: string) {
     return `mobile:pending:${state}`;
+  }
+
+  private mobileDesktopAuthKey(state: string) {
+    return `mobile:desktopAuth:${state}`;
   }
 
   private mobileSessionKey(sessionId: string) {
@@ -733,6 +763,10 @@ export class RemoteDesktop {
   private async registerMobileOwnerFromDesktopStatus(status: unknown) {
     if (!status || typeof status !== "object") return;
     const accountId = typeof (status as Record<string, unknown>).accountId === "string" ? String((status as Record<string, unknown>).accountId).trim() : "";
+    await this.registerMobileOwnerAccountId(accountId);
+  }
+
+  private async registerMobileOwnerAccountId(accountId: string) {
     if (!accountId) return;
     const allowed = allowedMobileAccountIds(this.env);
     if (allowed.size > 0 && !allowed.has(accountId)) return;
@@ -862,6 +896,15 @@ export class RemoteDesktop {
     }
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
     if (!this.rateLimit(`mobile_auth:${ip}`, 20, 60_000)) return jsonResponse({ ok: false, error: "Too many OAuth attempts." }, { status: 429 });
+    const desktopRouted = Boolean(request.headers.get("X-PiAgent-Desktop-Id"));
+    const pairedDevice = desktopRouted ? await this.authenticateClient(request).catch(() => null) : null;
+    if (desktopRouted && !pairedDevice) {
+      return jsonResponse({
+        ok: false,
+        error: "This device is not paired with PiAgent Desktop. Using direct mobile sign-in instead.",
+        retryGlobal: true
+      }, { status: 403 });
+    }
     const state = randomToken(24);
     const codeVerifier = randomToken(80);
     const codeChallenge = await sha256Base64Url(codeVerifier);
@@ -875,10 +918,34 @@ export class RemoteDesktop {
     };
     await this.state.storage.put(this.mobilePendingKey(state), payload);
     await this.state.storage.put("mobile:lastPendingState", state);
+    const desktopAuthAvailable = Boolean(desktopRouted && pairedDevice && this.desktopSocket?.readyState === WebSocket.OPEN);
+    let desktopAuthPending = false;
+    let requestId = "";
+    if (desktopAuthAvailable) {
+      requestId = randomToken(18);
+      const authRequest: MobileDesktopAuthRequest = {
+        state,
+        requestId,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + MOBILE_DESKTOP_AUTH_TTL_MS
+      };
+      await this.state.storage.put(this.mobileDesktopAuthKey(state), authRequest);
+      desktopAuthPending = true;
+      this.sendDesktop({
+        type: "mobile_oauth_request",
+        requestId,
+        state,
+        expiresAt: new Date(authRequest.expiresAt).toISOString()
+      });
+      await this.audit("mobile_oauth_desktop_requested");
+    }
     return jsonResponse({
       ok: true,
       authUrl: openAiAuthUrl(state, codeChallenge, clientId, redirectUri, openAiScopes(this.env)),
       state,
+      desktopAuthAvailable,
+      desktopAuthPending,
+      requestId,
       redirectUri,
       manualCodeRequired: redirectUri === OPENAI_CODEX_REDIRECT_URI
     }, {
@@ -958,6 +1025,45 @@ export class RemoteDesktop {
     }
   }
 
+  private async mobileAuthClaim(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const body = await readJson(request);
+    const stateInput = typeof body.state === "string" ? body.state : "";
+    const cookieState = await this.readOAuthStateFromRequest(request);
+    if (!stateInput || stateInput !== cookieState) {
+      return jsonResponse({ ok: false, error: "OAuth claim is not tied to this browser session." }, { status: 403 });
+    }
+    const authRequest = await this.state.storage.get<MobileDesktopAuthRequest>(this.mobileDesktopAuthKey(stateInput));
+    if (!authRequest || authRequest.state !== stateInput) {
+      return jsonResponse({ ok: false, error: "Automatic sign-in request was not found. Start sign-in again." }, { status: 404 });
+    }
+    if (authRequest.expiresAt < Date.now()) {
+      await this.state.storage.delete(this.mobileDesktopAuthKey(stateInput));
+      return jsonResponse({ ok: false, error: "Automatic sign-in expired. Start sign-in again." }, { status: 410 });
+    }
+    if (authRequest.error) {
+      await this.state.storage.delete(this.mobileDesktopAuthKey(stateInput));
+      return jsonResponse({ ok: false, error: authRequest.error }, { status: 502 });
+    }
+    if (!authRequest.sessionId) {
+      return jsonResponse({ ok: true, pending: true, expiresAt: new Date(authRequest.expiresAt).toISOString() });
+    }
+    const session = await this.readMobileSession(authRequest.sessionId);
+    if (!session) {
+      await this.state.storage.delete(this.mobileDesktopAuthKey(stateInput));
+      return jsonResponse({ ok: false, error: "Automatic sign-in session expired. Start sign-in again." }, { status: 410 });
+    }
+    await this.state.storage.delete(this.mobileDesktopAuthKey(stateInput));
+    await this.state.storage.delete(this.mobilePendingKey(stateInput));
+    return jsonResponse({
+      ok: true,
+      loggedIn: true,
+      accountId: session.accountId
+    }, {
+      headers: { "Set-Cookie": await this.mobileSessionCookie(authRequest.sessionId) }
+    });
+  }
+
   private async createMobileSessionFromCode(code: string, pending: MobileOAuthPending) {
     const tokenResponse = await openAiTokenExchange({
       grant_type: "authorization_code",
@@ -984,6 +1090,34 @@ export class RemoteDesktop {
     };
     await this.setMobileSession(session);
     return this.mobileSessionCookie(sessionId);
+  }
+
+  private async createMobileSessionFromDesktopTokens(input: Record<string, unknown>) {
+    const accessToken = typeof input.access === "string" ? input.access : "";
+    const refreshToken = typeof input.refresh === "string" ? input.refresh : "";
+    const accountId = typeof input.accountId === "string" ? input.accountId : decodeJwtSubject(accessToken);
+    const expires = Number(input.expires ?? 0);
+    if (!accessToken || !refreshToken || !accountId || !Number.isFinite(expires) || expires <= Date.now()) {
+      throw new HttpError(400, "Desktop OAuth token payload was invalid.");
+    }
+    await this.registerMobileOwnerAccountId(accountId);
+    const allowed = await this.allowMobileAccount(accountId);
+    if (!allowed.ok) throw new HttpError(403, allowed.reason);
+    const sessionId = randomToken(26);
+    const now = Date.now();
+    const session: MobileSession = {
+      id: sessionId,
+      accessToken,
+      refreshToken,
+      accessExpiresAt: expires,
+      accountId,
+      createdAt: now,
+      lastActiveAt: now,
+      threadIds: [],
+      threads: {}
+    };
+    await this.setMobileSession(session);
+    return sessionId;
   }
 
   private async ensureMobileAccessToken(session: MobileSession) {
@@ -1356,6 +1490,36 @@ export class RemoteDesktop {
     if (message.type === "desktop_status") {
       void this.registerMobileOwnerFromDesktopStatus(message.status).catch(() => {});
       this.broadcastDevices({ type: "desktop_status", status: message.status });
+      return;
+    }
+    if (message.type === "mobile_oauth_token") {
+      void this.handleMobileDesktopToken(message).catch((error) => {
+        void this.audit("mobile_oauth_desktop_error", { reason: error instanceof Error ? error.message : String(error) }).catch(() => {});
+      });
+    }
+  }
+
+  private async handleMobileDesktopToken(message: Record<string, unknown>) {
+    const requestId = typeof message.requestId === "string" ? message.requestId : "";
+    const state = typeof message.state === "string" ? message.state : "";
+    if (!requestId || !state) return;
+    const authRequest = await this.state.storage.get<MobileDesktopAuthRequest>(this.mobileDesktopAuthKey(state));
+    if (!authRequest || authRequest.requestId !== requestId || authRequest.expiresAt < Date.now()) return;
+    if (message.ok === false) {
+      authRequest.error = typeof message.error === "string" ? message.error.slice(0, 240) : "Desktop OpenAI OAuth is not connected.";
+      await this.state.storage.put(this.mobileDesktopAuthKey(state), authRequest);
+      await this.audit("mobile_oauth_desktop_failed", { reason: authRequest.error });
+      return;
+    }
+    try {
+      const sessionId = await this.createMobileSessionFromDesktopTokens(message);
+      authRequest.sessionId = sessionId;
+      await this.state.storage.put(this.mobileDesktopAuthKey(state), authRequest);
+      await this.audit("mobile_oauth_desktop_completed");
+    } catch (error) {
+      authRequest.error = error instanceof Error ? error.message.slice(0, 240) : "Desktop OpenAI OAuth token was rejected.";
+      await this.state.storage.put(this.mobileDesktopAuthKey(state), authRequest);
+      await this.audit("mobile_oauth_desktop_failed", { reason: authRequest.error });
     }
   }
 }

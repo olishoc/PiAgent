@@ -280,6 +280,43 @@ async function handleRemoteCommand(message: Record<string, unknown>) {
   }
 }
 
+async function handleMobileOAuthRequest(message: Record<string, unknown>) {
+  const requestId = typeof message.requestId === "string" ? message.requestId : "";
+  const state = typeof message.state === "string" ? message.state : "";
+  if (!requestId || !state) return;
+  try {
+    const tokens = await maybeRefresh();
+    if (!tokens?.access || !tokens.refresh || !tokens.accountId) {
+      sendBridge({
+        type: "mobile_oauth_token",
+        requestId,
+        state,
+        ok: false,
+        error: "OpenAI OAuth is not connected on PiAgent Desktop."
+      });
+      return;
+    }
+    sendBridge({
+      type: "mobile_oauth_token",
+      requestId,
+      state,
+      ok: true,
+      access: tokens.access,
+      refresh: tokens.refresh,
+      expires: tokens.expires,
+      accountId: tokens.accountId
+    });
+  } catch (error) {
+    sendBridge({
+      type: "mobile_oauth_token",
+      requestId,
+      state,
+      ok: false,
+      error: error instanceof Error ? error.message : "Desktop OpenAI OAuth refresh failed."
+    });
+  }
+}
+
 function handleBridgeMessage(raw: string) {
   lastEventAt = new Date().toISOString();
   let message: Record<string, unknown>;
@@ -307,6 +344,10 @@ function handleBridgeMessage(raw: string) {
   }
   if (message.type === "client_command") {
     void handleRemoteCommand(message);
+    return;
+  }
+  if (message.type === "mobile_oauth_request") {
+    void handleMobileOAuthRequest(message);
   }
 }
 
