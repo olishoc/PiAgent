@@ -128,6 +128,8 @@ const OPENAI_DESKTOP_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const DEFAULT_OPENAI_SCOPES = "openid profile email offline_access";
 const OPENAI_CODEX_REDIRECT_URI = "http://localhost:1455/auth/callback";
 const OPENAI_CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
+const OPENAI_CODEX_ORIGINATOR = "codex_cli_rs";
+const OPENAI_CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (PiAgent Remote; web; unknown)";
 const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-5.5";
 const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
 const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -388,6 +390,47 @@ function extractCodexResponseText(body: string) {
     }
   }
   return (completedReply || deltaReply).trim() || "No response.";
+}
+
+function htmlTextSnippet(body: string) {
+  return body
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#39;/g, "'")
+    .replace(/&quot;/g, "\"")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 260);
+}
+
+function openAiRelayErrorMessage(response: Response, body: string) {
+  const contentType = response.headers.get("Content-Type") ?? "";
+  const cfRay = response.headers.get("cf-ray") ?? (/Cloudflare Ray ID:\s*<\/?[^>]*>\s*([A-Za-z0-9-]+)/i.exec(body)?.[1] ?? "");
+  const isHtml = contentType.includes("text/html") || /^\s*<!doctype html/i.test(body) || /<html[\s>]/i.test(body);
+  if (/Sorry, you have been blocked|Attention Required!\s*\|\s*Cloudflare|unable to access/i.test(body)) {
+    return `OpenAI/ChatGPT blocked the Cloudflare relay request after OAuth. Your sign-in worked, but standalone mobile chat cannot complete from this public relay right now.${cfRay ? ` Cloudflare Ray ID: ${cfRay}.` : ""} Desktop coding still requires QR approval and is separate.`;
+  }
+  if (isHtml) {
+    const snippet = htmlTextSnippet(body);
+    return `OpenAI returned an HTML error instead of a model response.${cfRay ? ` Cloudflare Ray ID: ${cfRay}.` : ""}${snippet ? ` ${snippet}` : ""}`;
+  }
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    const error = parsed.error as Record<string, unknown> | undefined;
+    const message = typeof error?.message === "string"
+      ? error.message
+      : typeof parsed.message === "string"
+        ? parsed.message
+        : "";
+    if (message) return message.slice(0, 500);
+  } catch (_error) {
+    // fall through to text fallback
+  }
+  const text = body.trim().replace(/\s+/g, " ").slice(0, 500);
+  return text || `OpenAI request failed with HTTP ${response.status}.`;
 }
 
 async function openAiTokenExchange(params: Record<string, string>) {
@@ -1388,9 +1431,11 @@ export class RemoteDesktop {
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
         "OpenAI-Beta": "responses=experimental",
+        "User-Agent": OPENAI_CODEX_USER_AGENT,
         "chatgpt-account-id": session.accountId,
-        "originator": "pi",
-        "session_id": requestId,
+        "originator": OPENAI_CODEX_ORIGINATOR,
+        "session-id": session.id,
+        "thread-id": threadId,
         "x-client-request-id": requestId
       },
       body: JSON.stringify({
@@ -1405,7 +1450,7 @@ export class RemoteDesktop {
     const chatText = await response.text();
     if (!response.ok) {
       if (response.status === 401) return jsonResponse({ ok: false, error: "OpenAI token expired. Reconnect." }, { status: 401 });
-      return jsonResponse({ ok: false, error: chatText || "Mobile chat failed." }, { status: 502 });
+      return jsonResponse({ ok: false, error: openAiRelayErrorMessage(response, chatText) }, { status: 502 });
     }
     let reply = "No response.";
     reply = extractCodexResponseText(chatText);
