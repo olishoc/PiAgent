@@ -140,6 +140,36 @@ const remoteShellCss = `
   gap: 7px;
   margin-top: 8px;
 }
+.mobile-oauth-manual {
+  display: grid;
+  gap: 7px;
+  margin-top: 9px;
+}
+.mobile-oauth-manual.hidden {
+  display: none !important;
+}
+.mobile-oauth-manual textarea {
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  border: 0.5px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 10px;
+  background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.35;
+  outline: none;
+}
+.mobile-oauth-manual textarea:focus {
+  border-color: color-mix(in srgb, var(--neon-cyan) 46%, var(--border));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--neon-cyan) 14%, transparent);
+}
+.mobile-oauth-manual small {
+  color: var(--text-tertiary);
+  font-size: 10px;
+  line-height: 1.35;
+}
 .remote-login-steps {
   display: grid;
   gap: 7px;
@@ -347,6 +377,11 @@ export const remoteAppHtml = `<!doctype html>
               <button id="mobileConnectButton" class="login-button" type="button">sign in with OpenAI</button>
               <button id="mobileStartButton" class="login-button secondary" type="button">open mobile chat</button>
             </div>
+            <div id="mobileOauthManual" class="mobile-oauth-manual hidden">
+              <textarea id="mobileOauthCode" autocomplete="off" spellcheck="false" placeholder="paste localhost callback URL or code"></textarea>
+              <button id="mobileOauthCompleteButton" class="login-button secondary" type="button">complete sign-in</button>
+              <small>OpenAI redirects to localhost. Copy that URL and paste it here.</small>
+            </div>
           </div>
         </div>
         <div class="remote-mode-panel hidden" id="desktopLoginPanel">
@@ -518,6 +553,9 @@ export const remoteAppHtml = `<!doctype html>
     var desktopLoginPanel = document.getElementById('desktopLoginPanel');
     var mobileConnectButton = document.getElementById('mobileConnectButton');
     var mobileStartButton = document.getElementById('mobileStartButton');
+    var mobileOauthManual = document.getElementById('mobileOauthManual');
+    var mobileOauthCode = document.getElementById('mobileOauthCode');
+    var mobileOauthCompleteButton = document.getElementById('mobileOauthCompleteButton');
     var remoteMenu = document.getElementById('remoteMenu');
     var parametersButton = document.getElementById('parametersButton');
     var reconnectButton = document.getElementById('reconnectButton');
@@ -599,13 +637,45 @@ export const remoteAppHtml = `<!doctype html>
       updateModeButtons();
       setStatus('Opening sign-in', 'OpenAI OAuth', 'run');
       if (loginState) loginState.textContent = 'Opening OpenAI OAuth...';
+      var oauthWindow = window.open('about:blank', '_blank');
+      if (oauthWindow) oauthWindow.opener = null;
       try {
         var data = await post('/api/mobile/auth/start', {});
         if (!data.authUrl) throw new Error('OAuth URL missing.');
-        location.href = data.authUrl;
+        if (mobileOauthManual) mobileOauthManual.classList.remove('hidden');
+        if (mobileOauthCode) mobileOauthCode.value = '';
+        if (oauthWindow) oauthWindow.location.href = data.authUrl;
+        else location.href = data.authUrl;
+        if (loginState) {
+          loginState.textContent = data.manualCodeRequired
+            ? 'After OpenAI redirects to localhost, paste that URL here.'
+            : 'Complete OpenAI sign-in in the opened tab.';
+        }
       } catch (error) {
+        if (oauthWindow) oauthWindow.close();
         setStatus('Sign in failed', error.message || 'OAuth could not start', 'bad');
         showLogin('OpenAI sign-in failed.', error.message || 'OAuth could not start');
+      }
+    }
+
+    async function completeMobileOAuth() {
+      var authorization = (mobileOauthCode && mobileOauthCode.value || '').trim();
+      if (!authorization) {
+        if (loginState) loginState.textContent = 'Paste the localhost callback URL or authorization code.';
+        return;
+      }
+      setStatus('Completing sign-in', 'OpenAI OAuth', 'run');
+      if (loginState) loginState.textContent = 'Completing OpenAI sign-in...';
+      try {
+        await post('/api/mobile/auth/complete', { authorization: authorization });
+        mobileLoggedIn = true;
+        await checkMobileAuth();
+        if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
+        if (mobileOauthCode) mobileOauthCode.value = '';
+        showMobileChat(false);
+      } catch (error) {
+        setStatus('Sign in failed', error.message || 'OAuth code rejected', 'bad');
+        if (loginState) loginState.textContent = error.message || 'OAuth code rejected';
       }
     }
 
@@ -1288,6 +1358,7 @@ export const remoteAppHtml = `<!doctype html>
     mobileModeButton.addEventListener('click', function () { setMode('mobile'); });
     desktopModeButton.addEventListener('click', function () { setMode('desktop'); });
     mobileConnectButton.addEventListener('click', startMobileOAuth);
+    mobileOauthCompleteButton.addEventListener('click', completeMobileOAuth);
     mobileStartButton.addEventListener('click', function () {
       if (mobileLoggedIn) {
         showMobileChat(false);

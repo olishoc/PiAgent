@@ -5,6 +5,7 @@ export interface Env {
   REMOTE_TOKEN_PEPPER?: string;
   MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS?: string;
   OPENAI_OAUTH_CLIENT_ID?: string;
+  OPENAI_OAUTH_REDIRECT_URI?: string;
   OPENAI_OAUTH_SCOPES?: string;
   OPENAI_MOBILE_MODEL?: string;
   PUBLIC_HOST?: string;
@@ -58,6 +59,7 @@ interface AuditEvent {
 interface MobileOAuthPending {
   state: string;
   codeVerifier: string;
+  redirectUri: string;
   createdAt: number;
 }
 
@@ -100,8 +102,9 @@ const OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize";
 const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
 const OPENAI_DESKTOP_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const DEFAULT_OPENAI_SCOPES = "openid profile email offline_access";
-const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
-const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-4o-mini";
+const OPENAI_CODEX_REDIRECT_URI = "http://localhost:1455/auth/callback";
+const OPENAI_CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
+const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-5.5";
 const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
 const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MOBILE_SESSION_COOKIE_VERSION = "mobile-v1";
@@ -254,7 +257,11 @@ function allowedMobileAccountIds(env: Env) {
 }
 
 function openAiWebClientId(env: Env) {
-  return (env.OPENAI_OAUTH_CLIENT_ID ?? "").trim();
+  return (env.OPENAI_OAUTH_CLIENT_ID ?? OPENAI_DESKTOP_CLIENT_ID).trim();
+}
+
+function openAiRedirectUri(env: Env, origin: string) {
+  return (env.OPENAI_OAUTH_REDIRECT_URI ?? OPENAI_CODEX_REDIRECT_URI).trim() || `${origin}/api/mobile/auth/callback`;
 }
 
 function openAiScopes(env: Env) {
@@ -301,6 +308,48 @@ function decodeJwtSubject(jwt: string) {
     // ignore
   }
   return "";
+}
+
+function extractCodexResponseText(body: string) {
+  let deltaReply = "";
+  let completedReply = "";
+  const appendFromEvent = (event: Record<string, unknown>) => {
+    if (event.type === "response.output_text.delta" && typeof event.delta === "string") deltaReply += event.delta;
+    const response = event.response as Record<string, unknown> | undefined;
+    const output = Array.isArray(response?.output) ? response.output : Array.isArray(event.output) ? event.output : [];
+    let eventText = "";
+    for (const item of output) {
+      if (!item || typeof item !== "object") continue;
+      const content = Array.isArray((item as Record<string, unknown>).content) ? (item as Record<string, unknown>).content as Array<Record<string, unknown>> : [];
+      for (const part of content) {
+        const text = typeof part.text === "string" ? part.text : typeof part.refusal === "string" ? part.refusal : "";
+        if (text) eventText += text;
+      }
+    }
+    if (typeof response?.output_text === "string") eventText += response.output_text;
+    if (typeof event.output_text === "string") eventText += event.output_text;
+    if (eventText && (event.type === "response.completed" || event.type === "response.done" || event.type === "response.incomplete")) {
+      completedReply = eventText;
+    } else if (eventText) {
+      deltaReply += eventText;
+    }
+  };
+  try {
+    const parsed = JSON.parse(body) as Record<string, unknown>;
+    appendFromEvent(parsed);
+  } catch (_error) {
+    for (const line of body.split(/\r?\n/)) {
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      try {
+        appendFromEvent(JSON.parse(data) as Record<string, unknown>);
+      } catch (_ignored) {
+        // ignore malformed SSE fragments
+      }
+    }
+  }
+  return (completedReply || deltaReply).trim() || "No response.";
 }
 
 async function openAiTokenExchange(params: Record<string, string>) {
@@ -350,11 +399,37 @@ async function decryptSecret(env: Env, value: string) {
   return decoder.decode(plain);
 }
 
-function openAiAuthUrl(origin: string, state: string, codeChallenge: string, clientId: string, scopes: string) {
+function parseAuthorizationInput(input: unknown) {
+  const value = typeof input === "string" ? input.trim() : "";
+  if (!value) return { code: "", state: "" };
+  try {
+    const url = new URL(value);
+    return {
+      code: url.searchParams.get("code") ?? "",
+      state: url.searchParams.get("state") ?? ""
+    };
+  } catch (_error) {
+    // not a URL
+  }
+  if (value.includes("#")) {
+    const [code, state] = value.split("#", 2);
+    return { code: code.trim(), state: (state ?? "").trim() };
+  }
+  if (value.includes("code=")) {
+    const params = new URLSearchParams(value);
+    return {
+      code: params.get("code") ?? "",
+      state: params.get("state") ?? ""
+    };
+  }
+  return { code: value, state: "" };
+}
+
+function openAiAuthUrl(state: string, codeChallenge: string, clientId: string, redirectUri: string, scopes: string) {
   const auth = new URL(OPENAI_AUTH_URL);
   auth.searchParams.set("response_type", "code");
   auth.searchParams.set("client_id", clientId);
-  auth.searchParams.set("redirect_uri", `${origin}/api/mobile/auth/callback`);
+  auth.searchParams.set("redirect_uri", redirectUri);
   auth.searchParams.set("scope", scopes);
   auth.searchParams.set("state", state);
   auth.searchParams.set("code_challenge_method", "S256");
@@ -527,6 +602,7 @@ export class RemoteDesktop {
     try {
       if (url.pathname.startsWith("/api/mobile/")) {
         if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return this.mobileAuthStart(request);
+        if (url.pathname === "/api/mobile/auth/complete" && request.method === "POST") return this.mobileAuthComplete(request);
         if (url.pathname === "/api/mobile/auth/status" && request.method === "GET") return this.mobileAuthStatus(request);
         if (url.pathname === "/api/mobile/auth/logout" && request.method === "POST") return this.mobileAuthLogout(request);
         if (url.pathname === "/api/mobile/auth/callback" && request.method === "GET") return this.mobileAuthCallback(request);
@@ -778,10 +854,10 @@ export class RemoteDesktop {
   private async mobileAuthStart(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const clientId = openAiWebClientId(this.env);
-    if (!clientId || clientId === OPENAI_DESKTOP_CLIENT_ID) {
+    if (!clientId) {
       return jsonResponse({
         ok: false,
-        error: "OpenAI web OAuth is not configured for this domain yet. Configure OPENAI_OAUTH_CLIENT_ID with a web OAuth app that allows /api/mobile/auth/callback."
+        error: "OpenAI OAuth client is not configured."
       }, { status: 503 });
     }
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -790,17 +866,21 @@ export class RemoteDesktop {
     const codeVerifier = randomToken(80);
     const codeChallenge = await sha256Base64Url(codeVerifier);
     const origin = new URL(request.url).origin;
+    const redirectUri = openAiRedirectUri(this.env, origin);
     const payload: MobileOAuthPending = {
       state,
       codeVerifier,
+      redirectUri,
       createdAt: Date.now()
     };
     await this.state.storage.put(this.mobilePendingKey(state), payload);
     await this.state.storage.put("mobile:lastPendingState", state);
     return jsonResponse({
       ok: true,
-      authUrl: openAiAuthUrl(origin, state, codeChallenge, clientId, openAiScopes(this.env)),
-      state
+      authUrl: openAiAuthUrl(state, codeChallenge, clientId, redirectUri, openAiScopes(this.env)),
+      state,
+      redirectUri,
+      manualCodeRequired: redirectUri === OPENAI_CODEX_REDIRECT_URI
     }, {
       headers: { "Set-Cookie": await this.mobileOAuthPendingCookie(state) }
     });
@@ -809,7 +889,7 @@ export class RemoteDesktop {
   private async mobileAuthStatus(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const ownerReady = Boolean(await this.mobileOwnerAccountId()) || allowedMobileAccountIds(this.env).size > 0;
-    const oauthConfigured = Boolean(openAiWebClientId(this.env)) && openAiWebClientId(this.env) !== OPENAI_DESKTOP_CLIENT_ID;
+    const oauthConfigured = Boolean(openAiWebClientId(this.env));
     const session = await this.readSessionFromRequest(request);
     if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady, oauthConfigured });
     return jsonResponse({
@@ -846,36 +926,9 @@ export class RemoteDesktop {
       return textResponse("<!doctype html><body>OAuth callback invalid or expired.</body>");
     }
     await this.state.storage.delete(this.mobilePendingKey(state));
-    const origin = new URL(request.url).origin;
-    const redirect = `${origin}/`;
     try {
-      const tokenResponse = await openAiTokenExchange({
-        grant_type: "authorization_code",
-        client_id: openAiWebClientId(this.env),
-        redirect_uri: `${origin}/api/mobile/auth/callback`,
-        code_verifier: pending.codeVerifier,
-        code
-      });
-      const accountId = decodeJwtSubject(tokenResponse.access);
-      const allowed = await this.allowMobileAccount(accountId);
-      if (!allowed.ok) {
-        return textResponse(`<!doctype html><body>Mobile sign-in rejected: ${allowed.reason} <a href="/">Return</a></body>`, { status: 403 });
-      }
-      const sessionId = randomToken(26);
-      const now = Date.now();
-      const session: MobileSession = {
-        id: sessionId,
-        accessToken: tokenResponse.access,
-        refreshToken: tokenResponse.refresh,
-        accessExpiresAt: now + tokenResponse.expiresIn * 1000,
-        accountId,
-        createdAt: now,
-        lastActiveAt: now,
-        threadIds: [],
-        threads: {}
-      };
-      await this.setMobileSession(session);
-      const cookie = await this.mobileSessionCookie(sessionId);
+      const cookie = await this.createMobileSessionFromCode(code, pending);
+      const redirect = `${new URL(request.url).origin}/`;
       return textResponse(`<!doctype html><meta http-equiv="refresh" content="1; url=${redirect}"><body>Pi Agent mobile session started. <a href="${redirect}">Continue</a></body>`, {
         headers: { "Set-Cookie": cookie }
       });
@@ -883,6 +936,54 @@ export class RemoteDesktop {
       const message = error instanceof Error ? error.message : "OpenAI authentication failed.";
       return textResponse(`<!doctype html><body>Authentication failed: ${message}. <a href="/">Return</a></body>`, { status: 500 });
     }
+  }
+
+  private async mobileAuthComplete(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const body = await readJson(request);
+    const parsed = parseAuthorizationInput(body.authorization ?? body.code ?? body.callbackUrl);
+    const cookieState = await this.readOAuthStateFromRequest(request);
+    const state = parsed.state || (typeof body.state === "string" ? body.state : "") || cookieState;
+    const code = parsed.code;
+    const pending = state ? await this.state.storage.get<MobileOAuthPending>(this.mobilePendingKey(state)) : null;
+    if (!pending || !code || pending.state !== state || cookieState !== state || Date.now() - pending.createdAt > 10 * 60 * 1000) {
+      return jsonResponse({ ok: false, error: "OAuth code is invalid or expired. Start sign-in again." }, { status: 400 });
+    }
+    await this.state.storage.delete(this.mobilePendingKey(state));
+    try {
+      const cookie = await this.createMobileSessionFromCode(code, pending);
+      return jsonResponse({ ok: true, loggedIn: true }, { headers: { "Set-Cookie": cookie } });
+    } catch (error) {
+      return errorJson(error, "OpenAI authentication failed.");
+    }
+  }
+
+  private async createMobileSessionFromCode(code: string, pending: MobileOAuthPending) {
+    const tokenResponse = await openAiTokenExchange({
+      grant_type: "authorization_code",
+      client_id: openAiWebClientId(this.env),
+      redirect_uri: pending.redirectUri,
+      code_verifier: pending.codeVerifier,
+      code
+    });
+    const accountId = decodeJwtSubject(tokenResponse.access);
+    const allowed = await this.allowMobileAccount(accountId);
+    if (!allowed.ok) throw new HttpError(403, allowed.reason);
+    const sessionId = randomToken(26);
+    const now = Date.now();
+    const session: MobileSession = {
+      id: sessionId,
+      accessToken: tokenResponse.access,
+      refreshToken: tokenResponse.refresh,
+      accessExpiresAt: now + tokenResponse.expiresIn * 1000,
+      accountId,
+      createdAt: now,
+      lastActiveAt: now,
+      threadIds: [],
+      threads: {}
+    };
+    await this.setMobileSession(session);
+    return this.mobileSessionCookie(sessionId);
   }
 
   private async ensureMobileAccessToken(session: MobileSession) {
@@ -925,19 +1026,39 @@ export class RemoteDesktop {
     thread.messages.push({ role: "user", content: message });
     thread.updatedAt = Date.now();
     const history = this.normalizeMobileMessages(thread);
-    const requestMessages = [{ role: "system", content: "You are Pi Agent. Answer clearly and briefly. Use safe tools only." }, ...history];
     const accessToken = await this.ensureMobileAccessToken(session);
-    const response = await fetch(OPENAI_CHAT_URL, {
+    const requestId = `${threadId}.${randomToken(8)}`;
+    const input = history.map((item, index) => item.role === "assistant"
+      ? {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: item.content, annotations: [] }],
+          status: "completed",
+          id: `msg_${index}`
+        }
+      : {
+          role: "user",
+          content: [{ type: "input_text", text: item.content }]
+        });
+    const response = await fetch(OPENAI_CODEX_RESPONSES_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "OpenAI-Beta": "responses=experimental",
+        "chatgpt-account-id": session.accountId,
+        "originator": "pi",
+        "session_id": requestId,
+        "x-client-request-id": requestId
       },
       body: JSON.stringify({
         model: openAiMobileModel(this.env),
-        messages: requestMessages,
-        temperature: 0.7,
-        max_tokens: 1500
+        store: false,
+        stream: true,
+        instructions: "You are Pi Agent. Answer clearly and briefly. Use safe tools only.",
+        input,
+        text: { verbosity: "low" }
       })
     });
     const chatText = await response.text();
@@ -946,13 +1067,7 @@ export class RemoteDesktop {
       return jsonResponse({ ok: false, error: chatText || "Mobile chat failed." }, { status: 502 });
     }
     let reply = "No response.";
-    try {
-      const payload = JSON.parse(chatText) as { choices?: Array<{ message?: { content?: string } }> };
-      const content = payload.choices?.[0]?.message?.content;
-      reply = typeof content === "string" ? content : "";
-    } catch (_error) {
-      // ignore
-    }
+    reply = extractCodexResponseText(chatText);
     thread.messages.push({ role: "assistant", content: reply });
     thread.messages = thread.messages.slice(-MOBILE_THREAD_LIMIT * 2);
     thread.updatedAt = Date.now();
