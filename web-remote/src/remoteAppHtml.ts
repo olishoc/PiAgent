@@ -530,7 +530,7 @@ export const remoteAppHtml = `<!doctype html>
                   <img class="empty-icon piagent-icon-img" src="/piagent-icon.png" alt=""/>
                 </div>
                 <h1><span>Ready when you are</span></h1>
-                <p id="introText">Mobile chat runs here. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.</p>
+                <p id="introText">Mobile chat uses your PiAgent account. Standalone answers need the official relay backend; Desktop coding uses QR approval for files, shell, browser tools, and long coding runs.</p>
               </div>
             </div>
           </section>
@@ -605,6 +605,9 @@ export const remoteAppHtml = `<!doctype html>
     var mobileLoggedIn = false;
     var mobileOwnerReady = false;
     var mobileOauthConfigured = false;
+    var mobileStandaloneChatConfigured = false;
+    var mobileStandaloneChatAllowed = false;
+    var mobileStandaloneChatProvider = 'desktop-required';
     var mobileAccountId = '';
     var piAccountId = '';
     var piAccountDesktopLinks = 0;
@@ -848,6 +851,9 @@ export const remoteAppHtml = `<!doctype html>
       mobileLoggedIn = Boolean(data.loggedIn);
       mobileOwnerReady = Boolean(data.ownerReady);
       mobileOauthConfigured = Boolean(data.oauthConfigured);
+      mobileStandaloneChatConfigured = Boolean(data.standaloneChatConfigured);
+      mobileStandaloneChatAllowed = data.standaloneChatAllowed !== false && mobileStandaloneChatConfigured;
+      mobileStandaloneChatProvider = data.standaloneChatProvider || 'desktop-required';
       mobileAccountId = data.accountId || '';
       piAccountId = data.piAccountId || (data.account && data.account.id) || '';
       piAccountDesktopLinks = data.account && data.account.desktopLinks ? data.account.desktopLinks.length : 0;
@@ -887,6 +893,9 @@ export const remoteAppHtml = `<!doctype html>
       mobileLoggedIn = false;
       mobileOwnerReady = false;
       mobileOauthConfigured = false;
+      mobileStandaloneChatConfigured = false;
+      mobileStandaloneChatAllowed = false;
+      mobileStandaloneChatProvider = 'desktop-required';
       mobileAccountId = '';
       piAccountId = '';
       piAccountDesktopLinks = 0;
@@ -901,7 +910,10 @@ export const remoteAppHtml = `<!doctype html>
 
     function mobileLoginDetail() {
       if (mobileLoggedIn && piAccountId) {
-        return 'PiAgent account ready' + (piAccountDesktopLinks ? ' - ' + piAccountDesktopLinks + ' desktop link' + (piAccountDesktopLinks === 1 ? '' : 's') : '');
+        var modelState = mobileStandaloneChatConfigured && mobileStandaloneChatAllowed
+          ? (mobileStandaloneChatProvider === 'openai-api' ? 'standalone model ready' : 'relay model enabled')
+          : 'desktop QR needed for model chat';
+        return 'PiAgent account ready - ' + modelState + (piAccountDesktopLinks ? ' - ' + piAccountDesktopLinks + ' desktop link' + (piAccountDesktopLinks === 1 ? '' : 's') : '');
       }
       if (!mobileOauthConfigured) return 'OpenAI web OAuth is not configured for rblxagent.com yet';
       return 'Create or open your PiAgent account with OpenAI device OAuth. Desktop coding still requires QR approval.';
@@ -1030,12 +1042,12 @@ export const remoteAppHtml = `<!doctype html>
         chatColumn.classList.remove('has-thread');
       }
       composer.classList.remove('hidden');
-      if (introText) introText.textContent = 'Mobile chat runs directly from this device through OpenAI OAuth. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.';
+      if (introText) introText.textContent = 'Mobile chat uses your PiAgent account. Standalone answers require the official relay backend; Desktop coding requires QR approval for files, shell, browser tools, and long coding runs.';
       setStatus(mobileLoggedIn ? 'PiAgent account' : 'Sign in', mobileLoggedIn ? mobileLoginDetail() : mobileLoginDetail(), mobileLoggedIn ? 'ok' : 'bad');
       if (composerStatus) composerStatus.textContent = mobileLoggedIn ? 'PiAgent account ready' : 'OpenAI OAuth';
       promptEl.placeholder = 'Ask Pi Agent mobile...';
       document.getElementById('remoteAccessButton').innerHTML = '${icon("shield", 13)} Mobile chat ${icon("chevronDown", 12)}';
-      document.getElementById('modelButton').innerHTML = 'OpenAI OAuth ${icon("chevronDown", 12)}';
+      document.getElementById('modelButton').innerHTML = mobileStandaloneChatConfigured ? 'OpenAI API ${icon("chevronDown", 12)}' : 'Desktop QR ${icon("chevronDown", 12)}';
     }
 
     function scrollToBottom() {
@@ -1230,7 +1242,7 @@ export const remoteAppHtml = `<!doctype html>
       thinkingPreview = null;
       thinkingDetail = null;
       toolRows = {};
-      setStatus('Working', 'OpenAI OAuth mobile chat', 'run');
+      setStatus('Working', 'PiAgent mobile chat', 'run');
       ensureThinking();
       appendThinking('Thinking...');
       try {
@@ -1254,7 +1266,7 @@ export const remoteAppHtml = `<!doctype html>
           showLogin('OpenAI sign-in required.', 'Sign in again to continue mobile chat');
           setStatus('Sign in', 'OpenAI OAuth required', 'bad');
         } else {
-          setStatus('Mobile error', 'try again', 'bad');
+          setStatus('Mobile chat unavailable', mobileStandaloneChatConfigured ? 'check account access' : 'desktop QR or server backend needed', 'bad');
         }
       } finally {
         setRunActive(false);
@@ -1276,7 +1288,7 @@ export const remoteAppHtml = `<!doctype html>
         ? '${icon("shield", 13)} Mobile chat ${icon("chevronDown", 12)}'
         : '${icon("shield", 13)} Desktop coding ${icon("chevronDown", 12)}';
       document.getElementById('modelButton').innerHTML = activeMode === 'mobile'
-        ? 'OpenAI OAuth ${icon("chevronDown", 12)}'
+        ? (mobileStandaloneChatConfigured ? 'OpenAI API ${icon("chevronDown", 12)}' : 'Desktop QR ${icon("chevronDown", 12)}')
         : '5.5 High ${icon("chevronDown", 12)}';
     }
 
@@ -1606,7 +1618,10 @@ export const remoteAppHtml = `<!doctype html>
       }
     });
     document.getElementById('modelButton').addEventListener('click', function () {
-      if (activeMode === 'mobile') appendStatus('Mobile chat uses the web-safe OpenAI OAuth model configured on the relay.');
+      if (activeMode === 'mobile') {
+        if (mobileStandaloneChatConfigured && mobileStandaloneChatAllowed) appendStatus('Mobile chat uses your PiAgent account plus the official server-backed OpenAI API model.');
+        else appendStatus('OAuth creates your PiAgent account. Standalone answers need the official server backend, or use Desktop coding after QR approval.');
+      }
       else appendStatus('Model and access settings are inherited from PiAgent Desktop.');
     });
     ['searchButton','extensionsButton','automationsButton','projectsButton','unassociatedButton','toolbarSearchButton','toolbarProjectsButton','toolbarExtensionsButton','addButton'].forEach(function (id) {

@@ -8,6 +8,10 @@ export interface Env {
   OPENAI_OAUTH_REDIRECT_URI?: string;
   OPENAI_OAUTH_SCOPES?: string;
   OPENAI_MOBILE_MODEL?: string;
+  OPENAI_API_KEY?: string;
+  OPENAI_API_MODEL?: string;
+  MOBILE_ALLOW_PUBLIC_STANDALONE?: string;
+  MOBILE_ENABLE_UNOFFICIAL_CODEX_RELAY?: string;
   PUBLIC_HOST?: string;
   PROTOCOL_VERSION?: string;
 }
@@ -153,9 +157,11 @@ const OPENAI_DESKTOP_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const DEFAULT_OPENAI_SCOPES = "openid profile email offline_access";
 const OPENAI_CODEX_REDIRECT_URI = "http://localhost:1455/auth/callback";
 const OPENAI_CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
+const OPENAI_API_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const OPENAI_CODEX_ORIGINATOR = "codex_cli_rs";
 const OPENAI_CODEX_USER_AGENT = "codex_cli_rs/0.0.0 (PiAgent Remote; web; unknown)";
 const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-5.5";
+const DEFAULT_OPENAI_API_MODEL = "gpt-5-mini";
 const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
 const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MOBILE_DESKTOP_AUTH_TTL_MS = 90 * 1000;
@@ -342,6 +348,26 @@ function openAiMobileModel(env: Env) {
   return (env.OPENAI_MOBILE_MODEL ?? DEFAULT_OPENAI_MOBILE_MODEL).trim() || DEFAULT_OPENAI_MOBILE_MODEL;
 }
 
+function openAiApiKey(env: Env) {
+  return (env.OPENAI_API_KEY ?? "").trim();
+}
+
+function openAiApiModel(env: Env) {
+  return (env.OPENAI_API_MODEL ?? DEFAULT_OPENAI_API_MODEL).trim() || DEFAULT_OPENAI_API_MODEL;
+}
+
+function envFlag(value: string | undefined) {
+  return /^(1|true|yes|on)$/i.test((value ?? "").trim());
+}
+
+function publicStandaloneEnabled(env: Env) {
+  return envFlag(env.MOBILE_ALLOW_PUBLIC_STANDALONE);
+}
+
+function unofficialCodexRelayEnabled(env: Env) {
+  return envFlag(env.MOBILE_ENABLE_UNOFFICIAL_CODEX_RELAY);
+}
+
 async function readJson(request: WorkerRequest) {
   const contentLength = Number(request.headers.get("Content-Length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) throw new HttpError(413, "Request body too large.");
@@ -420,6 +446,39 @@ function extractCodexResponseText(body: string) {
     }
   }
   return (completedReply || deltaReply).trim() || "No response.";
+}
+
+function extractOpenAiApiResponseText(payload: Record<string, unknown>) {
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) return payload.output_text.trim();
+  const chunks: string[] = [];
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  for (const item of output) {
+    if (!item || typeof item !== "object") continue;
+    const content = Array.isArray((item as Record<string, unknown>).content)
+      ? (item as Record<string, unknown>).content as unknown[]
+      : [];
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue;
+      const record = part as Record<string, unknown>;
+      const text = typeof record.text === "string"
+        ? record.text
+        : typeof record.output_text === "string"
+          ? record.output_text
+          : "";
+      if (text.trim()) chunks.push(text.trim());
+    }
+  }
+  return chunks.join("\n").trim() || "No response.";
+}
+
+function officialMobileChatUnavailableMessage(hasApiKey: boolean, allowed: boolean) {
+  if (!hasApiKey) {
+    return "Standalone mobile chat is signed in, but the public relay has no official OpenAI API backend configured. Desktop coding still works after QR approval. To enable standalone mobile chat safely, add OPENAI_API_KEY as a Cloudflare secret and restrict access with MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS or the desktop owner account.";
+  }
+  if (!allowed) {
+    return "Standalone mobile chat is signed in, but this PiAgent account is not allowed to use the server-backed model. Use Desktop coding with QR approval, or add this OpenAI account to MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS.";
+  }
+  return "Standalone mobile chat is not available from this relay right now. Desktop coding still works after QR approval.";
 }
 
 function htmlTextSnippet(body: string) {
@@ -738,8 +797,8 @@ export default {
       if (url.pathname === "/piagent-icon.ico" || url.pathname === "/favicon.ico") return iconResponse();
       if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
       if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. A PiAgent account is created from the signed-in OpenAI account and stores mobile chat threads, lightweight memory metadata, and desktop links only after QR approval proves that device. Direct mobile chat uses only the OpenAI account signed in on that device and does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth is restricted to that allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
-      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile chat requires OpenAI OAuth on the device; desktop coding requires QR pairing and desktop approval.</p>");
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile sign-in stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. A PiAgent account is created from the signed-in OpenAI account and stores mobile chat threads, lightweight memory metadata, and desktop links only after QR approval proves that device. Direct mobile chat uses the signed-in OpenAI account as identity only; model calls use an official server-side OpenAI API secret when configured and authorized, or else require QR-approved Desktop coding. Direct mobile chat does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth and server-backed standalone chat are restricted to that allowlist. The public relay never accepts browser-supplied OpenAI API keys and does not store desktop files or local credentials.</p>");
+      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile sign-in requires OpenAI OAuth on the device. Standalone mobile model access requires an official server backend and account authorization; desktop coding requires QR pairing and desktop approval.</p>");
       if (url.pathname === "/api/account/link-desktop" && request.method === "POST") {
         const body = await readJson(request.clone());
         const desktopId = remoteIdFromRequest(request, body);
@@ -1087,6 +1146,94 @@ export class RemoteDesktop {
     }
   }
 
+  private async allowOfficialStandaloneChat(accountId: string) {
+    const allowed = allowedMobileAccountIds(this.env);
+    if (allowed.size > 0) return allowed.has(accountId);
+    const owner = await this.mobileOwnerAccountId();
+    if (owner) return owner === accountId;
+    return publicStandaloneEnabled(this.env);
+  }
+
+  private async runOfficialMobileChat(history: MobileChatMessage[]) {
+    const apiKey = openAiApiKey(this.env);
+    if (!apiKey) throw new HttpError(503, officialMobileChatUnavailableMessage(false, true));
+    const input = history
+      .filter((item) => item.role !== "system")
+      .map((item) => ({
+        role: item.role === "assistant" ? "assistant" : "user",
+        content: item.content
+      }));
+    const response = await fetch(OPENAI_API_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: openAiApiModel(this.env),
+        instructions: "You are Pi Agent mobile chat. Answer clearly, professionally, and concisely. This web-only mode has no desktop files, shell, browser, or local credentials unless the user switches to QR-approved Desktop coding.",
+        input,
+        store: false,
+        max_output_tokens: 1800
+      })
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new HttpError(response.status === 401 ? 502 : response.status, openAiRelayErrorMessage(response, body));
+    }
+    try {
+      return extractOpenAiApiResponseText(JSON.parse(body) as Record<string, unknown>);
+    } catch (_error) {
+      return body.trim().slice(0, 6000) || "No response.";
+    }
+  }
+
+  private async runUnofficialCodexRelay(session: MobileSession, threadId: string, history: MobileChatMessage[]) {
+    const accessToken = await this.ensureMobileAccessToken(session);
+    const requestId = `${threadId}.${randomToken(8)}`;
+    const input = history.map((item, index) => item.role === "assistant"
+      ? {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: item.content, annotations: [] }],
+          status: "completed",
+          id: `msg_${index}`
+        }
+      : {
+          role: "user",
+          content: [{ type: "input_text", text: item.content }]
+        });
+    const response = await fetch(OPENAI_CODEX_RESPONSES_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+        "OpenAI-Beta": "responses=experimental",
+        "User-Agent": OPENAI_CODEX_USER_AGENT,
+        "chatgpt-account-id": session.accountId,
+        "originator": OPENAI_CODEX_ORIGINATOR,
+        "session-id": session.id,
+        "thread-id": threadId,
+        "x-client-request-id": requestId
+      },
+      body: JSON.stringify({
+        model: openAiMobileModel(this.env),
+        store: false,
+        stream: true,
+        instructions: "You are Pi Agent. Answer clearly and briefly. Use safe tools only.",
+        input,
+        text: { verbosity: "low" }
+      })
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      if (response.status === 401) throw new HttpError(401, "OpenAI token expired. Reconnect.");
+      throw new HttpError(502, openAiRelayErrorMessage(response, body));
+    }
+    return extractCodexResponseText(body);
+  }
+
   private async digest(value: string) {
     return hmacHex(pepper(this.env), value);
   }
@@ -1197,15 +1344,20 @@ export class RemoteDesktop {
 
   private async accountStatus(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const officialApiConfigured = Boolean(openAiApiKey(this.env));
+    const unofficialRelayConfigured = unofficialCodexRelayEnabled(this.env);
     const session = await this.readSessionFromRequest(request);
     if (!session) {
       return jsonResponse({
         ok: true,
         loggedIn: false,
-        account: null
+        account: null,
+        standaloneChatConfigured: officialApiConfigured || unofficialRelayConfigured,
+        standaloneChatProvider: officialApiConfigured ? "openai-api" : unofficialRelayConfigured ? "codex-relay" : "desktop-required"
       });
     }
     const account = await this.ensurePiAgentAccount(session);
+    const standaloneChatAllowed = officialApiConfigured ? await this.allowOfficialStandaloneChat(session.accountId) : unofficialRelayConfigured;
     await this.setMobileSession(session);
     return jsonResponse({
       ok: true,
@@ -1214,6 +1366,9 @@ export class RemoteDesktop {
       accountId: session.accountId,
       piAccountId: account.id,
       defaultThreadId: account.threadIds[0] ?? null,
+      standaloneChatConfigured: officialApiConfigured || unofficialRelayConfigured,
+      standaloneChatAllowed,
+      standaloneChatProvider: officialApiConfigured ? "openai-api" : unofficialRelayConfigured ? "codex-relay" : "desktop-required",
       account: this.accountPublicPayload(account)
     });
   }
@@ -1371,9 +1526,21 @@ export class RemoteDesktop {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const ownerReady = Boolean(await this.mobileOwnerAccountId()) || allowedMobileAccountIds(this.env).size > 0;
     const oauthConfigured = Boolean(openAiWebClientId(this.env));
+    const officialApiConfigured = Boolean(openAiApiKey(this.env));
+    const unofficialRelayConfigured = unofficialCodexRelayEnabled(this.env);
     const session = await this.readSessionFromRequest(request);
-    if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady: ownerReady || oauthConfigured, desktopOwnerReady: ownerReady, oauthConfigured, deviceCodeSupported: true });
+    if (!session) return jsonResponse({
+      ok: true,
+      loggedIn: false,
+      ownerReady: ownerReady || oauthConfigured,
+      desktopOwnerReady: ownerReady,
+      oauthConfigured,
+      deviceCodeSupported: true,
+      standaloneChatConfigured: officialApiConfigured || unofficialRelayConfigured,
+      standaloneChatProvider: officialApiConfigured ? "openai-api" : unofficialRelayConfigured ? "codex-relay" : "desktop-required"
+    });
     const account = await this.ensurePiAgentAccount(session);
+    const standaloneChatAllowed = officialApiConfigured ? await this.allowOfficialStandaloneChat(session.accountId) : unofficialRelayConfigured;
     await this.setMobileSession(session);
     return jsonResponse({
       ok: true,
@@ -1385,9 +1552,12 @@ export class RemoteDesktop {
       provider: "openai",
       accountId: session.accountId,
       piAccountId: account.id,
-      model: openAiMobileModel(this.env),
+      model: officialApiConfigured ? openAiApiModel(this.env) : openAiMobileModel(this.env),
       defaultThreadId: account.threadIds[0] ?? null,
       account: this.accountPublicPayload(account),
+      standaloneChatConfigured: officialApiConfigured || unofficialRelayConfigured,
+      standaloneChatAllowed,
+      standaloneChatProvider: officialApiConfigured ? "openai-api" : unofficialRelayConfigured ? "codex-relay" : "desktop-required",
       sessionActive: true
     });
   }
@@ -1662,50 +1832,23 @@ export class RemoteDesktop {
     thread.updatedAt = Date.now();
     this.rememberAccountTurn(account, threadId, message);
     const history = this.normalizeMobileMessages(thread);
-    const accessToken = await this.ensureMobileAccessToken(session);
-    const requestId = `${threadId}.${randomToken(8)}`;
-    const input = history.map((item, index) => item.role === "assistant"
-      ? {
-          type: "message",
-          role: "assistant",
-          content: [{ type: "output_text", text: item.content, annotations: [] }],
-          status: "completed",
-          id: `msg_${index}`
-        }
-      : {
-          role: "user",
-          content: [{ type: "input_text", text: item.content }]
-        });
-    const response = await fetch(OPENAI_CODEX_RESPONSES_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-        "Accept": "text/event-stream",
-        "OpenAI-Beta": "responses=experimental",
-        "User-Agent": OPENAI_CODEX_USER_AGENT,
-        "chatgpt-account-id": session.accountId,
-        "originator": OPENAI_CODEX_ORIGINATOR,
-        "session-id": session.id,
-        "thread-id": threadId,
-        "x-client-request-id": requestId
-      },
-      body: JSON.stringify({
-        model: openAiMobileModel(this.env),
-        store: false,
-        stream: true,
-        instructions: "You are Pi Agent. Answer clearly and briefly. Use safe tools only.",
-        input,
-        text: { verbosity: "low" }
-      })
-    });
-    const chatText = await response.text();
-    if (!response.ok) {
-      if (response.status === 401) return jsonResponse({ ok: false, error: "OpenAI token expired. Reconnect.", authRequired: true }, { status: 401 });
-      return jsonResponse({ ok: false, error: openAiRelayErrorMessage(response, chatText) }, { status: 502 });
-    }
     let reply = "No response.";
-    reply = extractCodexResponseText(chatText);
+    try {
+      if (openAiApiKey(this.env)) {
+        const allowed = await this.allowOfficialStandaloneChat(session.accountId);
+        if (!allowed) throw new HttpError(403, officialMobileChatUnavailableMessage(true, false));
+        reply = await this.runOfficialMobileChat(history);
+      } else if (unofficialCodexRelayEnabled(this.env)) {
+        reply = await this.runUnofficialCodexRelay(session, threadId, history);
+      } else {
+        throw new HttpError(503, officialMobileChatUnavailableMessage(false, true));
+      }
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 401) {
+        return jsonResponse({ ok: false, error: error.message, authRequired: true }, { status: 401 });
+      }
+      return errorJson(error, "Mobile chat failed.");
+    }
     thread.messages.push({ role: "assistant", content: reply });
     thread.messages = thread.messages.slice(-MOBILE_THREAD_LIMIT * 2);
     thread.updatedAt = Date.now();
