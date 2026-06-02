@@ -10,6 +10,9 @@
     "deploy": "npm run sync:desktop-ui && wrangler deploy",
     "dev": "npm run sync:desktop-ui && wrangler dev"
   },
+  "dependencies": {
+    "@piagent/shared": "1.0.0"
+  },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260529.0",
     "typescript": "^5.4.0",

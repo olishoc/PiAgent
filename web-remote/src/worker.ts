@@ -1,4 +1,17 @@
 import { remoteAppHtml } from "./remoteAppHtml";
+import type {
+  PiAgentAuditEvent as SharedAuditEvent,
+  PiAgentConversation,
+  PiAgentDesktopLink as SharedDesktopLink,
+  PiAgentMemoryRecord,
+  PiAgentMessage,
+  PiAgentProject,
+  PiAgentProvider,
+  PiAgentProviderCatalogItem,
+  PiAgentProviderConnection,
+  PiAgentProviderStatus,
+  PiAgentRun
+} from "@piagent/shared";
 
 export interface Env {
   REMOTE_DESKTOP: DurableObjectNamespace;
@@ -98,6 +111,9 @@ interface MobileThread {
   id: string;
   createdAt: number;
   updatedAt: number;
+  title?: string;
+  projectId?: string;
+  archivedAt?: number;
   messages: MobileChatMessage[];
 }
 
@@ -122,6 +138,58 @@ interface PiAgentDesktopLink {
   lastVerifiedAt: number;
 }
 
+interface ProviderVaultRecord {
+  id: string;
+  userId: string;
+  provider: PiAgentProvider;
+  authType: "server-secret" | "api-key" | "oauth" | "desktop";
+  status: PiAgentProviderStatus;
+  label: string;
+  defaultModel: string;
+  scopes: string[];
+  createdAt: number;
+  updatedAt: number;
+  lastUsedAt?: number;
+  secretCiphertext?: string;
+}
+
+interface CloudProjectRecord {
+  id: string;
+  userId: string;
+  name: string;
+  description: string;
+  status: "active" | "paused" | "archived";
+  createdAt: number;
+  updatedAt: number;
+  chatIds: string[];
+  artifactIds: string[];
+}
+
+interface CloudMemoryRecord {
+  id: string;
+  userId: string;
+  scope: "account" | "project" | "conversation" | "skill";
+  kind: "fact" | "preference" | "decision" | "warning" | "skill" | "summary";
+  content: string;
+  confidence: number;
+  evidenceIds: string[];
+  createdAt: number;
+  updatedAt: number;
+  source: "chat" | "desktop" | "correction" | "system";
+}
+
+interface CloudRunRecord {
+  id: string;
+  userId: string;
+  conversationId: string;
+  providerConnectionId?: string;
+  status: "queued" | "running" | "stopped" | "completed" | "failed";
+  createdAt: number;
+  updatedAt: number;
+  completedAt?: number;
+  error?: string;
+}
+
 interface PiAgentAccount {
   id: string;
   openAiAccountId: string;
@@ -136,6 +204,13 @@ interface PiAgentAccount {
     recentTopics: string[];
   };
   desktopLinks: PiAgentDesktopLink[];
+  providerConnectionIds?: string[];
+  providerConnections?: Record<string, ProviderVaultRecord>;
+  projectIds?: string[];
+  projects?: Record<string, CloudProjectRecord>;
+  memoryRecords?: CloudMemoryRecord[];
+  runs?: Record<string, CloudRunRecord>;
+  auditEvents?: SharedAuditEvent[];
 }
 
 const encoder = new TextEncoder();
@@ -171,6 +246,10 @@ const MOBILE_OAUTH_COOKIE_VERSION = "mobile-oauth-v1";
 const PIAGENT_ACCOUNT_LINK_VERSION = "piagent-account-link-v1";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
 const MOBILE_THREAD_LIMIT = 25;
+const V1_PROJECT_LIMIT = 60;
+const V1_PROVIDER_CONNECTION_LIMIT = 12;
+const V1_MEMORY_RECORD_LIMIT = 200;
+const V1_RUN_LIMIT = 80;
 const PIAGENT_ICON_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABxSURBVFhH7c67DYAwDIThLODBKNl/AY9AB5Wbk5yYQB6WrvibyLp8RUTulRV8mB0BewKu8xgS/lMF4NvXvM0cAFV9XWvTIiAnAO8jN7hpEUBAFyBSa9MiICcA7yPhpkVACPBH3ua+gBHhPy5gZgQQ8ABGpp/T6T276AAAAABJRU5ErkJggg==";
 const PIAGENT_ICON_BASE64 = "AAABAAEAICAAAAEAIAAoEAAAFgAAACgAAAAgAAAAQAAAAAEAIAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAANDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/";
 
@@ -206,7 +285,7 @@ function textResponse(body: string, init: ResponseInit = {}) {
   });
 }
 
-function jsonResponse(body: Record<string, JsonValue>, init: ResponseInit = {}) {
+function jsonResponse(body: Record<string, unknown>, init: ResponseInit = {}) {
   return new Response(JSON.stringify(body), {
     ...init,
     headers: securityHeaders({ "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store, no-transform", ...(init.headers ?? {}) })
@@ -294,6 +373,45 @@ function safeName(input: unknown, fallback: string) {
   return (text || fallback).replace(/[\r\n\t]/g, " ").slice(0, 80);
 }
 
+function safeDescription(input: unknown) {
+  const text = typeof input === "string" ? input.trim() : "";
+  return text.replace(/[\r\n\t]/g, " ").slice(0, 500);
+}
+
+function escapeHtml(input: unknown) {
+  return String(input ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function isoDate(value: number | undefined) {
+  return new Date(value && Number.isFinite(value) ? value : Date.now()).toISOString();
+}
+
+function threadTitle(thread: MobileThread) {
+  if (thread.title?.trim()) return thread.title.trim().slice(0, 80);
+  const firstUser = thread.messages.find((message) => message.role === "user")?.content ?? "";
+  const clean = firstUser.replace(/\s+/g, " ").trim();
+  return clean ? clean.slice(0, 80) : "New chat";
+}
+
+function normalizeProvider(input: unknown): PiAgentProvider | "" {
+  const value = typeof input === "string" ? input.trim() : "";
+  if (value === "openai-api" || value === "openrouter" || value === "anthropic" || value === "desktop-openai" || value === "desktop-local") return value;
+  return "";
+}
+
+function defaultModelForProvider(provider: PiAgentProvider) {
+  if (provider === "openai-api") return DEFAULT_OPENAI_API_MODEL;
+  if (provider === "openrouter") return "openai/gpt-5-mini";
+  if (provider === "anthropic") return "claude-sonnet-4-5";
+  if (provider === "desktop-openai") return DEFAULT_OPENAI_MOBILE_MODEL;
+  return "desktop-local";
+}
+
 function safeEqual(a: string, b: string) {
   if (!a || !b) return false;
   let diff = a.length ^ b.length;
@@ -322,7 +440,7 @@ async function accountLinkSignature(env: Env, input: { desktopId: string; device
 
 function pepper(env: Env) {
   if (env.REMOTE_TOKEN_PEPPER) return env.REMOTE_TOKEN_PEPPER;
-  throw new Error("REMOTE_TOKEN_PEPPER is not configured.");
+  throw new HttpError(503, "REMOTE_TOKEN_PEPPER is not configured.");
 }
 
 function allowedMobileAccountIds(env: Env) {
@@ -473,7 +591,7 @@ function extractOpenAiApiResponseText(payload: Record<string, unknown>) {
 
 function officialMobileChatUnavailableMessage(hasApiKey: boolean, allowed: boolean) {
   if (!hasApiKey) {
-    return "Standalone mobile chat is signed in, but the public relay has no official OpenAI API backend configured. Desktop coding still works after QR approval. To enable standalone mobile chat safely, add OPENAI_API_KEY as a Cloudflare secret and restrict access with MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS or the desktop owner account.";
+    return "Standalone mobile chat is signed in, but no official OpenAI Responses backend is configured for this account. Connect an OpenAI API provider in PiAgent Web, or add OPENAI_API_KEY as a Cloudflare secret and restrict access with MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS or the desktop owner account. Desktop coding still works after QR approval.";
   }
   if (!allowed) {
     return "Standalone mobile chat is signed in, but this PiAgent account is not allowed to use the server-backed model. Use Desktop coding with QR approval, or add this OpenAI account to MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS.";
@@ -797,7 +915,7 @@ export default {
       if (url.pathname === "/piagent-icon.ico" || url.pathname === "/favicon.ico") return iconResponse();
       if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
       if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile sign-in stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. A PiAgent account is created from the signed-in OpenAI account and stores mobile chat threads, lightweight memory metadata, and desktop links only after QR approval proves that device. Direct mobile chat uses the signed-in OpenAI account as identity only; model calls use an official server-side OpenAI API secret when configured and authorized, or else require QR-approved Desktop coding. Direct mobile chat does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth and server-backed standalone chat are restricted to that allowlist. The public relay never accepts browser-supplied OpenAI API keys and does not store desktop files or local credentials.</p>");
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile sign-in stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. A PiAgent account is created from the signed-in OpenAI account and stores mobile chat threads, lightweight memory metadata, provider connection metadata, projects, memory records, and desktop links only after QR approval proves that device. Provider API keys submitted by the user are encrypted server-side with the REMOTE_TOKEN_PEPPER-backed vault key before storage and are never returned to browser JavaScript after submission. Direct mobile chat uses the signed-in OpenAI account as identity; model calls use either the user's encrypted provider connection or an official server-side OpenAI API secret when configured and authorized. Direct mobile chat does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth and server-backed standalone chat are restricted to that allowlist. The public relay does not store desktop files or local credentials.</p>");
       if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile sign-in requires OpenAI OAuth on the device. Standalone mobile model access requires an official server backend and account authorization; desktop coding requires QR pairing and desktop approval.</p>");
       if (url.pathname === "/api/account/link-desktop" && request.method === "POST") {
         const body = await readJson(request.clone());
@@ -831,6 +949,17 @@ export default {
           method: "POST",
           headers: forwardedHeaders(request),
           body: JSON.stringify({ ...link, signature })
+        }));
+      }
+      if (url.pathname.startsWith("/api/v1/") || url.pathname === "/api/v1") {
+        const globalStub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
+        const websocket = request.headers.get("Upgrade")?.toLowerCase() === "websocket";
+        const needsBody = !websocket && request.method !== "GET" && request.method !== "HEAD";
+        const body = needsBody ? await request.text() : undefined;
+        return globalStub.fetch(new Request(request.url, {
+          method: request.method,
+          headers: forwardedHeaders(request),
+          body
         }));
       }
       if (url.pathname.startsWith("/api/account/")) {
@@ -889,33 +1018,36 @@ export class RemoteDesktop {
   async fetch(request: WorkerRequest): Promise<Response> {
     const url = new URL(request.url);
     try {
+      if (url.pathname === "/api/v1" || url.pathname.startsWith("/api/v1/")) {
+        return await this.handleV1(request);
+      }
       if (url.pathname.startsWith("/api/account/")) {
-        if (url.pathname === "/api/account/status" && request.method === "GET") return this.accountStatus(request);
-        if (url.pathname === "/api/account/link-desktop/internal" && request.method === "POST") return this.accountLinkDesktopInternal(request);
-        if (url.pathname === "/api/account/desktop-proof" && request.method === "POST") return this.accountDesktopProof(request);
+        if (url.pathname === "/api/account/status" && request.method === "GET") return await this.accountStatus(request);
+        if (url.pathname === "/api/account/link-desktop/internal" && request.method === "POST") return await this.accountLinkDesktopInternal(request);
+        if (url.pathname === "/api/account/desktop-proof" && request.method === "POST") return await this.accountDesktopProof(request);
         return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
       }
       if (url.pathname.startsWith("/api/mobile/")) {
-        if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return this.mobileAuthStart(request);
-        if (url.pathname === "/api/mobile/auth/claim" && request.method === "POST") return this.mobileAuthClaim(request);
-        if (url.pathname === "/api/mobile/auth/device/poll" && request.method === "POST") return this.mobileAuthDevicePoll(request);
-        if (url.pathname === "/api/mobile/auth/complete" && request.method === "POST") return this.mobileAuthComplete(request);
-        if (url.pathname === "/api/mobile/auth/status" && request.method === "GET") return this.mobileAuthStatus(request);
-        if (url.pathname === "/api/mobile/auth/logout" && request.method === "POST") return this.mobileAuthLogout(request);
-        if (url.pathname === "/api/mobile/auth/callback" && request.method === "GET") return this.mobileAuthCallback(request);
-        if (url.pathname === "/api/mobile/chat" && request.method === "POST") return this.mobileChat(request);
+        if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return await this.mobileAuthStart(request);
+        if (url.pathname === "/api/mobile/auth/claim" && request.method === "POST") return await this.mobileAuthClaim(request);
+        if (url.pathname === "/api/mobile/auth/device/poll" && request.method === "POST") return await this.mobileAuthDevicePoll(request);
+        if (url.pathname === "/api/mobile/auth/complete" && request.method === "POST") return await this.mobileAuthComplete(request);
+        if (url.pathname === "/api/mobile/auth/status" && request.method === "GET") return await this.mobileAuthStatus(request);
+        if (url.pathname === "/api/mobile/auth/logout" && request.method === "POST") return await this.mobileAuthLogout(request);
+        if (url.pathname === "/api/mobile/auth/callback" && request.method === "GET") return await this.mobileAuthCallback(request);
+        if (url.pathname === "/api/mobile/chat" && request.method === "POST") return await this.mobileChat(request);
         return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
       }
-      if (url.pathname === "/api/desktop/pairing" && request.method === "POST") return this.createPairing(request);
-      if (url.pathname === "/api/desktop/pairing/approve" && request.method === "POST") return this.approvePairing(request);
-      if (url.pathname === "/api/desktop/pairing/deny" && request.method === "POST") return this.denyPairing(request);
-      if (url.pathname === "/api/desktop/revoke" && request.method === "POST") return this.revokeDevice(request);
-      if (url.pathname === "/api/desktop/disable" && request.method === "POST") return this.disableRemote(request);
-      if (url.pathname === "/api/desktop/status" && request.method === "GET") return this.desktopStatus(request);
-      if (url.pathname === "/api/pair/claim" && request.method === "POST") return this.claimPairing(request);
-      if (url.pathname === "/api/pair/status" && request.method === "POST") return this.pairingStatus(request);
-      if (url.pathname === "/relay/desktop" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return this.acceptDesktopSocket(request);
-      if (url.pathname === "/relay/client" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return this.acceptClientSocket(request);
+      if (url.pathname === "/api/desktop/pairing" && request.method === "POST") return await this.createPairing(request);
+      if (url.pathname === "/api/desktop/pairing/approve" && request.method === "POST") return await this.approvePairing(request);
+      if (url.pathname === "/api/desktop/pairing/deny" && request.method === "POST") return await this.denyPairing(request);
+      if (url.pathname === "/api/desktop/revoke" && request.method === "POST") return await this.revokeDevice(request);
+      if (url.pathname === "/api/desktop/disable" && request.method === "POST") return await this.disableRemote(request);
+      if (url.pathname === "/api/desktop/status" && request.method === "GET") return await this.desktopStatus(request);
+      if (url.pathname === "/api/pair/claim" && request.method === "POST") return await this.claimPairing(request);
+      if (url.pathname === "/api/pair/status" && request.method === "POST") return await this.pairingStatus(request);
+      if (url.pathname === "/relay/desktop" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return await this.acceptDesktopSocket(request);
+      if (url.pathname === "/relay/client" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return await this.acceptClientSocket(request);
       return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
     } catch (error) {
       return errorJson(error, "Remote access error.");
@@ -970,8 +1102,166 @@ export class RemoteDesktop {
     return `pi_${(await this.digest(`piaccount:${openAiAccountId}`)).slice(0, 32)}`;
   }
 
+  private normalizePiAgentAccount(account: PiAgentAccount) {
+    account.threadIds = Array.isArray(account.threadIds) ? account.threadIds : [];
+    account.threads = account.threads && typeof account.threads === "object" ? account.threads : {};
+    account.memory = account.memory && typeof account.memory === "object"
+      ? account.memory
+      : { updatedAt: 0, turnCount: 0, recentTopics: [] };
+    account.memory.recentTopics = Array.isArray(account.memory.recentTopics) ? account.memory.recentTopics : [];
+    account.desktopLinks = Array.isArray(account.desktopLinks) ? account.desktopLinks : [];
+    account.providerConnectionIds = Array.isArray(account.providerConnectionIds) ? account.providerConnectionIds : [];
+    account.providerConnections = account.providerConnections && typeof account.providerConnections === "object" ? account.providerConnections : {};
+    account.projectIds = Array.isArray(account.projectIds) ? account.projectIds : [];
+    account.projects = account.projects && typeof account.projects === "object" ? account.projects : {};
+    account.memoryRecords = Array.isArray(account.memoryRecords) ? account.memoryRecords : [];
+    account.runs = account.runs && typeof account.runs === "object" ? account.runs : {};
+    account.auditEvents = Array.isArray(account.auditEvents) ? account.auditEvents : [];
+  }
+
+  private publicProviderConnection(record: ProviderVaultRecord): PiAgentProviderConnection {
+    return {
+      id: record.id,
+      userId: record.userId,
+      provider: record.provider,
+      authType: record.authType,
+      status: record.status,
+      label: record.label,
+      defaultModel: record.defaultModel,
+      scopes: record.scopes,
+      createdAt: isoDate(record.createdAt),
+      updatedAt: isoDate(record.updatedAt),
+      ...(record.lastUsedAt ? { lastUsedAt: isoDate(record.lastUsedAt) } : {})
+    };
+  }
+
+  private publicProject(record: CloudProjectRecord): PiAgentProject {
+    return {
+      id: record.id,
+      userId: record.userId,
+      name: record.name,
+      description: record.description,
+      status: record.status,
+      createdAt: isoDate(record.createdAt),
+      updatedAt: isoDate(record.updatedAt),
+      chatIds: record.chatIds,
+      artifactIds: record.artifactIds
+    };
+  }
+
+  private publicMemoryRecord(record: CloudMemoryRecord): PiAgentMemoryRecord {
+    return {
+      id: record.id,
+      userId: record.userId,
+      scope: record.scope,
+      kind: record.kind,
+      content: record.content,
+      confidence: record.confidence,
+      evidenceIds: record.evidenceIds,
+      createdAt: isoDate(record.createdAt),
+      updatedAt: isoDate(record.updatedAt),
+      source: record.source
+    };
+  }
+
+  private publicRun(record: CloudRunRecord): PiAgentRun {
+    return {
+      id: record.id,
+      userId: record.userId,
+      conversationId: record.conversationId,
+      ...(record.providerConnectionId ? { providerConnectionId: record.providerConnectionId } : {}),
+      status: record.status,
+      createdAt: isoDate(record.createdAt),
+      updatedAt: isoDate(record.updatedAt),
+      ...(record.completedAt ? { completedAt: isoDate(record.completedAt) } : {}),
+      ...(record.error ? { error: record.error } : {})
+    };
+  }
+
+  private publicDesktopLink(account: PiAgentAccount, link: PiAgentDesktopLink): SharedDesktopLink {
+    return {
+      id: `${link.desktopId}.${link.deviceId}`,
+      userId: account.id,
+      desktopId: link.desktopId,
+      deviceId: link.deviceId,
+      deviceName: link.deviceName,
+      status: "linked",
+      capabilities: ["safe-chat", "full-agent", "desktop-files", "shell", "browser", "subagents"],
+      linkedAt: isoDate(link.linkedAt),
+      lastVerifiedAt: isoDate(link.lastVerifiedAt)
+    };
+  }
+
+  private publicConversation(account: PiAgentAccount, thread: MobileThread): PiAgentConversation {
+    return {
+      id: thread.id,
+      userId: account.id,
+      ...(thread.projectId ? { projectId: thread.projectId } : {}),
+      title: threadTitle(thread),
+      createdAt: isoDate(thread.createdAt),
+      updatedAt: isoDate(thread.updatedAt),
+      ...(thread.archivedAt ? { archivedAt: isoDate(thread.archivedAt) } : {}),
+      messageCount: thread.messages.length
+    };
+  }
+
+  private publicMessages(account: PiAgentAccount, thread: MobileThread): PiAgentMessage[] {
+    return thread.messages.map((message, index) => ({
+      id: `${thread.id}.${index}`,
+      conversationId: thread.id,
+      role: message.role,
+      content: message.content,
+      createdAt: isoDate(thread.createdAt + index),
+      status: "complete"
+    }));
+  }
+
+  private providerCatalog(account: PiAgentAccount): PiAgentProviderCatalogItem[] {
+    const hasServerOpenAi = Boolean(openAiApiKey(this.env));
+    const hasDesktopLink = account.desktopLinks.length > 0;
+    return [
+      {
+        provider: "openai-api",
+        name: "OpenAI API",
+        authTypes: hasServerOpenAi ? ["server-secret", "api-key"] : ["api-key"],
+        status: hasServerOpenAi ? "available" : "requires-configuration",
+        defaultModel: openAiApiModel(this.env),
+        models: [openAiApiModel(this.env), "gpt-5-mini", "gpt-5", "gpt-4.1-mini"],
+        notes: "Uses the official OpenAI Responses API."
+      },
+      {
+        provider: "openrouter",
+        name: "OpenRouter",
+        authTypes: ["api-key"],
+        status: "requires-configuration",
+        defaultModel: "openai/gpt-5-mini",
+        models: ["openai/gpt-5-mini", "anthropic/claude-sonnet-4.5", "google/gemini-2.5-pro"],
+        notes: "Vault storage is available; model calls are not wired in this first tranche."
+      },
+      {
+        provider: "anthropic",
+        name: "Anthropic",
+        authTypes: ["api-key"],
+        status: "requires-configuration",
+        defaultModel: "claude-sonnet-4-5",
+        models: ["claude-sonnet-4-5", "claude-opus-4-1"],
+        notes: "Vault storage is available; model calls are not wired in this first tranche."
+      },
+      {
+        provider: "desktop-openai",
+        name: "PiAgent Desktop OAuth",
+        authTypes: ["desktop", "oauth"],
+        status: hasDesktopLink ? "available" : "requires-desktop",
+        defaultModel: openAiMobileModel(this.env),
+        models: [openAiMobileModel(this.env), "gpt-5.5"],
+        notes: "Desktop coding remains gated by QR pairing and desktop approval."
+      }
+    ];
+  }
+
   private accountPublicPayload(account: PiAgentAccount | null) {
     if (!account) return null;
+    this.normalizePiAgentAccount(account);
     return {
       id: account.id,
       displayName: account.displayName,
@@ -983,13 +1273,13 @@ export class RemoteDesktop {
         recentTopics: account.memory.recentTopics.slice(0, 8),
         updatedAt: account.memory.updatedAt ? new Date(account.memory.updatedAt).toISOString() : null
       },
-      desktopLinks: account.desktopLinks.map((link) => ({
-        desktopId: link.desktopId,
-        deviceId: link.deviceId,
-        deviceName: link.deviceName,
-        linkedAt: new Date(link.linkedAt).toISOString(),
-        lastVerifiedAt: new Date(link.lastVerifiedAt).toISOString()
-      }))
+      desktopLinks: account.desktopLinks.map((link) => this.publicDesktopLink(account, link)),
+      providerConnections: (account.providerConnectionIds ?? [])
+        .map((id) => account.providerConnections?.[id])
+        .filter((record): record is ProviderVaultRecord => Boolean(record))
+        .map((record) => this.publicProviderConnection(record)),
+      projectCount: (account.projectIds ?? []).length,
+      memoryRecordCount: (account.memoryRecords ?? []).length
     };
   }
 
@@ -999,6 +1289,7 @@ export class RemoteDesktop {
   }
 
   private async setPiAgentAccount(account: PiAgentAccount) {
+    this.normalizePiAgentAccount(account);
     account.threadIds = account.threadIds.slice(0, MOBILE_THREAD_LIMIT);
     const keep = new Set(account.threadIds);
     account.threads = Object.fromEntries(Object.entries(account.threads)
@@ -1012,6 +1303,22 @@ export class RemoteDesktop {
       .filter(Boolean)
       .slice(0, 40);
     account.desktopLinks = account.desktopLinks.slice(0, 25);
+    account.providerConnectionIds = (account.providerConnectionIds ?? [])
+      .filter((id) => Boolean(account.providerConnections?.[id]))
+      .slice(0, V1_PROVIDER_CONNECTION_LIMIT);
+    const providerKeep = new Set(account.providerConnectionIds);
+    account.providerConnections = Object.fromEntries(Object.entries(account.providerConnections ?? {}).filter(([id]) => providerKeep.has(id)));
+    account.projectIds = (account.projectIds ?? [])
+      .filter((id) => Boolean(account.projects?.[id]))
+      .slice(0, V1_PROJECT_LIMIT);
+    const projectKeep = new Set(account.projectIds);
+    account.projects = Object.fromEntries(Object.entries(account.projects ?? {}).filter(([id]) => projectKeep.has(id)));
+    account.memoryRecords = (account.memoryRecords ?? []).slice(0, V1_MEMORY_RECORD_LIMIT);
+    const runEntries = Object.entries(account.runs ?? {})
+      .sort(([, a], [, b]) => b.updatedAt - a.updatedAt)
+      .slice(0, V1_RUN_LIMIT);
+    account.runs = Object.fromEntries(runEntries);
+    account.auditEvents = (account.auditEvents ?? []).slice(0, 100);
     await this.state.storage.put(this.piAccountKey(account.id), account);
   }
 
@@ -1033,9 +1340,17 @@ export class RemoteDesktop {
           turnCount: 0,
           recentTopics: []
         },
-        desktopLinks: []
+        desktopLinks: [],
+        providerConnectionIds: [],
+        providerConnections: {},
+        projectIds: [],
+        projects: {},
+        memoryRecords: [],
+        runs: {},
+        auditEvents: []
       };
     }
+    this.normalizePiAgentAccount(account);
     account.lastActiveAt = now;
     if (!account.openAiAccountId) account.openAiAccountId = session.accountId;
     session.piAccountId = piAccountId;
@@ -1058,7 +1373,7 @@ export class RemoteDesktop {
     return await this.state.storage.get<string>("mobile:ownerAccountId") ?? "";
   }
 
-  private sanitizeMobileMessage(content: string) {
+  private sanitizeMobileMessage(content: unknown) {
     return String(content ?? "").trim().slice(0, MAX_MOBILE_PROMPT_CHARS);
   }
 
@@ -1154,8 +1469,46 @@ export class RemoteDesktop {
     return publicStandaloneEnabled(this.env);
   }
 
-  private async runOfficialMobileChat(history: MobileChatMessage[]) {
-    const apiKey = openAiApiKey(this.env);
+  private async requireV1Account(request: WorkerRequest) {
+    if (!isSameOrigin(request)) throw new HttpError(403, "Origin rejected.");
+    const session = await this.readSessionFromRequest(request);
+    if (!session) throw new HttpError(401, "Auth required.");
+    const account = await this.ensurePiAgentAccount(session);
+    await this.setMobileSession(session);
+    return { session, account };
+  }
+
+  private defaultProviderConnection(account: PiAgentAccount) {
+    this.normalizePiAgentAccount(account);
+    for (const id of account.providerConnectionIds ?? []) {
+      const record = account.providerConnections?.[id];
+      if (record?.provider === "openai-api" && record.secretCiphertext) return record;
+    }
+    return null;
+  }
+
+  private async providerApiKey(record: ProviderVaultRecord) {
+    return record.secretCiphertext ? await decryptSecret(this.env, record.secretCiphertext) : "";
+  }
+
+  private async resolveOpenAiProvider(account: PiAgentAccount, providerConnectionId?: string) {
+    if (providerConnectionId && !account.providerConnections?.[providerConnectionId]) throw new HttpError(404, "Provider connection not found.");
+    const record = providerConnectionId ? account.providerConnections?.[providerConnectionId] : this.defaultProviderConnection(account);
+    if (record) {
+      if (record.provider !== "openai-api") throw new HttpError(501, `${record.provider} is saved in the provider vault, but model calls are not wired yet.`);
+      const apiKey = await this.providerApiKey(record);
+      if (!apiKey) throw new HttpError(400, "The selected provider connection has no usable secret.");
+      record.lastUsedAt = Date.now();
+      record.updatedAt = Date.now();
+      return { apiKey, model: record.defaultModel || openAiApiModel(this.env), providerConnectionId: record.id };
+    }
+    const serverKey = openAiApiKey(this.env);
+    if (!serverKey) throw new HttpError(503, officialMobileChatUnavailableMessage(false, true));
+    return { apiKey: serverKey, model: openAiApiModel(this.env), providerConnectionId: "" };
+  }
+
+  private async runOfficialMobileChat(history: MobileChatMessage[], options: { apiKey?: string; model?: string; instructions?: string } = {}) {
+    const apiKey = options.apiKey ?? openAiApiKey(this.env);
     if (!apiKey) throw new HttpError(503, officialMobileChatUnavailableMessage(false, true));
     const input = history
       .filter((item) => item.role !== "system")
@@ -1170,8 +1523,8 @@ export class RemoteDesktop {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: openAiApiModel(this.env),
-        instructions: "You are Pi Agent mobile chat. Answer clearly, professionally, and concisely. This web-only mode has no desktop files, shell, browser, or local credentials unless the user switches to QR-approved Desktop coding.",
+        model: options.model ?? openAiApiModel(this.env),
+        instructions: options.instructions ?? "You are Pi Agent mobile chat. Answer clearly, professionally, and concisely. This web-only mode has no desktop files, shell, browser, or local credentials unless the user switches to QR-approved Desktop coding.",
         input,
         store: false,
         max_output_tokens: 1800
@@ -1185,6 +1538,40 @@ export class RemoteDesktop {
       return extractOpenAiApiResponseText(JSON.parse(body) as Record<string, unknown>);
     } catch (_error) {
       return body.trim().slice(0, 6000) || "No response.";
+    }
+  }
+
+  private async runAccountAssistantReply(
+    session: MobileSession,
+    account: PiAgentAccount,
+    thread: MobileThread,
+    providerConnectionId?: string
+  ) {
+    const history = this.normalizeMobileMessages(thread);
+    const accountProviderRequested = Boolean(providerConnectionId ? account.providerConnections?.[providerConnectionId] : this.defaultProviderConnection(account));
+    try {
+      const provider = await this.resolveOpenAiProvider(account, providerConnectionId);
+      if (!provider.providerConnectionId) {
+        const allowed = await this.allowOfficialStandaloneChat(session.accountId);
+        if (!allowed) throw new HttpError(403, officialMobileChatUnavailableMessage(true, false));
+      }
+      const reply = await this.runOfficialMobileChat(history, {
+        apiKey: provider.apiKey,
+        model: provider.model,
+        instructions: "You are Pi Agent Web standalone chat. Be concise, capable, and honest about environment limits. You can answer, reason, write code, and help plan. You do not have desktop files, shell, browser automation, local credentials, or full-agent tools unless the user switches to a QR-approved Desktop coding session."
+      });
+      await this.setPiAgentAccount(account);
+      return { reply, providerConnectionId: provider.providerConnectionId };
+    } catch (error) {
+      if (accountProviderRequested) throw error;
+      if (openAiApiKey(this.env)) throw error;
+      if (unofficialCodexRelayEnabled(this.env)) {
+        return {
+          reply: await this.runUnofficialCodexRelay(session, thread.id, history),
+          providerConnectionId: ""
+        };
+      }
+      throw error;
     }
   }
 
@@ -1417,6 +1804,503 @@ export class RemoteDesktop {
     });
   }
 
+  private pushAccountAudit(account: PiAgentAccount, type: string, summary?: string, targetId?: string) {
+    this.normalizePiAgentAccount(account);
+    account.auditEvents = [{
+      id: `audit_${randomToken(10)}`,
+      userId: account.id,
+      type,
+      at: new Date().toISOString(),
+      ...(summary ? { summary } : {}),
+      ...(targetId ? { targetId } : {})
+    }, ...(account.auditEvents ?? [])].slice(0, 100);
+  }
+
+  private async handleV1(request: WorkerRequest) {
+    const url = new URL(request.url);
+    if (url.pathname === "/api/v1") {
+      return jsonResponse({
+        ok: true,
+        version: "v1",
+        auth: "/api/v1/auth/login",
+        me: "/api/v1/me",
+        realtime: "/api/v1/realtime"
+      });
+    }
+    if ((url.pathname === "/api/v1/auth/signup" || url.pathname === "/api/v1/auth/login") && request.method === "POST") {
+      return this.mobileAuthStart(request);
+    }
+    if (url.pathname === "/api/v1/auth/logout" && request.method === "POST") return this.mobileAuthLogout(request);
+    if (url.pathname === "/api/v1/realtime" && request.headers.get("Upgrade")?.toLowerCase() === "websocket") return this.v1Realtime(request);
+    if (url.pathname === "/api/v1/me" && request.method === "GET") return this.v1Me(request);
+    if (url.pathname === "/api/v1/providers" && request.method === "GET") return this.v1Providers(request);
+    if (url.pathname === "/api/v1/provider-connections" && request.method === "POST") return this.v1CreateProviderConnection(request);
+    if (url.pathname.startsWith("/api/v1/provider-connections/") && request.method === "DELETE") return this.v1DeleteProviderConnection(request);
+    if (url.pathname === "/api/v1/conversations" && request.method === "GET") return this.v1Conversations(request);
+    if (url.pathname === "/api/v1/conversations" && request.method === "POST") return this.v1CreateConversation(request);
+    if (url.pathname.startsWith("/api/v1/conversations/") && url.pathname.endsWith("/messages") && request.method === "GET") return this.v1ConversationMessages(request);
+    if (url.pathname === "/api/v1/runs" && request.method === "POST") return this.v1CreateRun(request);
+    if (url.pathname.startsWith("/api/v1/runs/") && request.method === "POST") return this.v1RunControl(request);
+    if (url.pathname === "/api/v1/projects" && request.method === "GET") return this.v1Projects(request);
+    if (url.pathname === "/api/v1/projects" && request.method === "POST") return this.v1CreateProject(request);
+    if (url.pathname.startsWith("/api/v1/projects/") && request.method === "GET") return this.v1ProjectDetail(request);
+    if (url.pathname === "/api/v1/memory" && request.method === "GET") return this.v1Memory(request);
+    if (url.pathname === "/api/v1/memory/explain" && request.method === "GET") return this.v1MemoryExplain(request);
+    if (url.pathname === "/api/v1/memory/correct" && request.method === "POST") return this.v1MemoryCorrect(request);
+    if (url.pathname === "/api/v1/memory/forget" && request.method === "POST") return this.v1MemoryForget(request);
+    if (url.pathname === "/api/v1/memory/export" && request.method === "GET") return this.v1MemoryExport(request);
+    if (url.pathname === "/api/v1/devices" && request.method === "GET") return this.v1Devices(request);
+    if (url.pathname.startsWith("/api/v1/devices/") && request.method === "DELETE") return this.v1DeleteDevice(request);
+    if (url.pathname.startsWith("/api/v1/desktop-links/") && request.method === "DELETE") return this.v1DeleteDesktopLink(request);
+    if (url.pathname.startsWith("/api/v1/desktop/")) {
+      return jsonResponse({
+        ok: false,
+        error: "Desktop pairing approval is intentionally handled by PiAgent Desktop and the existing QR relay endpoints. The account API can list and forget links, but cannot create full desktop access by itself."
+      }, { status: 501 });
+    }
+    return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
+  }
+
+  private async v1Me(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    return jsonResponse({
+      ok: true,
+      user: {
+        id: account.id,
+        displayName: account.displayName,
+        primaryIdentityProvider: "openai",
+        createdAt: isoDate(account.createdAt),
+        lastActiveAt: isoDate(account.lastActiveAt)
+      },
+      orgs: [{
+        id: `org_${account.id}`,
+        name: "Personal",
+        createdAt: isoDate(account.createdAt)
+      }],
+      memberships: [{
+        id: `mem_${account.id}`,
+        userId: account.id,
+        orgId: `org_${account.id}`,
+        role: "owner",
+        createdAt: isoDate(account.createdAt)
+      }],
+      session: {
+        id: session.id,
+        userId: account.id,
+        createdAt: isoDate(session.createdAt),
+        lastActiveAt: isoDate(session.lastActiveAt),
+        expiresAt: isoDate(session.lastActiveAt + MOBILE_SESSION_TTL_MS)
+      },
+      account: this.accountPublicPayload(account),
+      capabilities: {
+        standaloneChat: Boolean(openAiApiKey(this.env) || this.defaultProviderConnection(account) || unofficialCodexRelayEnabled(this.env)),
+        desktopBridge: account.desktopLinks.length > 0,
+        providerVault: true,
+        projects: true,
+        memory: true
+      }
+    });
+  }
+
+  private async v1Providers(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    return jsonResponse({
+      ok: true,
+      providers: this.providerCatalog(account),
+      connections: account.providerConnectionIds
+        ?.map((id) => account.providerConnections?.[id])
+        .filter((record): record is ProviderVaultRecord => Boolean(record))
+        .map((record) => this.publicProviderConnection(record)) ?? []
+    });
+  }
+
+  private async v1CreateProviderConnection(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    if (!this.rateLimit(`v1_provider:${session.id}`, 12, 60_000)) return jsonResponse({ ok: false, error: "Too many provider updates." }, { status: 429 });
+    const body = await readJson(request);
+    const provider = normalizeProvider(body.provider);
+    if (!provider) return jsonResponse({ ok: false, error: "Provider is not supported." }, { status: 400 });
+    if (provider === "desktop-local" || provider === "desktop-openai") {
+      return jsonResponse({ ok: false, error: "Desktop providers are configured through PiAgent Desktop and QR pairing, not through the public provider vault." }, { status: 400 });
+    }
+    const authType = "api-key";
+    const secret = typeof body.apiKey === "string" ? body.apiKey.trim() : typeof body.secret === "string" ? body.secret.trim() : "";
+    let secretCiphertext = "";
+    if (authType === "api-key") {
+      if (secret.length < 16) return jsonResponse({ ok: false, error: "Provider API key is missing or too short." }, { status: 400 });
+      try {
+        secretCiphertext = await encryptSecret(this.env, secret);
+      } catch (error) {
+        return jsonResponse({ ok: false, error: error instanceof Error ? error.message : "Provider vault encryption failed." }, { status: 503 });
+      }
+    }
+    const now = Date.now();
+    const id = `pc_${randomToken(12)}`;
+    const record: ProviderVaultRecord = {
+      id,
+      userId: account.id,
+      provider,
+      authType,
+      status: "connected",
+      label: safeName(body.label, provider === "openai-api" ? "OpenAI API" : provider),
+      defaultModel: safeName(body.defaultModel, defaultModelForProvider(provider)),
+      scopes: provider === "openai-api" ? ["responses"] : [],
+      createdAt: now,
+      updatedAt: now,
+      ...(secretCiphertext ? { secretCiphertext } : {})
+    };
+    account.providerConnections = { ...(account.providerConnections ?? {}), [id]: record };
+    account.providerConnectionIds = [id, ...(account.providerConnectionIds ?? []).filter((item) => item !== id)];
+    this.pushAccountAudit(account, "provider_connection_created", `${provider} connection stored`, id);
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    return jsonResponse({ ok: true, connection: this.publicProviderConnection(record), account: this.accountPublicPayload(account) });
+  }
+
+  private async v1DeleteProviderConnection(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const id = decodeURIComponent(new URL(request.url).pathname.split("/").pop() ?? "");
+    if (!id || !account.providerConnections?.[id]) return jsonResponse({ ok: false, error: "Provider connection not found." }, { status: 404 });
+    delete account.providerConnections[id];
+    account.providerConnectionIds = (account.providerConnectionIds ?? []).filter((item) => item !== id);
+    this.pushAccountAudit(account, "provider_connection_deleted", "Provider connection removed", id);
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    return jsonResponse({ ok: true, account: this.accountPublicPayload(account) });
+  }
+
+  private async v1Conversations(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    const conversations = account.threadIds
+      .map((id) => account.threads[id])
+      .filter((thread): thread is MobileThread => Boolean(thread))
+      .map((thread) => this.publicConversation(account, thread));
+    return jsonResponse({ ok: true, conversations });
+  }
+
+  private async v1CreateConversation(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const body = await readJson(request);
+    const id = `conv_${randomToken(12)}`;
+    const now = Date.now();
+    const projectId = typeof body.projectId === "string" && account.projects?.[body.projectId] ? body.projectId : "";
+    const thread: MobileThread = {
+      id,
+      title: safeName(body.title, "New chat"),
+      ...(projectId ? { projectId } : {}),
+      createdAt: now,
+      updatedAt: now,
+      messages: []
+    };
+    account.threads[id] = thread;
+    account.threadIds = [id, ...account.threadIds.filter((item) => item !== id)];
+    if (projectId && account.projects?.[projectId]) {
+      account.projects[projectId].chatIds = [id, ...account.projects[projectId].chatIds.filter((item) => item !== id)];
+      account.projects[projectId].updatedAt = now;
+    }
+    this.pushAccountAudit(account, "conversation_created", thread.title, id);
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    return jsonResponse({ ok: true, conversation: this.publicConversation(account, thread) });
+  }
+
+  private async v1ConversationMessages(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    const parts = new URL(request.url).pathname.split("/");
+    const conversationId = decodeURIComponent(parts[4] ?? "");
+    const thread = account.threads[conversationId];
+    if (!thread) return jsonResponse({ ok: false, error: "Conversation not found." }, { status: 404 });
+    return jsonResponse({ ok: true, conversation: this.publicConversation(account, thread), messages: this.publicMessages(account, thread) });
+  }
+
+  private async v1CreateRun(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    if (!this.rateLimit(`v1_run:${session.id}`, 18, 60_000)) return jsonResponse({ ok: false, error: "Too many chat requests." }, { status: 429 });
+    const body = await readJson(request);
+    const message = this.sanitizeMobileMessage(body.message);
+    if (!message) return jsonResponse({ ok: false, error: "Message is empty." }, { status: 400 });
+    const requestedConversationId = typeof body.conversationId === "string" ? body.conversationId : "";
+    const threadId = requestedConversationId && account.threads[requestedConversationId] ? requestedConversationId : `conv_${randomToken(12)}`;
+    const now = Date.now();
+    const thread = account.threads[threadId] ?? {
+      id: threadId,
+      title: message.slice(0, 80),
+      createdAt: now,
+      updatedAt: now,
+      messages: []
+    };
+    account.threads[threadId] = thread;
+    account.threadIds = [threadId, ...account.threadIds.filter((item) => item !== threadId)];
+    const providerConnectionId = typeof body.providerConnectionId === "string" ? body.providerConnectionId : undefined;
+    const runId = `run_${randomToken(12)}`;
+    const run: CloudRunRecord = {
+      id: runId,
+      userId: account.id,
+      conversationId: threadId,
+      ...(providerConnectionId ? { providerConnectionId } : {}),
+      status: "running",
+      createdAt: now,
+      updatedAt: now
+    };
+    account.runs = { ...(account.runs ?? {}), [runId]: run };
+    thread.messages.push({ role: "user", content: message });
+    thread.updatedAt = now;
+    this.rememberAccountTurn(account, threadId, message);
+    try {
+      const result = await this.runAccountAssistantReply(session, account, thread, providerConnectionId);
+      thread.messages.push({ role: "assistant", content: result.reply });
+      thread.updatedAt = Date.now();
+      run.status = "completed";
+      run.providerConnectionId = result.providerConnectionId || run.providerConnectionId;
+      run.updatedAt = Date.now();
+      run.completedAt = run.updatedAt;
+      this.pushAccountAudit(account, "run_completed", threadTitle(thread), runId);
+    } catch (error) {
+      run.status = "failed";
+      run.error = error instanceof Error ? error.message.slice(0, 500) : "Run failed.";
+      run.updatedAt = Date.now();
+      this.pushAccountAudit(account, "run_failed", run.error, runId);
+      await this.setPiAgentAccount(account);
+      await this.setMobileSession(session);
+      return errorJson(error, "Run failed.");
+    }
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    return jsonResponse({
+      ok: true,
+      run: this.publicRun(run),
+      conversation: this.publicConversation(account, thread),
+      messages: this.publicMessages(account, thread),
+      text: thread.messages.at(-1)?.content ?? ""
+    });
+  }
+
+  private async v1RunControl(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const parts = new URL(request.url).pathname.split("/");
+    const runId = decodeURIComponent(parts[4] ?? "");
+    const action = parts[5] ?? "";
+    const run = account.runs?.[runId];
+    if (!run) return jsonResponse({ ok: false, error: "Run not found." }, { status: 404 });
+    if (action === "stop") {
+      if (run.status === "running" || run.status === "queued") {
+        run.status = "stopped";
+        run.updatedAt = Date.now();
+        this.pushAccountAudit(account, "run_stopped", "Standalone cloud run marked stopped", runId);
+        await this.setPiAgentAccount(account);
+        await this.setMobileSession(session);
+      }
+      return jsonResponse({ ok: true, run: this.publicRun(run) });
+    }
+    if (action === "resume") {
+      return jsonResponse({
+        ok: false,
+        error: "Resume checkpoints are not available for synchronous standalone web runs yet. Desktop full-agent runs still use the desktop bridge."
+      }, { status: 501 });
+    }
+    return jsonResponse({ ok: false, error: "Unknown run action." }, { status: 404 });
+  }
+
+  private async v1Projects(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    const projects = account.projectIds
+      ?.map((id) => account.projects?.[id])
+      .filter((project): project is CloudProjectRecord => Boolean(project))
+      .map((project) => this.publicProject(project)) ?? [];
+    return jsonResponse({ ok: true, projects });
+  }
+
+  private async v1CreateProject(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const body = await readJson(request);
+    const now = Date.now();
+    const project: CloudProjectRecord = {
+      id: `proj_${randomToken(12)}`,
+      userId: account.id,
+      name: safeName(body.name, "Untitled project"),
+      description: safeDescription(body.description),
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+      chatIds: [],
+      artifactIds: []
+    };
+    account.projects = { ...(account.projects ?? {}), [project.id]: project };
+    account.projectIds = [project.id, ...(account.projectIds ?? []).filter((id) => id !== project.id)];
+    this.pushAccountAudit(account, "project_created", project.name, project.id);
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    return jsonResponse({ ok: true, project: this.publicProject(project) });
+  }
+
+  private async v1ProjectDetail(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    const parts = new URL(request.url).pathname.split("/");
+    const projectId = decodeURIComponent(parts[4] ?? "");
+    const view = parts[5] ?? "graph";
+    const project = account.projects?.[projectId];
+    if (!project) return jsonResponse({ ok: false, error: "Project not found." }, { status: 404 });
+    const chats = project.chatIds
+      .map((id) => account.threads[id])
+      .filter((thread): thread is MobileThread => Boolean(thread))
+      .map((thread) => this.publicConversation(account, thread));
+    if (view === "chats") return jsonResponse({ ok: true, project: this.publicProject(project), chats });
+    if (view === "artifacts") return jsonResponse({ ok: true, project: this.publicProject(project), artifacts: [] });
+    if (view !== "graph") return jsonResponse({ ok: false, error: "Project view not found." }, { status: 404 });
+    const runs = Object.values(account.runs ?? {})
+      .filter((run) => project.chatIds.includes(run.conversationId))
+      .map((run) => this.publicRun(run));
+    return jsonResponse({
+      ok: true,
+      graph: {
+        project: this.publicProject(project),
+        chats,
+        tasks: [],
+        runs,
+        files: [],
+        decisions: [],
+        risks: [],
+        artifacts: [],
+        advisors: [],
+        subagents: [],
+        releases: []
+      }
+    });
+  }
+
+  private async v1Memory(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    return jsonResponse({
+      ok: true,
+      recentTopics: account.memory.recentTopics,
+      records: account.memoryRecords?.map((record) => this.publicMemoryRecord(record)) ?? []
+    });
+  }
+
+  private async v1MemoryExplain(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    return jsonResponse({
+      ok: true,
+      policy: {
+        recallBudgetTokens: 1200,
+        minimumConfidence: 0.55,
+        precedence: ["recent correction", "active project", "safety rule", "high-confidence preference", "global memory", "old episode"],
+        note: "This tranche exposes explainability and corrections; async consolidation/Vectorize recall comes in the next storage phase."
+      },
+      candidateRecords: account.memoryRecords?.slice(0, 12).map((record) => this.publicMemoryRecord(record)) ?? [],
+      recentTopics: account.memory.recentTopics.slice(0, 12)
+    });
+  }
+
+  private async v1MemoryCorrect(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const body = await readJson(request);
+    const content = safeDescription(body.content);
+    if (!content) return jsonResponse({ ok: false, error: "Correction content is empty." }, { status: 400 });
+    const scopeInput = typeof body.scope === "string" ? body.scope : "account";
+    const kindInput = typeof body.kind === "string" ? body.kind : "preference";
+    const scope = scopeInput === "project" || scopeInput === "conversation" || scopeInput === "skill" ? scopeInput : "account";
+    const kind = kindInput === "fact" || kindInput === "decision" || kindInput === "warning" || kindInput === "skill" || kindInput === "summary" ? kindInput : "preference";
+    const now = Date.now();
+    const record: CloudMemoryRecord = {
+      id: `mem_${randomToken(12)}`,
+      userId: account.id,
+      scope,
+      kind,
+      content,
+      confidence: 1,
+      evidenceIds: [],
+      createdAt: now,
+      updatedAt: now,
+      source: "correction"
+    };
+    account.memoryRecords = [record, ...(account.memoryRecords ?? [])];
+    account.memory.updatedAt = now;
+    this.pushAccountAudit(account, "memory_corrected", content.slice(0, 120), record.id);
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    return jsonResponse({ ok: true, record: this.publicMemoryRecord(record) });
+  }
+
+  private async v1MemoryForget(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const body = await readJson(request);
+    const memoryId = typeof body.memoryId === "string" ? body.memoryId : typeof body.id === "string" ? body.id : "";
+    const query = safeDescription(body.query).toLowerCase();
+    const before = account.memoryRecords?.length ?? 0;
+    account.memoryRecords = (account.memoryRecords ?? []).filter((record) => {
+      if (memoryId && record.id === memoryId) return false;
+      if (query && record.content.toLowerCase().includes(query)) return false;
+      return true;
+    });
+    const removed = before - account.memoryRecords.length;
+    if (removed > 0) {
+      account.memory.updatedAt = Date.now();
+      this.pushAccountAudit(account, "memory_forgotten", `${removed} memory record(s) removed`, memoryId || query);
+      await this.setPiAgentAccount(account);
+      await this.setMobileSession(session);
+    }
+    return jsonResponse({ ok: true, removed, records: account.memoryRecords.map((record) => this.publicMemoryRecord(record)) });
+  }
+
+  private async v1MemoryExport(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    return jsonResponse({
+      ok: true,
+      exportedAt: new Date().toISOString(),
+      account: this.accountPublicPayload(account),
+      memory: {
+        recentTopics: account.memory.recentTopics,
+        records: account.memoryRecords?.map((record) => this.publicMemoryRecord(record)) ?? []
+      },
+      auditEvents: account.auditEvents ?? []
+    });
+  }
+
+  private async v1Devices(request: WorkerRequest) {
+    const { account } = await this.requireV1Account(request);
+    return jsonResponse({ ok: true, devices: account.desktopLinks.map((link) => this.publicDesktopLink(account, link)) });
+  }
+
+  private async v1DeleteDesktopLink(request: WorkerRequest) {
+    const { session, account } = await this.requireV1Account(request);
+    const id = decodeURIComponent(new URL(request.url).pathname.split("/").pop() ?? "");
+    const before = account.desktopLinks.length;
+    account.desktopLinks = account.desktopLinks.filter((link) => link.deviceId !== id && `${link.desktopId}.${link.deviceId}` !== id);
+    const removed = before - account.desktopLinks.length;
+    if (removed > 0) {
+      this.pushAccountAudit(account, "desktop_link_forgotten", "Desktop link removed from account", id);
+      await this.setPiAgentAccount(account);
+      await this.setMobileSession(session);
+    }
+    return jsonResponse({ ok: true, removed, devices: account.desktopLinks.map((link) => this.publicDesktopLink(account, link)) });
+  }
+
+  private async v1DeleteDevice(request: WorkerRequest) {
+    await this.requireV1Account(request);
+    return jsonResponse({
+      ok: false,
+      error: "Trusted-device revocation is not wired to a session index yet. Use /api/v1/auth/logout for the current browser session, /api/v1/desktop-links/:id to forget an account link, or PiAgent Desktop remote settings to revoke a paired desktop device."
+    }, { status: 501 });
+  }
+
+  private async v1Realtime(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return new Response("Origin rejected.", { status: 403 });
+    const session = await this.readSessionFromRequest(request);
+    if (!session) return new Response("Auth required.", { status: 401 });
+    const account = await this.ensurePiAgentAccount(session);
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    server.accept();
+    server.addEventListener("message", (event) => {
+      if (String(event.data) === "ping") server.send("pong");
+    });
+    server.send(JSON.stringify({ type: "session.ready", userId: account.id, at: new Date().toISOString() }));
+    server.send(JSON.stringify({ type: "desktop.status", online: account.desktopLinks.length > 0, at: new Date().toISOString() }));
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
   private async mobileAuthStart(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const clientId = openAiWebClientId(this.env);
@@ -1576,7 +2460,7 @@ export class RemoteDesktop {
     const pending = state ? await this.state.storage.get<MobileOAuthPending>(this.mobilePendingKey(state)) : null;
     const err = url.searchParams.get("error");
     if (err) {
-      return textResponse(`<!doctype html><body>OAuth callback error: ${err}. <a href="/">Return</a></body>`, { status: 400 });
+      return textResponse(`<!doctype html><body>OAuth callback error: ${escapeHtml(err)}. <a href="/">Return</a></body>`, { status: 400 });
     }
     const cookieState = await this.readOAuthStateFromRequest(request);
     if (!pending || !code || pending.state !== state || cookieState !== state || Date.now() - pending.createdAt > 10 * 60 * 1000) {
@@ -1586,12 +2470,13 @@ export class RemoteDesktop {
     try {
       const cookie = await this.createMobileSessionFromCode(code, pending);
       const redirect = `${new URL(request.url).origin}/`;
-      return textResponse(`<!doctype html><meta http-equiv="refresh" content="1; url=${redirect}"><body>Pi Agent mobile session started. <a href="${redirect}">Continue</a></body>`, {
+      const escapedRedirect = escapeHtml(redirect);
+      return textResponse(`<!doctype html><meta http-equiv="refresh" content="1; url=${escapedRedirect}"><body>Pi Agent mobile session started. <a href="${escapedRedirect}">Continue</a></body>`, {
         headers: { "Set-Cookie": cookie }
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "OpenAI authentication failed.";
-      return textResponse(`<!doctype html><body>Authentication failed: ${message}. <a href="/">Return</a></body>`, { status: 500 });
+      return textResponse(`<!doctype html><body>Authentication failed: ${escapeHtml(message)}. <a href="/">Return</a></body>`, { status: 500 });
     }
   }
 
@@ -1831,18 +2716,9 @@ export class RemoteDesktop {
     thread.messages.push({ role: "user", content: message });
     thread.updatedAt = Date.now();
     this.rememberAccountTurn(account, threadId, message);
-    const history = this.normalizeMobileMessages(thread);
     let reply = "No response.";
     try {
-      if (openAiApiKey(this.env)) {
-        const allowed = await this.allowOfficialStandaloneChat(session.accountId);
-        if (!allowed) throw new HttpError(403, officialMobileChatUnavailableMessage(true, false));
-        reply = await this.runOfficialMobileChat(history);
-      } else if (unofficialCodexRelayEnabled(this.env)) {
-        reply = await this.runUnofficialCodexRelay(session, threadId, history);
-      } else {
-        throw new HttpError(503, officialMobileChatUnavailableMessage(false, true));
-      }
+      reply = (await this.runAccountAssistantReply(session, account, thread)).reply;
     } catch (error) {
       if (error instanceof HttpError && error.status === 401) {
         return jsonResponse({ ok: false, error: error.message, authRequired: true }, { status: 401 });
