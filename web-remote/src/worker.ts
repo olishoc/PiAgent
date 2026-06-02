@@ -72,6 +72,19 @@ interface MobileDesktopAuthRequest {
   error?: string;
 }
 
+interface MobileDeviceAuthRequest {
+  state: string;
+  clientId: string;
+  deviceAuthId: string;
+  userCode: string;
+  verificationUrl: string;
+  intervalSeconds: number;
+  createdAt: number;
+  expiresAt: number;
+  sessionId?: string;
+  error?: string;
+}
+
 interface MobileChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -107,8 +120,10 @@ const MAX_JSON_BODY_BYTES = 16 * 1024;
 const COOKIE_NAME = "piagent_remote";
 const MOBILE_COOKIE_NAME = "piagent_remote_mobile";
 const MOBILE_OAUTH_COOKIE_NAME = "piagent_remote_oauth";
+const FORWARDED_COOKIE_HEADER = "X-PiAgent-Forwarded-Cookie";
 const OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize";
 const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
+const OPENAI_DEVICE_AUTH_BASE_URL = "https://auth.openai.com";
 const OPENAI_DESKTOP_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 const DEFAULT_OPENAI_SCOPES = "openid profile email offline_access";
 const OPENAI_CODEX_REDIRECT_URI = "http://localhost:1455/auth/callback";
@@ -117,6 +132,7 @@ const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-5.5";
 const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
 const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MOBILE_DESKTOP_AUTH_TTL_MS = 90 * 1000;
+const MOBILE_DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
 const MOBILE_SESSION_COOKIE_VERSION = "mobile-v1";
 const MOBILE_OAUTH_COOKIE_VERSION = "mobile-oauth-v1";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
@@ -219,6 +235,18 @@ function parseCookie(header: string | null) {
     out.set(part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim()));
   }
   return out;
+}
+
+function requestCookieHeader(request: WorkerRequest) {
+  return request.headers.get("Cookie") ?? request.headers.get(FORWARDED_COOKIE_HEADER);
+}
+
+function forwardedHeaders(request: WorkerRequest) {
+  const headers = new Headers(request.headers);
+  headers.delete(FORWARDED_COOKIE_HEADER);
+  const cookie = request.headers.get("Cookie");
+  if (cookie) headers.set(FORWARDED_COOKIE_HEADER, cookie);
+  return headers;
 }
 
 function bearerToken(request: WorkerRequest) {
@@ -380,6 +408,66 @@ async function openAiTokenExchange(params: Record<string, string>) {
   return { access, refresh, expiresIn };
 }
 
+async function openAiDeviceCodeStart(clientId: string) {
+  const response = await fetch(`${OPENAI_DEVICE_AUTH_BASE_URL}/api/accounts/deviceauth/usercode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ client_id: clientId })
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new HttpError(response.status === 404 ? 404 : 502, body || "OpenAI device-code login is not available.");
+  }
+  const payload = await response.json() as Record<string, unknown>;
+  const deviceAuthId = typeof payload.device_auth_id === "string" ? payload.device_auth_id : "";
+  const userCode = typeof payload.user_code === "string"
+    ? payload.user_code
+    : typeof payload.usercode === "string"
+      ? payload.usercode
+      : "";
+  const intervalRaw = payload.interval;
+  const intervalSeconds = typeof intervalRaw === "number"
+    ? intervalRaw
+    : typeof intervalRaw === "string"
+      ? Number.parseInt(intervalRaw, 10)
+      : 5;
+  if (!deviceAuthId || !userCode) throw new HttpError(502, "OpenAI device-code response was invalid.");
+  return {
+    deviceAuthId,
+    userCode,
+    intervalSeconds: Number.isFinite(intervalSeconds) && intervalSeconds > 0 ? Math.min(Math.max(intervalSeconds, 3), 15) : 5,
+    verificationUrl: `${OPENAI_DEVICE_AUTH_BASE_URL}/codex/device`
+  };
+}
+
+async function openAiDeviceCodePoll(request: MobileDeviceAuthRequest) {
+  const response = await fetch(`${OPENAI_DEVICE_AUTH_BASE_URL}/api/accounts/deviceauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      device_auth_id: request.deviceAuthId,
+      user_code: request.userCode
+    })
+  });
+  if (response.status === 403 || response.status === 404) return { pending: true as const };
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new HttpError(response.status, body || "OpenAI device-code authorization failed.");
+  }
+  const payload = await response.json() as Record<string, unknown>;
+  const authorizationCode = typeof payload.authorization_code === "string" ? payload.authorization_code : "";
+  const codeVerifier = typeof payload.code_verifier === "string" ? payload.code_verifier : "";
+  if (!authorizationCode || !codeVerifier) throw new HttpError(502, "OpenAI device-code token response was invalid.");
+  const tokens = await openAiTokenExchange({
+    grant_type: "authorization_code",
+    client_id: request.clientId,
+    redirect_uri: `${OPENAI_DEVICE_AUTH_BASE_URL}/deviceauth/callback`,
+    code_verifier: codeVerifier,
+    code: authorizationCode
+  });
+  return { pending: false as const, tokens };
+}
+
 async function secretKey(env: Env) {
   const material = await crypto.subtle.digest("SHA-256", encoder.encode(`${pepper(env)}.piagent-mobile-token-v1`));
   return crypto.subtle.importKey("raw", material, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
@@ -463,7 +551,7 @@ async function routeToDesktopObject(request: WorkerRequest, env: Env, body?: Rec
   if (!desktopId) return jsonResponse({ ok: false, error: "Missing or invalid desktopId." }, { status: 400 });
   const id = env.REMOTE_DESKTOP.idFromName(desktopId);
   const stub = env.REMOTE_DESKTOP.get(id);
-  const headers = new Headers(request.headers);
+  const headers = forwardedHeaders(request);
   headers.set("X-PiAgent-Desktop-Id", desktopId);
   const forwarded = body
     ? new Request(request.url, { method: request.method, headers, body: JSON.stringify(body) })
@@ -577,17 +665,17 @@ export default {
       if (url.pathname === "/piagent-icon.ico" || url.pathname === "/favicon.ico") return iconResponse();
       if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
       if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. Mobile OAuth is restricted to the OpenAI owner account registered by PiAgent Desktop or by the Cloudflare account allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
-      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile chat requires the owner OpenAI account; desktop coding requires QR pairing and desktop approval.</p>");
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. Direct mobile chat uses only the OpenAI account signed in on that device and does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth is restricted to that allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
+      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile chat requires OpenAI OAuth on the device; desktop coding requires QR pairing and desktop approval.</p>");
       if (url.pathname.startsWith("/api/mobile")) {
         const needsBody = request.method !== "GET" && request.method !== "HEAD";
         if (!needsBody) {
           const desktopId = remoteIdFromRequest(request);
           if (desktopId) return routeToDesktopObject(request, env);
           const stub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
-          return stub.fetch(request);
+          return stub.fetch(new Request(request.url, { method: request.method, headers: forwardedHeaders(request) }));
         }
-        const headers = new Headers(request.headers);
+        const headers = forwardedHeaders(request);
         const body = await request.text();
         const parsedBody = (() => {
           try {
@@ -628,6 +716,7 @@ export class RemoteDesktop {
       if (url.pathname.startsWith("/api/mobile/")) {
         if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return this.mobileAuthStart(request);
         if (url.pathname === "/api/mobile/auth/claim" && request.method === "POST") return this.mobileAuthClaim(request);
+        if (url.pathname === "/api/mobile/auth/device/poll" && request.method === "POST") return this.mobileAuthDevicePoll(request);
         if (url.pathname === "/api/mobile/auth/complete" && request.method === "POST") return this.mobileAuthComplete(request);
         if (url.pathname === "/api/mobile/auth/status" && request.method === "GET") return this.mobileAuthStatus(request);
         if (url.pathname === "/api/mobile/auth/logout" && request.method === "POST") return this.mobileAuthLogout(request);
@@ -656,7 +745,7 @@ export class RemoteDesktop {
   }
 
   private mobileSessionId(request: WorkerRequest) {
-    const value = parseCookie(request.headers.get("Cookie")).get(MOBILE_COOKIE_NAME) ?? "";
+    const value = parseCookie(requestCookieHeader(request)).get(MOBILE_COOKIE_NAME) ?? "";
     const [sessionId] = value.split(".");
     return sessionId || "";
   }
@@ -681,6 +770,10 @@ export class RemoteDesktop {
 
   private mobileDesktopAuthKey(state: string) {
     return `mobile:desktopAuth:${state}`;
+  }
+
+  private mobileDeviceAuthKey(state: string) {
+    return `mobile:deviceAuth:${state}`;
   }
 
   private mobileSessionKey(sessionId: string) {
@@ -715,7 +808,7 @@ export class RemoteDesktop {
   }
 
   private async readSessionFromRequest(request: WorkerRequest) {
-    const value = parseCookie(request.headers.get("Cookie")).get(MOBILE_COOKIE_NAME) ?? "";
+    const value = parseCookie(requestCookieHeader(request)).get(MOBILE_COOKIE_NAME) ?? "";
     if (!value) return null;
     const [sessionId, signature] = value.split(".");
     if (!sessionId || !signature) return null;
@@ -727,7 +820,7 @@ export class RemoteDesktop {
   }
 
   private async readOAuthStateFromRequest(request: WorkerRequest) {
-    const value = parseCookie(request.headers.get("Cookie")).get(MOBILE_OAUTH_COOKIE_NAME) ?? "";
+    const value = parseCookie(requestCookieHeader(request)).get(MOBILE_OAUTH_COOKIE_NAME) ?? "";
     const [state, signature] = value.split(".");
     if (!state || !signature) return "";
     const expected = await this.digest(`${state}.${MOBILE_OAUTH_COOKIE_VERSION}`);
@@ -743,7 +836,7 @@ export class RemoteDesktop {
     await this.state.storage.put(this.mobileSessionKey(session.id), stored);
   }
 
-  private async allowMobileAccount(accountId: string) {
+  private async allowMobileAccount(accountId: string, options: { directMobile?: boolean } = {}) {
     if (!accountId) return { ok: false, reason: "OpenAI account id was not present in the OAuth token." };
     const allowed = allowedMobileAccountIds(this.env);
     if (allowed.size > 0) {
@@ -757,6 +850,7 @@ export class RemoteDesktop {
         ? { ok: true, reason: "" }
         : { ok: false, reason: "This OpenAI account is not the owner account registered by PiAgent Desktop." };
     }
+    if (options.directMobile) return { ok: true, reason: "" };
     return { ok: false, reason: "Open PiAgent Desktop with Remote Access enabled once to register the owner OpenAI account before mobile sign-in." };
   }
 
@@ -939,6 +1033,43 @@ export class RemoteDesktop {
       });
       await this.audit("mobile_oauth_desktop_requested");
     }
+    if (!desktopAuthPending && redirectUri === OPENAI_CODEX_REDIRECT_URI) {
+      try {
+        const device = await openAiDeviceCodeStart(clientId);
+        const expiresAt = Date.now() + MOBILE_DEVICE_AUTH_TTL_MS;
+        const deviceRequest: MobileDeviceAuthRequest = {
+          state,
+          clientId,
+          deviceAuthId: device.deviceAuthId,
+          userCode: device.userCode,
+          verificationUrl: device.verificationUrl,
+          intervalSeconds: device.intervalSeconds,
+          createdAt: Date.now(),
+          expiresAt
+        };
+        await this.state.storage.put(this.mobileDeviceAuthKey(state), deviceRequest);
+        await this.audit("mobile_oauth_device_requested");
+        return jsonResponse({
+          ok: true,
+          authUrl: device.verificationUrl,
+          state,
+          deviceAuthPending: true,
+          userCode: device.userCode,
+          verificationUrl: device.verificationUrl,
+          intervalSeconds: device.intervalSeconds,
+          expiresAt: new Date(expiresAt).toISOString(),
+          desktopAuthAvailable,
+          desktopAuthPending: false,
+          requestId: "",
+          redirectUri: `${OPENAI_DEVICE_AUTH_BASE_URL}/deviceauth/callback`,
+          manualCodeRequired: false
+        }, {
+          headers: { "Set-Cookie": await this.mobileOAuthPendingCookie(state) }
+        });
+      } catch (error) {
+        await this.audit("mobile_oauth_device_unavailable", { reason: error instanceof Error ? error.message.slice(0, 180) : "device auth unavailable" });
+      }
+    }
     return jsonResponse({
       ok: true,
       authUrl: openAiAuthUrl(state, codeChallenge, clientId, redirectUri, openAiScopes(this.env)),
@@ -958,12 +1089,14 @@ export class RemoteDesktop {
     const ownerReady = Boolean(await this.mobileOwnerAccountId()) || allowedMobileAccountIds(this.env).size > 0;
     const oauthConfigured = Boolean(openAiWebClientId(this.env));
     const session = await this.readSessionFromRequest(request);
-    if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady, oauthConfigured });
+    if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady: ownerReady || oauthConfigured, desktopOwnerReady: ownerReady, oauthConfigured, deviceCodeSupported: true });
     return jsonResponse({
       ok: true,
       loggedIn: true,
       ownerReady,
+      desktopOwnerReady: ownerReady,
       oauthConfigured,
+      deviceCodeSupported: true,
       provider: "openai",
       accountId: session.accountId,
       model: openAiMobileModel(this.env),
@@ -1064,6 +1197,72 @@ export class RemoteDesktop {
     });
   }
 
+  private async mobileAuthDevicePoll(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const body = await readJson(request);
+    const stateInput = typeof body.state === "string" ? body.state : "";
+    const cookieState = await this.readOAuthStateFromRequest(request);
+    if (!stateInput || stateInput !== cookieState) {
+      return jsonResponse({ ok: false, error: "Device-code login is not tied to this browser session." }, { status: 403 });
+    }
+    const deviceRequest = await this.state.storage.get<MobileDeviceAuthRequest>(this.mobileDeviceAuthKey(stateInput));
+    if (!deviceRequest || deviceRequest.state !== stateInput) {
+      return jsonResponse({ ok: false, error: "Device-code login was not found. Start sign-in again." }, { status: 404 });
+    }
+    if (deviceRequest.expiresAt < Date.now()) {
+      await this.state.storage.delete(this.mobileDeviceAuthKey(stateInput));
+      return jsonResponse({ ok: false, error: "Device-code login expired. Start sign-in again." }, { status: 410 });
+    }
+    if (deviceRequest.error) {
+      await this.state.storage.delete(this.mobileDeviceAuthKey(stateInput));
+      return jsonResponse({ ok: false, error: deviceRequest.error }, { status: 502 });
+    }
+    if (deviceRequest.sessionId) {
+      const session = await this.readMobileSession(deviceRequest.sessionId);
+      if (!session) {
+        await this.state.storage.delete(this.mobileDeviceAuthKey(stateInput));
+        return jsonResponse({ ok: false, error: "Device-code session expired. Start sign-in again." }, { status: 410 });
+      }
+      await this.state.storage.delete(this.mobileDeviceAuthKey(stateInput));
+      await this.state.storage.delete(this.mobilePendingKey(stateInput));
+      return jsonResponse({
+        ok: true,
+        loggedIn: true,
+        accountId: session.accountId
+      }, {
+        headers: { "Set-Cookie": await this.mobileSessionCookie(deviceRequest.sessionId) }
+      });
+    }
+    try {
+      const result = await openAiDeviceCodePoll(deviceRequest);
+      if (result.pending) {
+        return jsonResponse({
+          ok: true,
+          pending: true,
+          userCode: deviceRequest.userCode,
+          verificationUrl: deviceRequest.verificationUrl,
+          intervalSeconds: deviceRequest.intervalSeconds,
+          expiresAt: new Date(deviceRequest.expiresAt).toISOString()
+        });
+      }
+      const sessionId = await this.createMobileSessionFromTokenResponse(result.tokens, { directMobile: true });
+      deviceRequest.sessionId = sessionId;
+      await this.state.storage.put(this.mobileDeviceAuthKey(stateInput), deviceRequest);
+      await this.audit("mobile_oauth_device_completed");
+      return jsonResponse({
+        ok: true,
+        loggedIn: true
+      }, {
+        headers: { "Set-Cookie": await this.mobileSessionCookie(sessionId) }
+      });
+    } catch (error) {
+      deviceRequest.error = error instanceof Error ? error.message.slice(0, 240) : "OpenAI device-code login failed.";
+      await this.state.storage.put(this.mobileDeviceAuthKey(stateInput), deviceRequest);
+      await this.audit("mobile_oauth_device_failed", { reason: deviceRequest.error });
+      return jsonResponse({ ok: false, error: deviceRequest.error }, { status: error instanceof HttpError ? error.status : 502 });
+    }
+  }
+
   private async createMobileSessionFromCode(code: string, pending: MobileOAuthPending) {
     const tokenResponse = await openAiTokenExchange({
       grant_type: "authorization_code",
@@ -1072,8 +1271,16 @@ export class RemoteDesktop {
       code_verifier: pending.codeVerifier,
       code
     });
+    const sessionId = await this.createMobileSessionFromTokenResponse(tokenResponse, { directMobile: true });
+    return this.mobileSessionCookie(sessionId);
+  }
+
+  private async createMobileSessionFromTokenResponse(
+    tokenResponse: { access: string; refresh: string; expiresIn: number },
+    options: { directMobile?: boolean } = {}
+  ) {
     const accountId = decodeJwtSubject(tokenResponse.access);
-    const allowed = await this.allowMobileAccount(accountId);
+    const allowed = await this.allowMobileAccount(accountId, options);
     if (!allowed.ok) throw new HttpError(403, allowed.reason);
     const sessionId = randomToken(26);
     const now = Date.now();
@@ -1089,7 +1296,7 @@ export class RemoteDesktop {
       threads: {}
     };
     await this.setMobileSession(session);
-    return this.mobileSessionCookie(sessionId);
+    return sessionId;
   }
 
   private async createMobileSessionFromDesktopTokens(input: Record<string, unknown>) {

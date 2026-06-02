@@ -148,6 +148,38 @@ const remoteShellCss = `
 .mobile-oauth-manual.hidden {
   display: none !important;
 }
+.mobile-device-code {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 0.5px solid color-mix(in srgb, var(--neon-cyan) 28%, var(--border));
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-strong) 64%, transparent), color-mix(in srgb, var(--bg-input) 48%, transparent)),
+    radial-gradient(circle at 15% 8%, color-mix(in srgb, var(--neon-cyan) 13%, transparent), transparent 52%);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--neon-cyan) 11%, transparent);
+}
+.mobile-device-code.hidden {
+  display: none !important;
+}
+.mobile-device-code strong {
+  justify-self: start;
+  padding: 7px 10px;
+  border: 0.5px solid color-mix(in srgb, var(--text-primary) 22%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-input) 70%, transparent);
+  color: var(--text-primary);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-shadow: 0 0 16px color-mix(in srgb, var(--text-primary) 32%, transparent);
+}
+.mobile-device-code a {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 11px;
+}
 .mobile-oauth-manual textarea {
   width: 100%;
   min-height: 58px;
@@ -372,15 +404,20 @@ export const remoteAppHtml = `<!doctype html>
         </div>
         <div class="remote-mode-panel" id="mobileLoginPanel">
           <div class="mobile-oauth-panel">
-            <p>Mobile chat can sign in automatically from PiAgent Desktop when it is online. Manual OpenAI OAuth remains available as a fallback.</p>
+            <p>Mobile chat signs in with OpenAI device code. If this device is paired, PiAgent Desktop can authorize it automatically.</p>
             <div class="mobile-oauth-actions">
               <button id="mobileConnectButton" class="login-button" type="button">sign in with OpenAI</button>
               <button id="mobileStartButton" class="login-button secondary" type="button">open mobile chat</button>
             </div>
+            <div id="mobileDeviceCodePanel" class="mobile-device-code hidden">
+              <small>Enter this code on the OpenAI page.</small>
+              <strong id="mobileDeviceCodeValue"></strong>
+              <a id="mobileDeviceCodeLink" href="https://auth.openai.com/codex/device" target="_blank" rel="noreferrer">open OpenAI device page</a>
+            </div>
             <div id="mobileOauthManual" class="mobile-oauth-manual hidden">
-              <textarea id="mobileOauthCode" autocomplete="off" spellcheck="false" placeholder="paste localhost callback URL or code"></textarea>
+              <textarea id="mobileOauthCode" autocomplete="off" spellcheck="false" placeholder="paste callback URL or authorization code"></textarea>
               <button id="mobileOauthCompleteButton" class="login-button secondary" type="button">complete sign-in</button>
-              <small>OpenAI redirects to localhost. Copy that URL and paste it here.</small>
+              <small>Fallback only: paste the callback URL if OpenAI device code is unavailable.</small>
             </div>
           </div>
         </div>
@@ -556,6 +593,9 @@ export const remoteAppHtml = `<!doctype html>
     var mobileOauthManual = document.getElementById('mobileOauthManual');
     var mobileOauthCode = document.getElementById('mobileOauthCode');
     var mobileOauthCompleteButton = document.getElementById('mobileOauthCompleteButton');
+    var mobileDeviceCodePanel = document.getElementById('mobileDeviceCodePanel');
+    var mobileDeviceCodeValue = document.getElementById('mobileDeviceCodeValue');
+    var mobileDeviceCodeLink = document.getElementById('mobileDeviceCodeLink');
     var remoteMenu = document.getElementById('remoteMenu');
     var parametersButton = document.getElementById('parametersButton');
     var reconnectButton = document.getElementById('reconnectButton');
@@ -577,6 +617,7 @@ export const remoteAppHtml = `<!doctype html>
     var thinkingDetail = null;
     var toolRows = {};
     var mobileAuthPollTimer = null;
+    var mobileDevicePollTimer = null;
     localStorage.removeItem('piagent.mobile.openaiKey');
     localStorage.removeItem('piagent.mobile.model');
 
@@ -658,6 +699,8 @@ export const remoteAppHtml = `<!doctype html>
       updateModeButtons();
       setStatus('Opening sign-in', 'OpenAI OAuth', 'run');
       if (loginState) loginState.textContent = 'Opening OpenAI OAuth...';
+      if (mobileAuthPollTimer) clearTimeout(mobileAuthPollTimer);
+      if (mobileDevicePollTimer) clearTimeout(mobileDevicePollTimer);
       var oauthWindow = window.open('about:blank', '_blank');
       if (oauthWindow) oauthWindow.opener = null;
       try {
@@ -689,7 +732,18 @@ export const remoteAppHtml = `<!doctype html>
           pollMobileDesktopAuth(data.state, data.authUrl, Date.now() + 90000);
           return;
         }
+        if (data.deviceAuthPending && data.state && data.userCode) {
+          if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
+          if (mobileOauthCode) mobileOauthCode.value = '';
+          showMobileDeviceCode(data.userCode, data.verificationUrl || data.authUrl);
+          if (oauthWindow) oauthWindow.location.href = data.verificationUrl || data.authUrl;
+          else location.href = data.verificationUrl || data.authUrl;
+          if (loginState) loginState.textContent = 'Enter the OpenAI device code, then keep this page open.';
+          pollMobileDeviceAuth(data.state, Date.now() + 15 * 60 * 1000, Number(data.intervalSeconds || 5) * 1000);
+          return;
+        }
         if (mobileOauthManual) mobileOauthManual.classList.remove('hidden');
+        if (mobileDeviceCodePanel) mobileDeviceCodePanel.classList.add('hidden');
         if (mobileOauthCode) mobileOauthCode.value = '';
         if (oauthWindow) oauthWindow.location.href = data.authUrl;
         else location.href = data.authUrl;
@@ -703,6 +757,12 @@ export const remoteAppHtml = `<!doctype html>
         setStatus('Sign in failed', error.message || 'OAuth could not start', 'bad');
         showLogin('OpenAI sign-in failed.', error.message || 'OAuth could not start');
       }
+    }
+
+    function showMobileDeviceCode(code, url) {
+      if (mobileDeviceCodePanel) mobileDeviceCodePanel.classList.remove('hidden');
+      if (mobileDeviceCodeValue) mobileDeviceCodeValue.textContent = code || '';
+      if (mobileDeviceCodeLink && url) mobileDeviceCodeLink.href = url;
     }
 
     async function pollMobileDesktopAuth(state, fallbackAuthUrl, deadline) {
@@ -729,6 +789,34 @@ export const remoteAppHtml = `<!doctype html>
         setStatus('Manual sign-in needed', 'OpenAI OAuth', 'bad');
         if (mobileOauthManual) mobileOauthManual.classList.remove('hidden');
         if (loginState) loginState.textContent = (error.message || 'Automatic sign-in failed') + ' Use manual sign-in if needed.';
+      }
+    }
+
+    async function pollMobileDeviceAuth(state, deadline, intervalMs) {
+      if (mobileDevicePollTimer) clearTimeout(mobileDevicePollTimer);
+      try {
+        var data = await post('/api/mobile/auth/device/poll', mobileBody({ state: state }));
+        if (data.loggedIn) {
+          mobileLoggedIn = true;
+          await checkMobileAuth();
+          if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
+          if (mobileDeviceCodePanel) mobileDeviceCodePanel.classList.add('hidden');
+          if (mobileOauthCode) mobileOauthCode.value = '';
+          setStatus('Mobile chat', 'OpenAI OAuth ready', 'ok');
+          showMobileChat(false);
+          return;
+        }
+        if (Date.now() > deadline) {
+          throw new Error('OpenAI device code expired. Start sign-in again.');
+        }
+        if (data.userCode) showMobileDeviceCode(data.userCode, data.verificationUrl);
+        if (loginState) loginState.textContent = 'Waiting for OpenAI device authorization...';
+        mobileDevicePollTimer = setTimeout(function () {
+          pollMobileDeviceAuth(state, deadline, intervalMs || 5000);
+        }, Math.max(3000, Math.min(intervalMs || 5000, 15000)));
+      } catch (error) {
+        setStatus('Sign in failed', error.message || 'OpenAI device code failed', 'bad');
+        if (loginState) loginState.textContent = error.message || 'OpenAI device code failed';
       }
     }
 
@@ -773,6 +861,10 @@ export const remoteAppHtml = `<!doctype html>
         clearTimeout(mobileAuthPollTimer);
         mobileAuthPollTimer = null;
       }
+      if (mobileDevicePollTimer) {
+        clearTimeout(mobileDevicePollTimer);
+        mobileDevicePollTimer = null;
+      }
       try { await post('/api/mobile/auth/logout', mobileBody({})); } catch (error) {}
       mobileLoggedIn = false;
       mobileOwnerReady = false;
@@ -784,11 +876,12 @@ export const remoteAppHtml = `<!doctype html>
       mobileThreadId = '';
       mobileAuthDesktopId = '';
       mobileAuthGlobal = false;
+      if (mobileDeviceCodePanel) mobileDeviceCodePanel.classList.add('hidden');
     }
 
     function mobileLoginDetail() {
       if (!mobileOauthConfigured) return 'OpenAI web OAuth is not configured for rblxagent.com yet';
-      return mobileOwnerReady ? 'Sign in with OpenAI OAuth' : 'Open PiAgent Desktop Remote Access once to register the owner account';
+      return 'Sign in with OpenAI device code. Desktop coding still requires QR approval.';
     }
 
     function setLogin(text, detail) {
