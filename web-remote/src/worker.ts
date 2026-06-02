@@ -103,10 +103,35 @@ interface MobileSession {
   refreshToken: string;
   accessExpiresAt: number;
   accountId: string;
+  piAccountId?: string;
   createdAt: number;
   lastActiveAt: number;
   threadIds: string[];
   threads: Record<string, MobileThread>;
+}
+
+interface PiAgentDesktopLink {
+  desktopId: string;
+  deviceId: string;
+  deviceName: string;
+  linkedAt: number;
+  lastVerifiedAt: number;
+}
+
+interface PiAgentAccount {
+  id: string;
+  openAiAccountId: string;
+  createdAt: number;
+  lastActiveAt: number;
+  displayName: string;
+  threadIds: string[];
+  threads: Record<string, MobileThread>;
+  memory: {
+    updatedAt: number;
+    turnCount: number;
+    recentTopics: string[];
+  };
+  desktopLinks: PiAgentDesktopLink[];
 }
 
 const encoder = new TextEncoder();
@@ -137,6 +162,7 @@ const MOBILE_DESKTOP_AUTH_TTL_MS = 90 * 1000;
 const MOBILE_DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
 const MOBILE_SESSION_COOKIE_VERSION = "mobile-v1";
 const MOBILE_OAUTH_COOKIE_VERSION = "mobile-oauth-v1";
+const PIAGENT_ACCOUNT_LINK_VERSION = "piagent-account-link-v1";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
 const MOBILE_THREAD_LIMIT = 25;
 const PIAGENT_ICON_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABxSURBVFhH7c67DYAwDIThLODBKNl/AY9AB5Wbk5yYQB6WrvibyLp8RUTulRV8mB0BewKu8xgS/lMF4NvXvM0cAFV9XWvTIiAnAO8jN7hpEUBAFyBSa9MiICcA7yPhpkVACPBH3ua+gBHhPy5gZgQQ8ABGpp/T6T276AAAAABJRU5ErkJggg==";
@@ -282,6 +308,10 @@ async function hmacHex(secret: string, value: string) {
   const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
   return [...new Uint8Array(signature)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function accountLinkSignature(env: Env, input: { desktopId: string; deviceId: string; deviceName: string }) {
+  return hmacHex(pepper(env), `${PIAGENT_ACCOUNT_LINK_VERSION}.${input.desktopId}.${input.deviceId}.${input.deviceName}`);
 }
 
 function pepper(env: Env) {
@@ -708,8 +738,52 @@ export default {
       if (url.pathname === "/piagent-icon.ico" || url.pathname === "/favicon.ico") return iconResponse();
       if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
       if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. Direct mobile chat uses only the OpenAI account signed in on that device and does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth is restricted to that allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. A PiAgent account is created from the signed-in OpenAI account and stores mobile chat threads, lightweight memory metadata, and desktop links only after QR approval proves that device. Direct mobile chat uses only the OpenAI account signed in on that device and does not grant desktop access. If a Cloudflare OpenAI account allowlist is configured, mobile OAuth is restricted to that allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
       if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile chat requires OpenAI OAuth on the device; desktop coding requires QR pairing and desktop approval.</p>");
+      if (url.pathname === "/api/account/link-desktop" && request.method === "POST") {
+        const body = await readJson(request.clone());
+        const desktopId = remoteIdFromRequest(request, body);
+        if (!desktopId) return jsonResponse({ ok: false, error: "Missing or invalid desktopId." }, { status: 400 });
+        const proofUrl = new URL(request.url);
+        proofUrl.pathname = "/api/account/desktop-proof";
+        const proofRequest = new Request(proofUrl.toString(), {
+          method: "POST",
+          headers: forwardedHeaders(request),
+          body: JSON.stringify({ desktopId })
+        });
+        const proofResponse = await routeToDesktopObject(proofRequest, env, { desktopId });
+        const proof = await proofResponse.json().catch(() => ({})) as Record<string, unknown>;
+        if (!proofResponse.ok || proof.ok === false) {
+          return jsonResponse({
+            ok: false,
+            error: typeof proof.error === "string" ? proof.error : "Desktop link proof failed."
+          }, { status: proofResponse.status || 403 });
+        }
+        const link = {
+          desktopId: typeof proof.desktopId === "string" ? proof.desktopId : desktopId,
+          deviceId: typeof proof.deviceId === "string" ? proof.deviceId : "",
+          deviceName: typeof proof.deviceName === "string" ? proof.deviceName : "Remote device"
+        };
+        const signature = await accountLinkSignature(env, link);
+        const globalStub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
+        const globalUrl = new URL(request.url);
+        globalUrl.pathname = "/api/account/link-desktop/internal";
+        return globalStub.fetch(new Request(globalUrl.toString(), {
+          method: "POST",
+          headers: forwardedHeaders(request),
+          body: JSON.stringify({ ...link, signature })
+        }));
+      }
+      if (url.pathname.startsWith("/api/account/")) {
+        const globalStub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
+        const needsBody = request.method !== "GET" && request.method !== "HEAD";
+        const body = needsBody ? await request.text() : undefined;
+        return globalStub.fetch(new Request(request.url, {
+          method: request.method,
+          headers: forwardedHeaders(request),
+          body
+        }));
+      }
       if (url.pathname.startsWith("/api/mobile")) {
         const needsBody = request.method !== "GET" && request.method !== "HEAD";
         if (!needsBody) {
@@ -756,6 +830,12 @@ export class RemoteDesktop {
   async fetch(request: WorkerRequest): Promise<Response> {
     const url = new URL(request.url);
     try {
+      if (url.pathname.startsWith("/api/account/")) {
+        if (url.pathname === "/api/account/status" && request.method === "GET") return this.accountStatus(request);
+        if (url.pathname === "/api/account/link-desktop/internal" && request.method === "POST") return this.accountLinkDesktopInternal(request);
+        if (url.pathname === "/api/account/desktop-proof" && request.method === "POST") return this.accountDesktopProof(request);
+        return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
+      }
       if (url.pathname.startsWith("/api/mobile/")) {
         if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return this.mobileAuthStart(request);
         if (url.pathname === "/api/mobile/auth/claim" && request.method === "POST") return this.mobileAuthClaim(request);
@@ -823,6 +903,98 @@ export class RemoteDesktop {
     return `mobile:session:${sessionId}`;
   }
 
+  private piAccountKey(piAccountId: string) {
+    return `piaccount:${piAccountId}`;
+  }
+
+  private async piAccountIdForOpenAi(openAiAccountId: string) {
+    return `pi_${(await this.digest(`piaccount:${openAiAccountId}`)).slice(0, 32)}`;
+  }
+
+  private accountPublicPayload(account: PiAgentAccount | null) {
+    if (!account) return null;
+    return {
+      id: account.id,
+      displayName: account.displayName,
+      createdAt: new Date(account.createdAt).toISOString(),
+      lastActiveAt: new Date(account.lastActiveAt).toISOString(),
+      threadCount: account.threadIds.length,
+      memory: {
+        turnCount: account.memory.turnCount,
+        recentTopics: account.memory.recentTopics.slice(0, 8),
+        updatedAt: account.memory.updatedAt ? new Date(account.memory.updatedAt).toISOString() : null
+      },
+      desktopLinks: account.desktopLinks.map((link) => ({
+        desktopId: link.desktopId,
+        deviceId: link.deviceId,
+        deviceName: link.deviceName,
+        linkedAt: new Date(link.linkedAt).toISOString(),
+        lastVerifiedAt: new Date(link.lastVerifiedAt).toISOString()
+      }))
+    };
+  }
+
+  private async readPiAgentAccount(piAccountId: string) {
+    if (!piAccountId) return null;
+    return await this.state.storage.get<PiAgentAccount>(this.piAccountKey(piAccountId)) ?? null;
+  }
+
+  private async setPiAgentAccount(account: PiAgentAccount) {
+    account.threadIds = account.threadIds.slice(0, MOBILE_THREAD_LIMIT);
+    const keep = new Set(account.threadIds);
+    account.threads = Object.fromEntries(Object.entries(account.threads)
+      .filter(([threadId]) => keep.has(threadId))
+      .map(([threadId, thread]) => [threadId, {
+        ...thread,
+        messages: thread.messages.slice(-MOBILE_THREAD_LIMIT * 2)
+      }]));
+    account.memory.recentTopics = account.memory.recentTopics
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 40);
+    account.desktopLinks = account.desktopLinks.slice(0, 25);
+    await this.state.storage.put(this.piAccountKey(account.id), account);
+  }
+
+  private async ensurePiAgentAccount(session: MobileSession) {
+    const piAccountId = session.piAccountId || await this.piAccountIdForOpenAi(session.accountId);
+    let account = await this.readPiAgentAccount(piAccountId);
+    const now = Date.now();
+    if (!account) {
+      account = {
+        id: piAccountId,
+        openAiAccountId: session.accountId,
+        createdAt: now,
+        lastActiveAt: now,
+        displayName: "PiAgent account",
+        threadIds: session.threadIds ?? [],
+        threads: session.threads ?? {},
+        memory: {
+          updatedAt: 0,
+          turnCount: 0,
+          recentTopics: []
+        },
+        desktopLinks: []
+      };
+    }
+    account.lastActiveAt = now;
+    if (!account.openAiAccountId) account.openAiAccountId = session.accountId;
+    session.piAccountId = piAccountId;
+    session.threadIds = account.threadIds;
+    session.threads = account.threads;
+    await this.setPiAgentAccount(account);
+    return account;
+  }
+
+  private rememberAccountTurn(account: PiAgentAccount, threadId: string, userText: string) {
+    const preview = userText.replace(/\s+/g, " ").trim().slice(0, 140);
+    if (!preview) return;
+    account.memory.turnCount += 1;
+    account.memory.updatedAt = Date.now();
+    const topic = `${new Date().toISOString().slice(0, 10)} ${threadId.slice(0, 8)}: ${preview}`;
+    account.memory.recentTopics = [topic, ...account.memory.recentTopics.filter((item) => item !== topic)].slice(0, 40);
+  }
+
   private async mobileOwnerAccountId() {
     return await this.state.storage.get<string>("mobile:ownerAccountId") ?? "";
   }
@@ -846,6 +1018,7 @@ export class RemoteDesktop {
     stored.accessToken = await decryptSecret(this.env, stored.accessToken);
     stored.refreshToken = await decryptSecret(this.env, stored.refreshToken);
     stored.lastActiveAt = Date.now();
+    await this.ensurePiAgentAccount(stored);
     await this.setMobileSession(stored);
     return stored;
   }
@@ -1022,6 +1195,73 @@ export class RemoteDesktop {
     });
   }
 
+  private async accountStatus(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const session = await this.readSessionFromRequest(request);
+    if (!session) {
+      return jsonResponse({
+        ok: true,
+        loggedIn: false,
+        account: null
+      });
+    }
+    const account = await this.ensurePiAgentAccount(session);
+    await this.setMobileSession(session);
+    return jsonResponse({
+      ok: true,
+      loggedIn: true,
+      provider: "openai",
+      accountId: session.accountId,
+      piAccountId: account.id,
+      defaultThreadId: account.threadIds[0] ?? null,
+      account: this.accountPublicPayload(account)
+    });
+  }
+
+  private async accountDesktopProof(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const device = await this.authenticateClient(request);
+    if (!device) return jsonResponse({ ok: false, error: "Device authentication failed." }, { status: 401 });
+    return jsonResponse({
+      ok: true,
+      desktopId: this.desktopId(request),
+      deviceId: device.id,
+      deviceName: device.name
+    });
+  }
+
+  private async accountLinkDesktopInternal(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const session = await this.readSessionFromRequest(request);
+    if (!session) return jsonResponse({ ok: false, error: "Auth required.", authRequired: true }, { status: 401 });
+    const body = await readJson(request);
+    const link = {
+      desktopId: typeof body.desktopId === "string" ? body.desktopId : "",
+      deviceId: typeof body.deviceId === "string" ? body.deviceId : "",
+      deviceName: safeName(body.deviceName, "Remote device")
+    };
+    const signature = typeof body.signature === "string" ? body.signature : "";
+    if (!link.desktopId || !link.deviceId) return jsonResponse({ ok: false, error: "Desktop link payload is invalid." }, { status: 400 });
+    const expected = await accountLinkSignature(this.env, link);
+    if (!safeEqual(signature, expected)) return jsonResponse({ ok: false, error: "Desktop link signature rejected." }, { status: 403 });
+    const account = await this.ensurePiAgentAccount(session);
+    const now = Date.now();
+    const previous = account.desktopLinks.filter((item) => !(item.desktopId === link.desktopId && item.deviceId === link.deviceId));
+    account.desktopLinks = [{
+      ...link,
+      linkedAt: previous.find((item) => item.desktopId === link.desktopId)?.linkedAt ?? now,
+      lastVerifiedAt: now
+    }, ...previous].slice(0, 25);
+    account.lastActiveAt = now;
+    await this.setPiAgentAccount(account);
+    await this.setMobileSession(session);
+    await this.audit("piagent_account_desktop_linked", { deviceId: link.deviceId, deviceName: link.deviceName });
+    return jsonResponse({
+      ok: true,
+      account: this.accountPublicPayload(account)
+    });
+  }
+
   private async mobileAuthStart(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const clientId = openAiWebClientId(this.env);
@@ -1133,6 +1373,8 @@ export class RemoteDesktop {
     const oauthConfigured = Boolean(openAiWebClientId(this.env));
     const session = await this.readSessionFromRequest(request);
     if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady: ownerReady || oauthConfigured, desktopOwnerReady: ownerReady, oauthConfigured, deviceCodeSupported: true });
+    const account = await this.ensurePiAgentAccount(session);
+    await this.setMobileSession(session);
     return jsonResponse({
       ok: true,
       loggedIn: true,
@@ -1142,8 +1384,10 @@ export class RemoteDesktop {
       deviceCodeSupported: true,
       provider: "openai",
       accountId: session.accountId,
+      piAccountId: account.id,
       model: openAiMobileModel(this.env),
-      defaultThreadId: session.threadIds[0] ?? null,
+      defaultThreadId: account.threadIds[0] ?? null,
+      account: this.accountPublicPayload(account),
       sessionActive: true
     });
   }
@@ -1326,6 +1570,7 @@ export class RemoteDesktop {
     const allowed = await this.allowMobileAccount(accountId, options);
     if (!allowed.ok) throw new HttpError(403, allowed.reason);
     const sessionId = randomToken(26);
+    const piAccountId = await this.piAccountIdForOpenAi(accountId);
     const now = Date.now();
     const session: MobileSession = {
       id: sessionId,
@@ -1333,11 +1578,13 @@ export class RemoteDesktop {
       refreshToken: tokenResponse.refresh,
       accessExpiresAt: now + tokenResponse.expiresIn * 1000,
       accountId,
+      piAccountId,
       createdAt: now,
       lastActiveAt: now,
       threadIds: [],
       threads: {}
     };
+    await this.ensurePiAgentAccount(session);
     await this.setMobileSession(session);
     return sessionId;
   }
@@ -1354,6 +1601,7 @@ export class RemoteDesktop {
     const allowed = await this.allowMobileAccount(accountId);
     if (!allowed.ok) throw new HttpError(403, allowed.reason);
     const sessionId = randomToken(26);
+    const piAccountId = await this.piAccountIdForOpenAi(accountId);
     const now = Date.now();
     const session: MobileSession = {
       id: sessionId,
@@ -1361,11 +1609,13 @@ export class RemoteDesktop {
       refreshToken,
       accessExpiresAt: expires,
       accountId,
+      piAccountId,
       createdAt: now,
       lastActiveAt: now,
       threadIds: [],
       threads: {}
     };
+    await this.ensurePiAgentAccount(session);
     await this.setMobileSession(session);
     return sessionId;
   }
@@ -1389,26 +1639,28 @@ export class RemoteDesktop {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const body = await readJson(request);
     const session = await this.readSessionFromRequest(request);
-    if (!session) return jsonResponse({ ok: false, error: "Auth required." }, { status: 401 });
+    if (!session) return jsonResponse({ ok: false, error: "Auth required.", authRequired: true }, { status: 401 });
     if (!this.rateLimit(`mobile_chat:${session.id}`, 24, 60_000)) return jsonResponse({ ok: false, error: "Too many mobile chat requests." }, { status: 429 });
     const threadIdInput = typeof body.threadId === "string" ? body.threadId : "";
     const messageInput = typeof body.message === "string" ? body.message : "";
     const message = this.sanitizeMobileMessage(messageInput);
     if (!message) return jsonResponse({ ok: false, error: "Message is empty." }, { status: 400 });
 
+    const account = await this.ensurePiAgentAccount(session);
     const threadId = threadIdInput || randomToken(12);
-    const thread = session.threads[threadId] ?? {
+    const thread = account.threads[threadId] ?? {
       id: threadId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       messages: []
     };
-    if (!session.threads[threadId]) {
-      session.threads[threadId] = thread;
-      session.threadIds = session.threadIds.includes(threadId) ? session.threadIds : [threadId, ...session.threadIds].slice(0, 10);
+    if (!account.threads[threadId]) {
+      account.threads[threadId] = thread;
+      account.threadIds = account.threadIds.includes(threadId) ? account.threadIds : [threadId, ...account.threadIds].slice(0, MOBILE_THREAD_LIMIT);
     }
     thread.messages.push({ role: "user", content: message });
     thread.updatedAt = Date.now();
+    this.rememberAccountTurn(account, threadId, message);
     const history = this.normalizeMobileMessages(thread);
     const accessToken = await this.ensureMobileAccessToken(session);
     const requestId = `${threadId}.${randomToken(8)}`;
@@ -1449,7 +1701,7 @@ export class RemoteDesktop {
     });
     const chatText = await response.text();
     if (!response.ok) {
-      if (response.status === 401) return jsonResponse({ ok: false, error: "OpenAI token expired. Reconnect." }, { status: 401 });
+      if (response.status === 401) return jsonResponse({ ok: false, error: "OpenAI token expired. Reconnect.", authRequired: true }, { status: 401 });
       return jsonResponse({ ok: false, error: openAiRelayErrorMessage(response, chatText) }, { status: 502 });
     }
     let reply = "No response.";
@@ -1457,12 +1709,19 @@ export class RemoteDesktop {
     thread.messages.push({ role: "assistant", content: reply });
     thread.messages = thread.messages.slice(-MOBILE_THREAD_LIMIT * 2);
     thread.updatedAt = Date.now();
+    account.threads[threadId] = thread;
+    account.threadIds = [threadId, ...account.threadIds.filter((id) => id !== threadId)].slice(0, MOBILE_THREAD_LIMIT);
+    account.lastActiveAt = Date.now();
     session.lastActiveAt = Date.now();
+    session.threadIds = account.threadIds;
+    session.threads = account.threads;
+    await this.setPiAgentAccount(account);
     await this.setMobileSession(session);
     return jsonResponse({
       ok: true,
       text: reply,
       threadId,
+      account: this.accountPublicPayload(account),
       at: new Date().toISOString()
     });
   }
@@ -1644,7 +1903,7 @@ export class RemoteDesktop {
   }
 
   private async authenticateClient(request: WorkerRequest) {
-    const cookie = parseCookie(request.headers.get("Cookie")).get(COOKIE_NAME) ?? "";
+    const cookie = parseCookie(requestCookieHeader(request)).get(COOKIE_NAME) ?? "";
     const [desktopId, deviceId, secret] = cookie.split(".");
     if (desktopId !== this.desktopId(request) || !deviceId || !secret) return null;
     const devices = await this.devices();

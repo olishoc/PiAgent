@@ -404,7 +404,7 @@ export const remoteAppHtml = `<!doctype html>
         </div>
         <div class="remote-mode-panel" id="mobileLoginPanel">
           <div class="mobile-oauth-panel">
-            <p>Mobile chat signs in with OpenAI device code. If this device is paired, PiAgent Desktop can authorize it automatically.</p>
+            <p>Mobile chat creates or opens your PiAgent account with OpenAI device OAuth. Desktop coding remains separate and requires QR approval.</p>
             <div class="mobile-oauth-actions">
               <button id="mobileConnectButton" class="login-button" type="button">sign in with OpenAI</button>
               <button id="mobileStartButton" class="login-button secondary" type="button">open mobile chat</button>
@@ -606,6 +606,8 @@ export const remoteAppHtml = `<!doctype html>
     var mobileOwnerReady = false;
     var mobileOauthConfigured = false;
     var mobileAccountId = '';
+    var piAccountId = '';
+    var piAccountDesktopLinks = 0;
     var mobileThreadId = localStorage.getItem('piagent.mobile.threadId') || '';
     var mobileAuthDesktopId = localStorage.getItem('piagent.mobile.authDesktopId') || '';
     var mobileAuthGlobal = localStorage.getItem('piagent.mobile.authGlobal') === '1';
@@ -667,13 +669,13 @@ export const remoteAppHtml = `<!doctype html>
     }
 
     function mobileEndpoint(path, options) {
-      var id = options && options.global ? '' : mobileDesktopId();
+      var id = options && options.desktop ? mobileDesktopId() : '';
       if (!id) return path;
       return path + (path.indexOf('?') === -1 ? '?' : '&') + 'desktopId=' + encodeURIComponent(id);
     }
 
     function mobileBody(body, options) {
-      var id = options && options.global ? '' : mobileDesktopId();
+      var id = options && options.desktop ? mobileDesktopId() : '';
       var next = Object.assign({}, body || {});
       if (id) next.desktopId = id;
       return next;
@@ -704,25 +706,11 @@ export const remoteAppHtml = `<!doctype html>
       var oauthWindow = window.open('about:blank', '_blank');
       if (oauthWindow) oauthWindow.opener = null;
       try {
-        var data;
-        var usedGlobalFallback = false;
-        try {
-          data = await post('/api/mobile/auth/start', mobileBody({}));
-        } catch (error) {
-          if (!(error && error.data && error.data.retryGlobal)) throw error;
-          usedGlobalFallback = true;
-          mobileAuthDesktopId = '';
-          mobileAuthGlobal = true;
-          localStorage.removeItem('piagent.mobile.authDesktopId');
-          localStorage.setItem('piagent.mobile.authGlobal', '1');
-          data = await post('/api/mobile/auth/start', mobileBody({}, { global: true }));
-        }
-        if (desktopId && !usedGlobalFallback) {
-          mobileAuthGlobal = false;
-          mobileAuthDesktopId = desktopId;
-          localStorage.removeItem('piagent.mobile.authGlobal');
-          localStorage.setItem('piagent.mobile.authDesktopId', mobileAuthDesktopId);
-        }
+        mobileAuthDesktopId = '';
+        mobileAuthGlobal = true;
+        localStorage.removeItem('piagent.mobile.authDesktopId');
+        localStorage.setItem('piagent.mobile.authGlobal', '1');
+        var data = await post('/api/mobile/auth/start', mobileBody({}, { global: true }));
         if (!data.authUrl) throw new Error('OAuth URL missing.');
         if (data.desktopAuthPending && data.state) {
           if (oauthWindow) oauthWindow.close();
@@ -768,13 +756,17 @@ export const remoteAppHtml = `<!doctype html>
     async function pollMobileDesktopAuth(state, fallbackAuthUrl, deadline) {
       if (mobileAuthPollTimer) clearTimeout(mobileAuthPollTimer);
       try {
-        var data = await post('/api/mobile/auth/claim', mobileBody({ state: state }));
+        var data = await post('/api/mobile/auth/claim', mobileBody({ state: state }, { desktop: true }));
         if (data.loggedIn) {
           mobileLoggedIn = true;
+          mobileAuthGlobal = false;
+          mobileAuthDesktopId = desktopId;
+          localStorage.removeItem('piagent.mobile.authGlobal');
+          localStorage.setItem('piagent.mobile.authDesktopId', mobileAuthDesktopId);
           await checkMobileAuth();
           if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
           if (mobileOauthCode) mobileOauthCode.value = '';
-          setStatus('Mobile chat', 'OpenAI OAuth ready', 'ok');
+          setStatus('PiAgent account', mobileLoginDetail(), 'ok');
           showMobileChat(false);
           return;
         }
@@ -798,11 +790,15 @@ export const remoteAppHtml = `<!doctype html>
         var data = await post('/api/mobile/auth/device/poll', mobileBody({ state: state }));
         if (data.loggedIn) {
           mobileLoggedIn = true;
+          mobileAuthGlobal = true;
+          mobileAuthDesktopId = '';
+          localStorage.setItem('piagent.mobile.authGlobal', '1');
+          localStorage.removeItem('piagent.mobile.authDesktopId');
           await checkMobileAuth();
           if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
           if (mobileDeviceCodePanel) mobileDeviceCodePanel.classList.add('hidden');
           if (mobileOauthCode) mobileOauthCode.value = '';
-          setStatus('Mobile chat', 'OpenAI OAuth ready', 'ok');
+          setStatus('PiAgent account', mobileLoginDetail(), 'ok');
           showMobileChat(false);
           return;
         }
@@ -831,6 +827,10 @@ export const remoteAppHtml = `<!doctype html>
       try {
         await post('/api/mobile/auth/complete', mobileBody({ authorization: authorization }));
         mobileLoggedIn = true;
+        mobileAuthGlobal = true;
+        mobileAuthDesktopId = '';
+        localStorage.setItem('piagent.mobile.authGlobal', '1');
+        localStorage.removeItem('piagent.mobile.authDesktopId');
         await checkMobileAuth();
         if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
         if (mobileOauthCode) mobileOauthCode.value = '';
@@ -849,11 +849,29 @@ export const remoteAppHtml = `<!doctype html>
       mobileOwnerReady = Boolean(data.ownerReady);
       mobileOauthConfigured = Boolean(data.oauthConfigured);
       mobileAccountId = data.accountId || '';
+      piAccountId = data.piAccountId || (data.account && data.account.id) || '';
+      piAccountDesktopLinks = data.account && data.account.desktopLinks ? data.account.desktopLinks.length : 0;
       if (data.defaultThreadId && !mobileThreadId) {
         mobileThreadId = data.defaultThreadId;
         localStorage.setItem('piagent.mobile.threadId', mobileThreadId);
       }
       return mobileLoggedIn;
+    }
+
+    async function linkCurrentDesktopToAccount() {
+      if (!mobileLoggedIn || !desktopId) return;
+      try {
+        var data = await post('/api/account/link-desktop', { desktopId: desktopId });
+        if (data.account && data.account.id) {
+          piAccountId = data.account.id;
+          piAccountDesktopLinks = data.account.desktopLinks ? data.account.desktopLinks.length : 0;
+          if (activeMode === 'mobile') appendStatus('Desktop linked to this PiAgent account.');
+          else setStatus('Approved', 'desktop linked to PiAgent account', 'ok');
+        }
+      } catch (error) {
+        if (activeMode === 'mobile') appendStatus(error.message || 'PiAgent account desktop link failed.', true);
+        else setStatus('Approved', 'desktop paired; account link skipped', 'ok');
+      }
     }
 
     async function logoutMobile() {
@@ -870,6 +888,8 @@ export const remoteAppHtml = `<!doctype html>
       mobileOwnerReady = false;
       mobileOauthConfigured = false;
       mobileAccountId = '';
+      piAccountId = '';
+      piAccountDesktopLinks = 0;
       localStorage.removeItem('piagent.mobile.threadId');
       localStorage.removeItem('piagent.mobile.authDesktopId');
       localStorage.removeItem('piagent.mobile.authGlobal');
@@ -880,8 +900,11 @@ export const remoteAppHtml = `<!doctype html>
     }
 
     function mobileLoginDetail() {
+      if (mobileLoggedIn && piAccountId) {
+        return 'PiAgent account ready' + (piAccountDesktopLinks ? ' - ' + piAccountDesktopLinks + ' desktop link' + (piAccountDesktopLinks === 1 ? '' : 's') : '');
+      }
       if (!mobileOauthConfigured) return 'OpenAI web OAuth is not configured for rblxagent.com yet';
-      return 'Sign in with OpenAI device code. Desktop coding still requires QR approval.';
+      return 'Create or open your PiAgent account with OpenAI device OAuth. Desktop coding still requires QR approval.';
     }
 
     function setLogin(text, detail) {
@@ -965,7 +988,7 @@ export const remoteAppHtml = `<!doctype html>
       toolbarDetail.title = detail || '';
       sidebarStatus.textContent = detail ? text + ' - ' + detail : text;
       composerStatus.textContent = state === 'ok'
-        ? (activeMode === 'mobile' ? 'Mobile ready' : 'Pi Agent Ready')
+        ? (activeMode === 'mobile' ? 'PiAgent account ready' : 'Pi Agent Ready')
         : state === 'run'
           ? 'Working'
           : activeMode === 'mobile'
@@ -1008,8 +1031,8 @@ export const remoteAppHtml = `<!doctype html>
       }
       composer.classList.remove('hidden');
       if (introText) introText.textContent = 'Mobile chat runs directly from this device through OpenAI OAuth. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.';
-      setStatus(mobileLoggedIn ? 'Mobile chat' : 'Sign in', mobileLoggedIn ? 'OpenAI OAuth ready' : mobileLoginDetail(), mobileLoggedIn ? 'ok' : 'bad');
-      if (composerStatus) composerStatus.textContent = mobileLoggedIn ? 'Mobile ready' : 'OpenAI OAuth';
+      setStatus(mobileLoggedIn ? 'PiAgent account' : 'Sign in', mobileLoggedIn ? mobileLoginDetail() : mobileLoginDetail(), mobileLoggedIn ? 'ok' : 'bad');
+      if (composerStatus) composerStatus.textContent = mobileLoggedIn ? 'PiAgent account ready' : 'OpenAI OAuth';
       promptEl.placeholder = 'Ask Pi Agent mobile...';
       document.getElementById('remoteAccessButton').innerHTML = '${icon("shield", 13)} Mobile chat ${icon("chevronDown", 12)}';
       document.getElementById('modelButton').innerHTML = 'OpenAI OAuth ${icon("chevronDown", 12)}';
@@ -1218,11 +1241,15 @@ export const remoteAppHtml = `<!doctype html>
           localStorage.setItem('piagent.mobile.threadId', mobileThreadId);
         }
         appendAssistantDelta(data.text || 'No response.');
-        setStatus('Mobile chat', 'OpenAI OAuth ready', 'ok');
+        if (data.account && data.account.id) {
+          piAccountId = data.account.id;
+          piAccountDesktopLinks = data.account.desktopLinks ? data.account.desktopLinks.length : 0;
+        }
+        setStatus('PiAgent account', mobileLoginDetail(), 'ok');
       } catch (error) {
         finishThinking();
         appendStatus(error.message || 'Mobile chat failed.', true);
-        if (/auth|401|sign/i.test(error.message || '')) {
+        if (error.status === 401 || (error.data && error.data.authRequired)) {
           mobileLoggedIn = false;
           showLogin('OpenAI sign-in required.', 'Sign in again to continue mobile chat');
           setStatus('Sign in', 'OpenAI OAuth required', 'bad');
@@ -1254,7 +1281,7 @@ export const remoteAppHtml = `<!doctype html>
     }
 
     function connectedDetail() {
-      return activeMode === 'mobile' ? 'OpenAI OAuth ready' : 'Pi Agent Ready';
+      return activeMode === 'mobile' ? mobileLoginDetail() : 'Pi Agent Ready';
     }
 
     function connect(mode) {
@@ -1266,7 +1293,7 @@ export const remoteAppHtml = `<!doctype html>
       if (activeMode === 'mobile') {
         checkMobileAuth().then(function (loggedIn) {
           if (loggedIn) {
-            setStatus('Mobile chat', connectedDetail(), 'ok');
+            setStatus('PiAgent account', connectedDetail(), 'ok');
             showMobileChat(true);
           } else {
             setStatus('Sign in', 'OpenAI OAuth required', 'bad');
@@ -1461,6 +1488,7 @@ export const remoteAppHtml = `<!doctype html>
           desktopId = pair.desktopId;
           setStatus('Approved', 'connecting', 'ok');
           setLogin('Approved.', 'connecting to desktop');
+          await linkCurrentDesktopToAccount();
           connect(activeMode);
           return true;
         }
@@ -1628,7 +1656,7 @@ export const remoteAppHtml = `<!doctype html>
       if (activeMode === 'mobile') {
         try {
           if (await checkMobileAuth()) {
-            setStatus('Mobile chat', 'OpenAI OAuth ready', 'ok');
+            setStatus('PiAgent account', mobileLoginDetail(), 'ok');
             showMobileChat(false);
           } else {
             setStatus('Sign in', 'OpenAI OAuth required', 'bad');
