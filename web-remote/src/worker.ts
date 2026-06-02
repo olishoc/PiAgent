@@ -3,6 +3,7 @@ import { remoteAppHtml } from "./remoteAppHtml";
 export interface Env {
   REMOTE_DESKTOP: DurableObjectNamespace;
   REMOTE_TOKEN_PEPPER?: string;
+  MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS?: string;
   PUBLIC_HOST?: string;
   PROTOCOL_VERSION?: string;
 }
@@ -51,14 +52,59 @@ interface AuditEvent {
   reason?: string;
 }
 
+interface MobileOAuthPending {
+  state: string;
+  codeVerifier: string;
+  createdAt: number;
+}
+
+interface MobileChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+interface MobileThread {
+  id: string;
+  createdAt: number;
+  updatedAt: number;
+  messages: MobileChatMessage[];
+}
+
+interface MobileSession {
+  id: string;
+  accessToken: string;
+  refreshToken: string;
+  accessExpiresAt: number;
+  accountId: string;
+  createdAt: number;
+  lastActiveAt: number;
+  threadIds: string[];
+  threads: Record<string, MobileThread>;
+}
+
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
 const PAIR_TTL_MS = 5 * 60 * 1000;
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
 const DEVICE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MAX_PROMPT_CHARS = 6000;
+const MAX_MOBILE_PROMPT_CHARS = 4000;
 const MAX_JSON_BODY_BYTES = 16 * 1024;
 const COOKIE_NAME = "piagent_remote";
+const MOBILE_COOKIE_NAME = "piagent_remote_mobile";
+const MOBILE_OAUTH_COOKIE_NAME = "piagent_remote_oauth";
+const OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize";
+const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
+const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const OPENAI_SCOPES = "openid profile email offline_access";
+const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MOBILE_MODEL = "gpt-4o-mini";
+const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
+const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const MOBILE_SESSION_COOKIE_VERSION = "mobile-v1";
+const MOBILE_OAUTH_COOKIE_VERSION = "mobile-oauth-v1";
 const PROTOCOL_VERSION = "2026-06-remote-v1";
+const MOBILE_THREAD_LIMIT = 25;
 const PIAGENT_ICON_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAABxSURBVFhH7c67DYAwDIThLODBKNl/AY9AB5Wbk5yYQB6WrvibyLp8RUTulRV8mB0BewKu8xgS/lMF4NvXvM0cAFV9XWvTIiAnAO8jN7hpEUBAFyBSa9MiICcA7yPhpkVACPBH3ua+gBHhPy5gZgQQ8ABGpp/T6T276AAAAABJRU5ErkJggg==";
 const PIAGENT_ICON_BASE64 = "AAABAAEAICAAAAEAIAAoEAAAFgAAACgAAAAgAAAAQAAAAAEAIAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAANDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/+jo6P/o6Oj/6Ojo/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/0lR+P8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/SVH4/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/SVH4/0lR+P9JUfj/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/DQ0N/w0NDf8NDQ3/";
 
@@ -143,6 +189,11 @@ function randomToken(bytes = 32) {
   return base64Url(value);
 }
 
+async function sha256Base64Url(value: string) {
+  const hash = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return base64Url(new Uint8Array(hash));
+}
+
 function parseCookie(header: string | null) {
   const out = new Map<string, string>();
   if (!header) return out;
@@ -192,6 +243,13 @@ function pepper(env: Env) {
   throw new Error("REMOTE_TOKEN_PEPPER is not configured.");
 }
 
+function allowedMobileAccountIds(env: Env) {
+  return new Set((env.MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS ?? "")
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean));
+}
+
 async function readJson(request: WorkerRequest) {
   const contentLength = Number(request.headers.get("Content-Length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) throw new HttpError(413, "Request body too large.");
@@ -212,12 +270,84 @@ function errorJson(error: unknown, fallback: string) {
   return jsonResponse({ ok: false, error: error instanceof Error ? error.message : fallback }, { status: 500 });
 }
 
-async function mobileChat(request: WorkerRequest) {
-  if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Cross-origin requests are blocked." }, { status: 403 });
-  return jsonResponse({
-    ok: false,
-    error: "Mobile chat now uses PiAgent OpenAI OAuth through a paired desktop. Pair this device, then use Mobile chat; API keys are not accepted by the public web relay."
-  }, { status: 410 });
+function decodeJwtSubject(jwt: string) {
+  const parts = jwt.split(".");
+  if (parts.length !== 3) return "";
+  const payload = parts[1];
+  const pad = "=".repeat((4 - (payload.length % 4)) % 4);
+  try {
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/") + pad;
+    const json = atob(base64);
+    const payloadJson = new TextDecoder().decode(Uint8Array.from(json, (character) => character.charCodeAt(0)));
+    const parsed = JSON.parse(payloadJson);
+    const openAiAuth = parsed["https://api.openai.com/auth"];
+    if (openAiAuth && typeof openAiAuth.chatgpt_account_id === "string") return openAiAuth.chatgpt_account_id;
+  } catch (_error) {
+    // ignore
+  }
+  return "";
+}
+
+async function openAiTokenExchange(params: Record<string, string>) {
+  const response = await fetch(OPENAI_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams(params)
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new HttpError(response.status, `OpenAI token exchange failed: ${body}`);
+  }
+  const payload = await response.json() as Record<string, unknown>;
+  const access = typeof payload.access_token === "string" ? payload.access_token : "";
+  const refresh = typeof payload.refresh_token === "string" ? payload.refresh_token : "";
+  const expiresIn = Number(payload.expires_in ?? 0);
+  if (!access || !expiresIn) throw new HttpError(502, "Invalid token response from OpenAI.");
+  return { access, refresh, expiresIn };
+}
+
+async function secretKey(env: Env) {
+  const material = await crypto.subtle.digest("SHA-256", encoder.encode(`${pepper(env)}.piagent-mobile-token-v1`));
+  return crypto.subtle.importKey("raw", material, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+async function encryptSecret(env: Env, value: string) {
+  if (!value) return "";
+  const iv = new Uint8Array(12);
+  crypto.getRandomValues(iv);
+  const key = await secretKey(env);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoder.encode(value));
+  return `v1.${base64Url(iv)}.${base64Url(new Uint8Array(ciphertext))}`;
+}
+
+async function decryptSecret(env: Env, value: string) {
+  if (!value || !value.startsWith("v1.")) return value;
+  const [, ivPart, cipherPart] = value.split(".");
+  if (!ivPart || !cipherPart) return "";
+  const decode = (part: string) => {
+    let base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    while (base64.length % 4) base64 += "=";
+    const binary = atob(base64);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  };
+  const key = await secretKey(env);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decode(ivPart) }, key, decode(cipherPart));
+  return decoder.decode(plain);
+}
+
+function openAiAuthUrl(origin: string, state: string, codeChallenge: string) {
+  const auth = new URL(OPENAI_AUTH_URL);
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("client_id", OPENAI_CLIENT_ID);
+  auth.searchParams.set("redirect_uri", `${origin}/api/mobile/auth/callback`);
+  auth.searchParams.set("scope", OPENAI_SCOPES);
+  auth.searchParams.set("state", state);
+  auth.searchParams.set("code_challenge_method", "S256");
+  auth.searchParams.set("code_challenge", codeChallenge);
+  auth.searchParams.set("id_token_add_organizations", "true");
+  auth.searchParams.set("codex_cli_simplified_flow", "true");
+  auth.searchParams.set("originator", "piagent");
+  return auth.toString();
 }
 
 function remoteIdFromRequest(request: WorkerRequest, body?: Record<string, unknown>) {
@@ -347,9 +477,16 @@ export default {
       if (url.pathname === "/piagent-icon.ico" || url.pathname === "/favicon.ico") return iconResponse();
       if (url.pathname === "/" || url.pathname === "/app") return textResponse(remoteAppHtml);
       if (url.pathname === "/archive/rblxagent-landing-2026-06-01.html") return textResponse(archivedLanding);
-      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat and Desktop coding use your paired PiAgent desktop session. The public relay does not accept OpenAI API keys and does not store OpenAI OAuth tokens, API keys, desktop files, or local credentials.</p>");
-      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private remote access for paired PiAgent devices only.</p>");
-      if (url.pathname === "/api/mobile/chat" && request.method === "POST") return await mobileChat(request);
+      if (url.pathname === "/privacy") return textResponse("<h1>Privacy</h1><p>PiAgent Remote stores pairing metadata, device IDs, and minimal audit events for desktop pairing. Mobile chat stores encrypted OpenAI OAuth access and refresh tokens in Cloudflare Durable Object storage until logout or session expiry; tokens are kept server-side in HttpOnly-cookie sessions and are never exposed to browser JavaScript. Mobile OAuth is restricted to the OpenAI owner account registered by PiAgent Desktop or by the Cloudflare account allowlist. The public relay does not accept OpenAI API keys and does not store desktop files or local credentials.</p>");
+      if (url.pathname === "/terms") return textResponse("<h1>Terms</h1><p>Private PiAgent remote access. Mobile chat requires the owner OpenAI account; desktop coding requires QR pairing and desktop approval.</p>");
+      if (url.pathname.startsWith("/api/mobile")) {
+        const stub = env.REMOTE_DESKTOP.get(env.REMOTE_DESKTOP.idFromName("mobile-global"));
+        const needsBody = request.method !== "GET" && request.method !== "HEAD";
+        if (!needsBody) return stub.fetch(request);
+        const headers = new Headers(request.headers);
+        const body = await request.text();
+        return stub.fetch(new Request(request.url, { method: request.method, headers, body }));
+      }
 
       if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/relay/")) {
         const needsBody = request.method !== "GET" && request.method !== "HEAD" && request.headers.get("Upgrade")?.toLowerCase() !== "websocket";
@@ -373,6 +510,14 @@ export class RemoteDesktop {
   async fetch(request: WorkerRequest): Promise<Response> {
     const url = new URL(request.url);
     try {
+      if (url.pathname.startsWith("/api/mobile/")) {
+        if (url.pathname === "/api/mobile/auth/start" && request.method === "POST") return this.mobileAuthStart(request);
+        if (url.pathname === "/api/mobile/auth/status" && request.method === "GET") return this.mobileAuthStatus(request);
+        if (url.pathname === "/api/mobile/auth/logout" && request.method === "POST") return this.mobileAuthLogout(request);
+        if (url.pathname === "/api/mobile/auth/callback" && request.method === "GET") return this.mobileAuthCallback(request);
+        if (url.pathname === "/api/mobile/chat" && request.method === "POST") return this.mobileChat(request);
+        return jsonResponse({ ok: false, error: "Not found." }, { status: 404 });
+      }
       if (url.pathname === "/api/desktop/pairing" && request.method === "POST") return this.createPairing(request);
       if (url.pathname === "/api/desktop/pairing/approve" && request.method === "POST") return this.approvePairing(request);
       if (url.pathname === "/api/desktop/pairing/deny" && request.method === "POST") return this.denyPairing(request);
@@ -393,8 +538,126 @@ export class RemoteDesktop {
     return request.headers.get("X-PiAgent-Desktop-Id") ?? "";
   }
 
+  private mobileSessionId(request: WorkerRequest) {
+    const value = parseCookie(request.headers.get("Cookie")).get(MOBILE_COOKIE_NAME) ?? "";
+    const [sessionId] = value.split(".");
+    return sessionId || "";
+  }
+
+  private async mobileSessionCookie(sessionId: string) {
+    const signature = await this.sessionSignature(sessionId);
+    return `${MOBILE_COOKIE_NAME}=${encodeURIComponent(sessionId)}.${encodeURIComponent(signature)}; Max-Age=${Math.floor(MOBILE_SESSION_TTL_MS / 1000)}; Path=/; Secure; HttpOnly; SameSite=Strict`;
+  }
+
+  private mobileClearCookie() {
+    return `${MOBILE_COOKIE_NAME}=; Max-Age=0; Path=/; Secure; HttpOnly; SameSite=Strict`;
+  }
+
+  private async mobileOAuthPendingCookie(state: string) {
+    const signature = await this.digest(`${state}.${MOBILE_OAUTH_COOKIE_VERSION}`);
+    return `${MOBILE_OAUTH_COOKIE_NAME}=${encodeURIComponent(state)}.${encodeURIComponent(signature)}; Max-Age=600; Path=/; Secure; HttpOnly; SameSite=Lax`;
+  }
+
+  private mobilePendingKey(state: string) {
+    return `mobile:pending:${state}`;
+  }
+
+  private mobileSessionKey(sessionId: string) {
+    return `mobile:session:${sessionId}`;
+  }
+
+  private async mobileOwnerAccountId() {
+    return await this.state.storage.get<string>("mobile:ownerAccountId") ?? "";
+  }
+
+  private sanitizeMobileMessage(content: string) {
+    return String(content ?? "").trim().slice(0, MAX_MOBILE_PROMPT_CHARS);
+  }
+
+  private normalizeMobileMessages(thread: MobileThread) {
+    return thread.messages.slice(-40).filter((item) => typeof item.content === "string");
+  }
+
+  private async readMobileSession(sessionId: string) {
+    if (!sessionId) return null;
+    const stored = await this.state.storage.get<MobileSession>(this.mobileSessionKey(sessionId));
+    if (!stored) return null;
+    if (stored.lastActiveAt + MOBILE_SESSION_TTL_MS < Date.now()) {
+      await this.state.storage.delete(this.mobileSessionKey(sessionId));
+      return null;
+    }
+    stored.accessToken = await decryptSecret(this.env, stored.accessToken);
+    stored.refreshToken = await decryptSecret(this.env, stored.refreshToken);
+    stored.lastActiveAt = Date.now();
+    await this.setMobileSession(stored);
+    return stored;
+  }
+
+  private async readSessionFromRequest(request: WorkerRequest) {
+    const value = parseCookie(request.headers.get("Cookie")).get(MOBILE_COOKIE_NAME) ?? "";
+    if (!value) return null;
+    const [sessionId, signature] = value.split(".");
+    if (!sessionId || !signature) return null;
+    const expected = await this.sessionSignature(sessionId);
+    if (!safeEqual(signature, expected)) return null;
+    if (!sessionId) return null;
+    const record = await this.readMobileSession(sessionId);
+    return record;
+  }
+
+  private async readOAuthStateFromRequest(request: WorkerRequest) {
+    const value = parseCookie(request.headers.get("Cookie")).get(MOBILE_OAUTH_COOKIE_NAME) ?? "";
+    const [state, signature] = value.split(".");
+    if (!state || !signature) return "";
+    const expected = await this.digest(`${state}.${MOBILE_OAUTH_COOKIE_VERSION}`);
+    return safeEqual(signature, expected) ? state : "";
+  }
+
+  private async setMobileSession(session: MobileSession) {
+    const stored: MobileSession = {
+      ...session,
+      accessToken: await encryptSecret(this.env, session.accessToken),
+      refreshToken: await encryptSecret(this.env, session.refreshToken)
+    };
+    await this.state.storage.put(this.mobileSessionKey(session.id), stored);
+  }
+
+  private async allowMobileAccount(accountId: string) {
+    if (!accountId) return { ok: false, reason: "OpenAI account id was not present in the OAuth token." };
+    const allowed = allowedMobileAccountIds(this.env);
+    if (allowed.size > 0) {
+      return allowed.has(accountId)
+        ? { ok: true, reason: "" }
+        : { ok: false, reason: "This OpenAI account is not allowed for this PiAgent remote." };
+    }
+    const owner = await this.mobileOwnerAccountId();
+    if (owner) {
+      return owner === accountId
+        ? { ok: true, reason: "" }
+        : { ok: false, reason: "This OpenAI account is not the owner account registered by PiAgent Desktop." };
+    }
+    return { ok: false, reason: "Open PiAgent Desktop with Remote Access enabled once to register the owner OpenAI account before mobile sign-in." };
+  }
+
+  private async registerMobileOwnerFromDesktopStatus(status: unknown) {
+    if (!status || typeof status !== "object") return;
+    const accountId = typeof (status as Record<string, unknown>).accountId === "string" ? String((status as Record<string, unknown>).accountId).trim() : "";
+    if (!accountId) return;
+    const allowed = allowedMobileAccountIds(this.env);
+    if (allowed.size > 0 && !allowed.has(accountId)) return;
+    const current = await this.mobileOwnerAccountId();
+    if (!current) {
+      await this.state.storage.put("mobile:ownerAccountId", accountId);
+      await this.audit("mobile_owner_registered");
+    }
+  }
+
   private async digest(value: string) {
     return hmacHex(pepper(this.env), value);
+  }
+
+  private async sessionSignature(sessionId: string) {
+    return this.digest(`${sessionId}.${MOBILE_SESSION_COOKIE_VERSION}`);
   }
 
   private async requireDesktop(request: WorkerRequest, body?: Record<string, unknown>) {
@@ -494,6 +757,188 @@ export class RemoteDesktop {
       pairUrl: `${origin}/#pair=${packed}`,
       expiresAt: new Date(record.expiresAt).toISOString(),
       desktopConnected: this.desktopSocket?.readyState === WebSocket.OPEN
+    });
+  }
+
+  private async mobileAuthStart(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
+    if (!this.rateLimit(`mobile_auth:${ip}`, 20, 60_000)) return jsonResponse({ ok: false, error: "Too many OAuth attempts." }, { status: 429 });
+    const state = randomToken(24);
+    const codeVerifier = randomToken(80);
+    const codeChallenge = await sha256Base64Url(codeVerifier);
+    const origin = new URL(request.url).origin;
+    const payload: MobileOAuthPending = {
+      state,
+      codeVerifier,
+      createdAt: Date.now()
+    };
+    await this.state.storage.put(this.mobilePendingKey(state), payload);
+    await this.state.storage.put("mobile:lastPendingState", state);
+    return jsonResponse({
+      ok: true,
+      authUrl: openAiAuthUrl(origin, state, codeChallenge),
+      state
+    }, {
+      headers: { "Set-Cookie": await this.mobileOAuthPendingCookie(state) }
+    });
+  }
+
+  private async mobileAuthStatus(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const ownerReady = Boolean(await this.mobileOwnerAccountId()) || allowedMobileAccountIds(this.env).size > 0;
+    const session = await this.readSessionFromRequest(request);
+    if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady });
+    return jsonResponse({
+      ok: true,
+      loggedIn: true,
+      ownerReady,
+      provider: "openai",
+      accountId: session.accountId,
+      model: OPENAI_MOBILE_MODEL,
+      defaultThreadId: session.threadIds[0] ?? null,
+      sessionActive: true
+    });
+  }
+
+  private async mobileAuthLogout(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const session = await this.readSessionFromRequest(request);
+    if (session) await this.state.storage.delete(this.mobileSessionKey(session.id));
+    return jsonResponse({ ok: true }, { headers: { "Set-Cookie": this.mobileClearCookie() } });
+  }
+
+  private async mobileAuthCallback(request: WorkerRequest) {
+    const url = new URL(request.url);
+    const state = typeof url.searchParams.get("state") === "string" ? url.searchParams.get("state")! : "";
+    const code = typeof url.searchParams.get("code") === "string" ? url.searchParams.get("code")! : "";
+    const pending = state ? await this.state.storage.get<MobileOAuthPending>(this.mobilePendingKey(state)) : null;
+    const err = url.searchParams.get("error");
+    if (err) {
+      return textResponse(`<!doctype html><body>OAuth callback error: ${err}. <a href="/">Return</a></body>`, { status: 400 });
+    }
+    const cookieState = await this.readOAuthStateFromRequest(request);
+    if (!pending || !code || pending.state !== state || cookieState !== state || Date.now() - pending.createdAt > 10 * 60 * 1000) {
+      return textResponse("<!doctype html><body>OAuth callback invalid or expired.</body>");
+    }
+    await this.state.storage.delete(this.mobilePendingKey(state));
+    const origin = new URL(request.url).origin;
+    const redirect = `${origin}/`;
+    try {
+      const tokenResponse = await openAiTokenExchange({
+        grant_type: "authorization_code",
+        client_id: OPENAI_CLIENT_ID,
+        redirect_uri: `${origin}/api/mobile/auth/callback`,
+        code_verifier: pending.codeVerifier,
+        code
+      });
+      const accountId = decodeJwtSubject(tokenResponse.access);
+      const allowed = await this.allowMobileAccount(accountId);
+      if (!allowed.ok) {
+        return textResponse(`<!doctype html><body>Mobile sign-in rejected: ${allowed.reason} <a href="/">Return</a></body>`, { status: 403 });
+      }
+      const sessionId = randomToken(26);
+      const now = Date.now();
+      const session: MobileSession = {
+        id: sessionId,
+        accessToken: tokenResponse.access,
+        refreshToken: tokenResponse.refresh,
+        accessExpiresAt: now + tokenResponse.expiresIn * 1000,
+        accountId,
+        createdAt: now,
+        lastActiveAt: now,
+        threadIds: [],
+        threads: {}
+      };
+      await this.setMobileSession(session);
+      const cookie = await this.mobileSessionCookie(sessionId);
+      return textResponse(`<!doctype html><meta http-equiv="refresh" content="1; url=${redirect}"><body>Pi Agent mobile session started. <a href="${redirect}">Continue</a></body>`, {
+        headers: { "Set-Cookie": cookie }
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "OpenAI authentication failed.";
+      return textResponse(`<!doctype html><body>Authentication failed: ${message}. <a href="/">Return</a></body>`, { status: 500 });
+    }
+  }
+
+  private async ensureMobileAccessToken(session: MobileSession) {
+    if (session.accessExpiresAt > Date.now() + 60_000) return session.accessToken;
+    if (!session.refreshToken) return session.accessToken;
+    const tokenResponse = await openAiTokenExchange({
+      grant_type: "refresh_token",
+      client_id: OPENAI_CLIENT_ID,
+      refresh_token: session.refreshToken
+    });
+    session.accessToken = tokenResponse.access;
+    session.refreshToken = tokenResponse.refresh || session.refreshToken;
+    session.accessExpiresAt = Date.now() + tokenResponse.expiresIn * 1000;
+    await this.setMobileSession(session);
+    return session.accessToken;
+  }
+
+  private async mobileChat(request: WorkerRequest) {
+    if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const body = await readJson(request);
+    const session = await this.readSessionFromRequest(request);
+    if (!session) return jsonResponse({ ok: false, error: "Auth required." }, { status: 401 });
+    if (!this.rateLimit(`mobile_chat:${session.id}`, 24, 60_000)) return jsonResponse({ ok: false, error: "Too many mobile chat requests." }, { status: 429 });
+    const threadIdInput = typeof body.threadId === "string" ? body.threadId : "";
+    const messageInput = typeof body.message === "string" ? body.message : "";
+    const message = this.sanitizeMobileMessage(messageInput);
+    if (!message) return jsonResponse({ ok: false, error: "Message is empty." }, { status: 400 });
+
+    const threadId = threadIdInput || randomToken(12);
+    const thread = session.threads[threadId] ?? {
+      id: threadId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: []
+    };
+    if (!session.threads[threadId]) {
+      session.threads[threadId] = thread;
+      session.threadIds = session.threadIds.includes(threadId) ? session.threadIds : [threadId, ...session.threadIds].slice(0, 10);
+    }
+    thread.messages.push({ role: "user", content: message });
+    thread.updatedAt = Date.now();
+    const history = this.normalizeMobileMessages(thread);
+    const requestMessages = [{ role: "system", content: "You are Pi Agent. Answer clearly and briefly. Use safe tools only." }, ...history];
+    const accessToken = await this.ensureMobileAccessToken(session);
+    const response = await fetch(OPENAI_CHAT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: OPENAI_MOBILE_MODEL,
+        messages: requestMessages,
+        temperature: 0.7,
+        max_tokens: 1500
+      })
+    });
+    const chatText = await response.text();
+    if (!response.ok) {
+      if (response.status === 401) return jsonResponse({ ok: false, error: "OpenAI token expired. Reconnect." }, { status: 401 });
+      return jsonResponse({ ok: false, error: chatText || "Mobile chat failed." }, { status: 502 });
+    }
+    let reply = "No response.";
+    try {
+      const payload = JSON.parse(chatText) as { choices?: Array<{ message?: { content?: string } }> };
+      const content = payload.choices?.[0]?.message?.content;
+      reply = typeof content === "string" ? content : "";
+    } catch (_error) {
+      // ignore
+    }
+    thread.messages.push({ role: "assistant", content: reply });
+    thread.messages = thread.messages.slice(-MOBILE_THREAD_LIMIT * 2);
+    thread.updatedAt = Date.now();
+    session.lastActiveAt = Date.now();
+    await this.setMobileSession(session);
+    return jsonResponse({
+      ok: true,
+      text: reply,
+      threadId,
+      at: new Date().toISOString()
     });
   }
 
@@ -770,6 +1215,7 @@ export class RemoteDesktop {
       return;
     }
     if (message.type === "desktop_status") {
+      void this.registerMobileOwnerFromDesktopStatus(message.status).catch(() => {});
       this.broadcastDevices({ type: "desktop_status", status: message.status });
     }
   }

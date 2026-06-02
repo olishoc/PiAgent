@@ -108,14 +108,16 @@ function sendBridge(message: Record<string, unknown>) {
   if (bridge?.readyState === WebSocket.OPEN) bridge.send(JSON.stringify(message));
 }
 
-function sendRemoteDesktopStatus() {
+async function sendRemoteDesktopStatus() {
   const settings = readSettings();
+  const tokens = settings.provider === "openai-codex" ? await maybeRefresh().catch(() => null) : null;
   sendBridge({
     type: "desktop_status",
     status: {
       protocolVersion: REMOTE_PROTOCOL_VERSION,
       desktopName: settings.remoteAccessDesktopName,
-      mode: settings.remoteAccessMode
+      mode: settings.remoteAccessMode,
+      accountId: tokens?.accountId ?? ""
     }
   });
 }
@@ -319,7 +321,7 @@ export function syncRemoteAccessWithSettings() {
     return;
   }
   if (bridge?.readyState === WebSocket.OPEN) {
-    sendRemoteDesktopStatus();
+    void sendRemoteDesktopStatus();
     void refreshRemoteCloudStatus().catch(() => {});
     return;
   }
@@ -336,7 +338,7 @@ export function syncRemoteAccessWithSettings() {
       connected = true;
       lastError = "";
       lastEventAt = new Date().toISOString();
-      sendRemoteDesktopStatus();
+      void sendRemoteDesktopStatus();
       void refreshRemoteCloudStatus().catch(() => {});
     });
     bridge.on("message", (raw) => handleBridgeMessage(raw.toString()));
