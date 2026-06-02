@@ -623,6 +623,7 @@ export const remoteAppHtml = `<!doctype html>
     var toolRows = {};
     var mobileAuthPollTimer = null;
     var mobileDevicePollTimer = null;
+    var MOBILE_DEVICE_AUTH_STORAGE = 'piagent.mobile.deviceAuth';
     localStorage.removeItem('piagent.mobile.openaiKey');
     localStorage.removeItem('piagent.mobile.model');
 
@@ -647,6 +648,7 @@ export const remoteAppHtml = `<!doctype html>
         setRunActive(false);
         checkMobileAuth().then(function (loggedIn) {
           if (loggedIn) showMobileChat(options && options.keepChat);
+          else if (resumeMobileDeviceAuthFromStorage()) return;
           else {
             setStatus('Sign in', 'OpenAI OAuth required', 'bad');
             showLogin('Use Pi Agent on this device.', mobileLoginDetail());
@@ -684,6 +686,52 @@ export const remoteAppHtml = `<!doctype html>
       return next;
     }
 
+    function clearMobileDeviceAuthState() {
+      localStorage.removeItem(MOBILE_DEVICE_AUTH_STORAGE);
+    }
+
+    function saveMobileDeviceAuthState(data) {
+      if (!data || !data.state || !data.userCode) return;
+      var expiresAt = Date.parse(data.expiresAt || '') || (Date.now() + 15 * 60 * 1000);
+      localStorage.setItem(MOBILE_DEVICE_AUTH_STORAGE, JSON.stringify({
+        state: data.state,
+        userCode: data.userCode,
+        verificationUrl: data.verificationUrl || data.authUrl || 'https://auth.openai.com/codex/device',
+        intervalMs: Number(data.intervalSeconds || 5) * 1000,
+        expiresAt: expiresAt
+      }));
+    }
+
+    function readMobileDeviceAuthState() {
+      try {
+        var raw = localStorage.getItem(MOBILE_DEVICE_AUTH_STORAGE);
+        if (!raw) return null;
+        var data = JSON.parse(raw);
+        if (!data || !data.state || !data.userCode || !data.expiresAt || Date.now() > Number(data.expiresAt)) {
+          clearMobileDeviceAuthState();
+          return null;
+        }
+        return data;
+      } catch (error) {
+        clearMobileDeviceAuthState();
+        return null;
+      }
+    }
+
+    function resumeMobileDeviceAuthFromStorage() {
+      var pending = readMobileDeviceAuthState();
+      if (!pending) return false;
+      activeMode = 'mobile';
+      localStorage.setItem('piagent.remote.webMode', activeMode);
+      updateModeButtons();
+      showLogin('Complete OpenAI sign-in.', 'Enter the saved OpenAI device code, then return here.');
+      showMobileDeviceCode(pending.userCode, pending.verificationUrl);
+      setStatus('Waiting for sign-in', 'OpenAI device code', 'run');
+      if (loginState) loginState.textContent = 'Waiting for OpenAI device authorization. Return here after the OpenAI page says connected.';
+      pollMobileDeviceAuth(pending.state, Number(pending.expiresAt), Number(pending.intervalMs || 5000));
+      return true;
+    }
+
     function startDesktopOauthPairing() {
       if (desktopId) {
         connect('mobile');
@@ -706,8 +754,7 @@ export const remoteAppHtml = `<!doctype html>
       if (loginState) loginState.textContent = 'Opening OpenAI OAuth...';
       if (mobileAuthPollTimer) clearTimeout(mobileAuthPollTimer);
       if (mobileDevicePollTimer) clearTimeout(mobileDevicePollTimer);
-      var oauthWindow = window.open('about:blank', '_blank');
-      if (oauthWindow) oauthWindow.opener = null;
+      clearMobileDeviceAuthState();
       try {
         mobileAuthDesktopId = '';
         mobileAuthGlobal = true;
@@ -716,7 +763,6 @@ export const remoteAppHtml = `<!doctype html>
         var data = await post('/api/mobile/auth/start', mobileBody({}, { global: true }));
         if (!data.authUrl) throw new Error('OAuth URL missing.');
         if (data.desktopAuthPending && data.state) {
-          if (oauthWindow) oauthWindow.close();
           if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
           if (mobileOauthCode) mobileOauthCode.value = '';
           if (loginState) loginState.textContent = 'PiAgent Desktop is authorizing this device automatically...';
@@ -724,18 +770,19 @@ export const remoteAppHtml = `<!doctype html>
           return;
         }
         if (data.deviceAuthPending && data.state && data.userCode) {
+          saveMobileDeviceAuthState(data);
           if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
           if (mobileOauthCode) mobileOauthCode.value = '';
           showMobileDeviceCode(data.userCode, data.verificationUrl || data.authUrl);
-          if (oauthWindow) oauthWindow.location.href = data.verificationUrl || data.authUrl;
-          else location.href = data.verificationUrl || data.authUrl;
-          if (loginState) loginState.textContent = 'Enter the OpenAI device code, then keep this page open.';
+          if (mobileDeviceCodeLink && data.verificationUrl) mobileDeviceCodeLink.focus();
+          if (loginState) loginState.textContent = 'Enter the OpenAI device code, then return here. PiAgent will resume automatically if this page reloads.';
           pollMobileDeviceAuth(data.state, Date.now() + 15 * 60 * 1000, Number(data.intervalSeconds || 5) * 1000);
           return;
         }
         if (mobileOauthManual) mobileOauthManual.classList.remove('hidden');
         if (mobileDeviceCodePanel) mobileDeviceCodePanel.classList.add('hidden');
         if (mobileOauthCode) mobileOauthCode.value = '';
+        var oauthWindow = window.open(data.authUrl, '_blank', 'noopener,noreferrer');
         if (oauthWindow) oauthWindow.location.href = data.authUrl;
         else location.href = data.authUrl;
         if (loginState) {
@@ -744,7 +791,7 @@ export const remoteAppHtml = `<!doctype html>
             : 'Complete OpenAI sign-in in the opened tab.';
         }
       } catch (error) {
-        if (oauthWindow) oauthWindow.close();
+        clearMobileDeviceAuthState();
         setStatus('Sign in failed', error.message || 'OAuth could not start', 'bad');
         showLogin('OpenAI sign-in failed.', error.message || 'OAuth could not start');
       }
@@ -792,6 +839,7 @@ export const remoteAppHtml = `<!doctype html>
       try {
         var data = await post('/api/mobile/auth/device/poll', mobileBody({ state: state }));
         if (data.loggedIn) {
+          clearMobileDeviceAuthState();
           mobileLoggedIn = true;
           mobileAuthGlobal = true;
           mobileAuthDesktopId = '';
@@ -806,14 +854,25 @@ export const remoteAppHtml = `<!doctype html>
           return;
         }
         if (Date.now() > deadline) {
+          clearMobileDeviceAuthState();
           throw new Error('OpenAI device code expired. Start sign-in again.');
         }
-        if (data.userCode) showMobileDeviceCode(data.userCode, data.verificationUrl);
+        if (data.userCode) {
+          showMobileDeviceCode(data.userCode, data.verificationUrl);
+          saveMobileDeviceAuthState({
+            state: state,
+            userCode: data.userCode,
+            verificationUrl: data.verificationUrl,
+            intervalSeconds: (intervalMs || 5000) / 1000,
+            expiresAt: data.expiresAt || new Date(deadline).toISOString()
+          });
+        }
         if (loginState) loginState.textContent = 'Waiting for OpenAI device authorization...';
         mobileDevicePollTimer = setTimeout(function () {
           pollMobileDeviceAuth(state, deadline, intervalMs || 5000);
         }, Math.max(3000, Math.min(intervalMs || 5000, 15000)));
       } catch (error) {
+        if (error.status === 404 || error.status === 410 || error.status === 502) clearMobileDeviceAuthState();
         setStatus('Sign in failed', error.message || 'OpenAI device code failed', 'bad');
         if (loginState) loginState.textContent = error.message || 'OpenAI device code failed';
       }
@@ -834,6 +893,7 @@ export const remoteAppHtml = `<!doctype html>
         mobileAuthDesktopId = '';
         localStorage.setItem('piagent.mobile.authGlobal', '1');
         localStorage.removeItem('piagent.mobile.authDesktopId');
+        clearMobileDeviceAuthState();
         await checkMobileAuth();
         if (mobileOauthManual) mobileOauthManual.classList.add('hidden');
         if (mobileOauthCode) mobileOauthCode.value = '';
@@ -861,6 +921,7 @@ export const remoteAppHtml = `<!doctype html>
         mobileThreadId = data.defaultThreadId;
         localStorage.setItem('piagent.mobile.threadId', mobileThreadId);
       }
+      if (mobileLoggedIn) clearMobileDeviceAuthState();
       return mobileLoggedIn;
     }
 
@@ -902,6 +963,7 @@ export const remoteAppHtml = `<!doctype html>
       localStorage.removeItem('piagent.mobile.threadId');
       localStorage.removeItem('piagent.mobile.authDesktopId');
       localStorage.removeItem('piagent.mobile.authGlobal');
+      clearMobileDeviceAuthState();
       mobileThreadId = '';
       mobileAuthDesktopId = '';
       mobileAuthGlobal = false;
@@ -1673,6 +1735,8 @@ export const remoteAppHtml = `<!doctype html>
           if (await checkMobileAuth()) {
             setStatus('PiAgent account', mobileLoginDetail(), 'ok');
             showMobileChat(false);
+          } else if (resumeMobileDeviceAuthFromStorage()) {
+            return;
           } else {
             setStatus('Sign in', 'OpenAI OAuth required', 'bad');
             showLogin('Use Pi Agent on this device.', mobileLoginDetail());
