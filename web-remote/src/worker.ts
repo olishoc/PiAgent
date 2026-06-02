@@ -4,6 +4,9 @@ export interface Env {
   REMOTE_DESKTOP: DurableObjectNamespace;
   REMOTE_TOKEN_PEPPER?: string;
   MOBILE_ALLOWED_OPENAI_ACCOUNT_IDS?: string;
+  OPENAI_OAUTH_CLIENT_ID?: string;
+  OPENAI_OAUTH_SCOPES?: string;
+  OPENAI_MOBILE_MODEL?: string;
   PUBLIC_HOST?: string;
   PROTOCOL_VERSION?: string;
 }
@@ -95,10 +98,10 @@ const MOBILE_COOKIE_NAME = "piagent_remote_mobile";
 const MOBILE_OAUTH_COOKIE_NAME = "piagent_remote_oauth";
 const OPENAI_AUTH_URL = "https://auth.openai.com/oauth/authorize";
 const OPENAI_TOKEN_URL = "https://auth.openai.com/oauth/token";
-const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
-const OPENAI_SCOPES = "openid profile email offline_access";
+const OPENAI_DESKTOP_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
+const DEFAULT_OPENAI_SCOPES = "openid profile email offline_access";
 const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MOBILE_MODEL = "gpt-4o-mini";
+const DEFAULT_OPENAI_MOBILE_MODEL = "gpt-4o-mini";
 const OPENAI_OAUTH_TTL_MS = 60 * 60 * 1000 * 24 * 90;
 const MOBILE_SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MOBILE_SESSION_COOKIE_VERSION = "mobile-v1";
@@ -250,6 +253,18 @@ function allowedMobileAccountIds(env: Env) {
     .filter(Boolean));
 }
 
+function openAiWebClientId(env: Env) {
+  return (env.OPENAI_OAUTH_CLIENT_ID ?? "").trim();
+}
+
+function openAiScopes(env: Env) {
+  return (env.OPENAI_OAUTH_SCOPES ?? DEFAULT_OPENAI_SCOPES).trim();
+}
+
+function openAiMobileModel(env: Env) {
+  return (env.OPENAI_MOBILE_MODEL ?? DEFAULT_OPENAI_MOBILE_MODEL).trim() || DEFAULT_OPENAI_MOBILE_MODEL;
+}
+
 async function readJson(request: WorkerRequest) {
   const contentLength = Number(request.headers.get("Content-Length") ?? "0");
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) throw new HttpError(413, "Request body too large.");
@@ -335,12 +350,12 @@ async function decryptSecret(env: Env, value: string) {
   return decoder.decode(plain);
 }
 
-function openAiAuthUrl(origin: string, state: string, codeChallenge: string) {
+function openAiAuthUrl(origin: string, state: string, codeChallenge: string, clientId: string, scopes: string) {
   const auth = new URL(OPENAI_AUTH_URL);
   auth.searchParams.set("response_type", "code");
-  auth.searchParams.set("client_id", OPENAI_CLIENT_ID);
+  auth.searchParams.set("client_id", clientId);
   auth.searchParams.set("redirect_uri", `${origin}/api/mobile/auth/callback`);
-  auth.searchParams.set("scope", OPENAI_SCOPES);
+  auth.searchParams.set("scope", scopes);
   auth.searchParams.set("state", state);
   auth.searchParams.set("code_challenge_method", "S256");
   auth.searchParams.set("code_challenge", codeChallenge);
@@ -762,6 +777,13 @@ export class RemoteDesktop {
 
   private async mobileAuthStart(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
+    const clientId = openAiWebClientId(this.env);
+    if (!clientId || clientId === OPENAI_DESKTOP_CLIENT_ID) {
+      return jsonResponse({
+        ok: false,
+        error: "OpenAI web OAuth is not configured for this domain yet. Configure OPENAI_OAUTH_CLIENT_ID with a web OAuth app that allows /api/mobile/auth/callback."
+      }, { status: 503 });
+    }
     const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
     if (!this.rateLimit(`mobile_auth:${ip}`, 20, 60_000)) return jsonResponse({ ok: false, error: "Too many OAuth attempts." }, { status: 429 });
     const state = randomToken(24);
@@ -777,7 +799,7 @@ export class RemoteDesktop {
     await this.state.storage.put("mobile:lastPendingState", state);
     return jsonResponse({
       ok: true,
-      authUrl: openAiAuthUrl(origin, state, codeChallenge),
+      authUrl: openAiAuthUrl(origin, state, codeChallenge, clientId, openAiScopes(this.env)),
       state
     }, {
       headers: { "Set-Cookie": await this.mobileOAuthPendingCookie(state) }
@@ -787,15 +809,17 @@ export class RemoteDesktop {
   private async mobileAuthStatus(request: WorkerRequest) {
     if (!isSameOrigin(request)) return jsonResponse({ ok: false, error: "Origin rejected." }, { status: 403 });
     const ownerReady = Boolean(await this.mobileOwnerAccountId()) || allowedMobileAccountIds(this.env).size > 0;
+    const oauthConfigured = Boolean(openAiWebClientId(this.env)) && openAiWebClientId(this.env) !== OPENAI_DESKTOP_CLIENT_ID;
     const session = await this.readSessionFromRequest(request);
-    if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady });
+    if (!session) return jsonResponse({ ok: true, loggedIn: false, ownerReady, oauthConfigured });
     return jsonResponse({
       ok: true,
       loggedIn: true,
       ownerReady,
+      oauthConfigured,
       provider: "openai",
       accountId: session.accountId,
-      model: OPENAI_MOBILE_MODEL,
+      model: openAiMobileModel(this.env),
       defaultThreadId: session.threadIds[0] ?? null,
       sessionActive: true
     });
@@ -827,7 +851,7 @@ export class RemoteDesktop {
     try {
       const tokenResponse = await openAiTokenExchange({
         grant_type: "authorization_code",
-        client_id: OPENAI_CLIENT_ID,
+        client_id: openAiWebClientId(this.env),
         redirect_uri: `${origin}/api/mobile/auth/callback`,
         code_verifier: pending.codeVerifier,
         code
@@ -866,7 +890,7 @@ export class RemoteDesktop {
     if (!session.refreshToken) return session.accessToken;
     const tokenResponse = await openAiTokenExchange({
       grant_type: "refresh_token",
-      client_id: OPENAI_CLIENT_ID,
+      client_id: openAiWebClientId(this.env),
       refresh_token: session.refreshToken
     });
     session.accessToken = tokenResponse.access;
@@ -910,7 +934,7 @@ export class RemoteDesktop {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: OPENAI_MOBILE_MODEL,
+        model: openAiMobileModel(this.env),
         messages: requestMessages,
         temperature: 0.7,
         max_tokens: 1500

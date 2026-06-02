@@ -526,6 +526,7 @@ export const remoteAppHtml = `<!doctype html>
     var activeMode = localStorage.getItem('piagent.remote.webMode') || 'mobile';
     var mobileLoggedIn = false;
     var mobileOwnerReady = false;
+    var mobileOauthConfigured = false;
     var mobileAccountId = '';
     var mobileThreadId = localStorage.getItem('piagent.mobile.threadId') || '';
     var ws = null;
@@ -614,6 +615,7 @@ export const remoteAppHtml = `<!doctype html>
       if (!response.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + response.status));
       mobileLoggedIn = Boolean(data.loggedIn);
       mobileOwnerReady = Boolean(data.ownerReady);
+      mobileOauthConfigured = Boolean(data.oauthConfigured);
       mobileAccountId = data.accountId || '';
       if (data.defaultThreadId && !mobileThreadId) {
         mobileThreadId = data.defaultThreadId;
@@ -626,12 +628,14 @@ export const remoteAppHtml = `<!doctype html>
       try { await post('/api/mobile/auth/logout', {}); } catch (error) {}
       mobileLoggedIn = false;
       mobileOwnerReady = false;
+      mobileOauthConfigured = false;
       mobileAccountId = '';
       localStorage.removeItem('piagent.mobile.threadId');
       mobileThreadId = '';
     }
 
     function mobileLoginDetail() {
+      if (!mobileOauthConfigured) return 'OpenAI web OAuth is not configured for rblxagent.com yet';
       return mobileOwnerReady ? 'Sign in with OpenAI OAuth' : 'Open PiAgent Desktop Remote Access once to register the owner account';
     }
 
@@ -639,7 +643,7 @@ export const remoteAppHtml = `<!doctype html>
       updateModeButtons();
       if (activeMode === 'mobile') {
         if (loginLead) loginLead.textContent = text || 'Use Pi Agent on this device.';
-        if (loginState) loginState.textContent = detail || (mobileLoggedIn ? 'Signed in with OpenAI OAuth.' : mobileOwnerReady ? 'OpenAI OAuth required.' : 'Open PiAgent Desktop Remote Access once to register the owner account.');
+        if (loginState) loginState.textContent = detail || (mobileLoggedIn ? 'Signed in with OpenAI OAuth.' : mobileLoginDetail());
         if (loginReconnectButton) loginReconnectButton.classList.add('hidden');
         if (loginForgetButton) loginForgetButton.classList.toggle('hidden', !mobileLoggedIn);
         return;
@@ -759,7 +763,7 @@ export const remoteAppHtml = `<!doctype html>
       }
       composer.classList.remove('hidden');
       if (introText) introText.textContent = 'Mobile chat runs directly from this device through OpenAI OAuth. Switch to Desktop coding when you need files, shell, browser tools, or long coding runs on your computer.';
-      setStatus(mobileLoggedIn ? 'Mobile chat' : 'Sign in', mobileLoggedIn ? 'OpenAI OAuth ready' : 'OpenAI OAuth required', mobileLoggedIn ? 'ok' : 'bad');
+      setStatus(mobileLoggedIn ? 'Mobile chat' : 'Sign in', mobileLoggedIn ? 'OpenAI OAuth ready' : mobileLoginDetail(), mobileLoggedIn ? 'ok' : 'bad');
       if (composerStatus) composerStatus.textContent = mobileLoggedIn ? 'Mobile ready' : 'OpenAI OAuth';
       promptEl.placeholder = 'Ask Pi Agent mobile...';
       document.getElementById('remoteAccessButton').innerHTML = '${icon("shield", 13)} Mobile chat ${icon("chevronDown", 12)}';
